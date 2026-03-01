@@ -362,19 +362,7 @@ const App = () => {
   const [deliveryLookupAddr, setDeliveryLookupAddr] = useState('');
   const [deliveryLookupResult, setDeliveryLookupResult] = useState(null);
   const [deliveryLookupLoading, setDeliveryLookupLoading] = useState(false);
-  const [queryLogs, setQueryLogs] = useState(() => {
-    try { return JSON.parse(localStorage.getItem('query_logs') || '[]'); } catch(e) { return []; }
-  });
-  const [showLogs, setShowLogs] = useState(false);
-  const [logDateFrom, setLogDateFrom] = useState('');
-  const [logDateTo, setLogDateTo] = useState('');
-  const saveQueryLog = (log) => {
-    setQueryLogs(prev => {
-      const next = [log, ...prev].slice(0, 1000);
-      try { localStorage.setItem('query_logs', JSON.stringify(next)); } catch(e) {}
-      return next;
-    });
-  };
+
 
   // Algorithmic Data vs Final Data (Overrides applied)
   const [baseClusteredData, setBaseClusteredData] = useState([]);
@@ -537,7 +525,6 @@ const App = () => {
           trafficNote: '（估算值）',
           top2,
         });
-        saveQueryLog({ ts, addr: deliveryLookupAddr.trim(), resolved: resolvedName, ok: true, distKm: best.roadDist, roundTrip: best.roundTripMin, nearestName: best.name, route: best.route });
       } else {
         setDeliveryLookupResult({
           ok: false, msg: '❌ 超出配送範圍',
@@ -547,7 +534,6 @@ const App = () => {
           trafficNote: '（估算值）',
           top2,
         });
-        saveQueryLog({ ts, addr: deliveryLookupAddr.trim(), resolved: resolvedName, ok: false, distKm: best.roadDist, roundTrip: best.roundTripMin, nearestName: best.name, route: '' });
       }
     } catch (err) {
       setDeliveryLookupResult({ ok: false, msg: '地址查詢服務暫時無法使用，請稍後再試。' });
@@ -1094,7 +1080,7 @@ const App = () => {
           iconAnchor: [idx === 0 ? 8 : 6.5, idx === 0 ? 8 : 6.5]
         });
         const ptMarker = window.L.marker([p.lat, p.lng], { icon: ptIcon })
-          .bindTooltip(`<div class="text-xs font-sans p-1"><strong>📍 ${markerLabels[idx]}建檔點位</strong><br/>${p.name}<br/><span class="text-gray-500">${p.route}・${p.roadDist} km・往返 ${p.roundTripMin} 分</span></div>`, { direction: 'top', offset: [0, -10] })
+          .bindTooltip(`<div class="text-xs font-sans p-1"><strong>[P] ${markerLabels[idx]}建檔點位</strong><br/>${p.name}<br/><span class="text-gray-500">${p.route}・${p.roadDist} km・往返 ${p.roundTripMin} 分</span></div>`, { direction: 'top', offset: [0, -10] })
           .addTo(map);
         lookupLayersRef.current.push(ptMarker);
         allMapMarkers.push(ptMarker);
@@ -1120,8 +1106,8 @@ const App = () => {
     const csvRows = [headers.join(',')];
     finalClusteredData.forEach(item => {
       const row = [
-        item.id, `"${item.name.replace(/"/g, '""')}"`, `"${item.address.replace(/"/g, '""')}"`,
-        item.lat, item.lng, `"${item.route.replace(/"/g, '""')}"`, getTruckName(item.cluster), item.isManual ? '管理員手動微調' : 'AI演算法最佳化'
+        item.id, `"${item.name.split('"').join('""')}"`, `"${item.address.split('"').join('""')}"`,
+        item.lat, item.lng, `"${item.route.split('"').join('""')}"`, getTruckName(item.cluster), item.isManual ? '管理員手動微調' : 'AI演算法最佳化'
       ];
       csvRows.push(row.join(','));
     });
@@ -1166,14 +1152,14 @@ const App = () => {
       + '<div style="display:flex;gap:32px;position:relative;z-index:1;flex-wrap:wrap;justify-content:center;padding:0 24px">'
         + '<div id="card-dispatch" style="' + cardStyle('0,200,255') + '">'
           + '<div style="position:absolute;top:-1px;left:20px;right:20px;height:2px;background:linear-gradient(90deg,transparent,#00c8ff,transparent)"></div>'
-          + '<div style="font-size:28px;margin-bottom:16px;color:#00c8ff">🚚</div>'
+          + '<div style="font-size:28px;margin-bottom:16px;color:#00c8ff">&#128666;</div>'
           + '<div style="font-size:13px;font-weight:700;color:#00c8ff;letter-spacing:2px;margin-bottom:8px;text-transform:uppercase">\u914d\u9001\u5340\u57df\u5283\u5206\u5de5\u5177</div>'
           + '<div style="font-size:11px;color:rgba(255,255,255,0.45);line-height:1.7;margin-bottom:20px">K-Means++ \u6f14\u7b97\u6cd5\u81ea\u52d5\u5206\u7fa4<br>\u8eca\u8f1b\u6307\u6d3e - \u91cc\u7a0b\u5747\u8861 - \u624b\u52d5\u5fae\u8abf</div>'
           + '<div style="display:inline-flex;align-items:center;gap:6px;font-size:10px;color:rgba(0,200,255,0.7);border:1px solid rgba(0,200,255,0.3);padding:4px 10px;border-radius:2px;letter-spacing:1px">[LOCK] \u9700\u8981\u6388\u6b0a</div>'
         + '</div>'
         + '<div id="card-lookup" style="width:280px;padding:32px 28px;border-radius:4px;cursor:pointer;position:relative;transition:all 0.2s;border:1px solid rgba(251,191,36,0.2);background:rgba(251,191,36,0.04)">'
           + '<div style="position:absolute;top:-1px;left:20px;right:20px;height:2px;background:linear-gradient(90deg,transparent,#fbbf24,transparent)"></div>'
-          + '<div style="font-size:24px;margin-bottom:16px;color:#fbbf24">🗺️</div>'
+          + '<div style="font-size:24px;margin-bottom:16px;color:#fbbf24">&#128506;</div>'
           + '<div style="font-size:13px;font-weight:700;color:#fbbf24;letter-spacing:2px;margin-bottom:8px;text-transform:uppercase">\u6307\u9001\u5730\u5740\u67e5\u8a62</div>'
           + '<div style="font-size:11px;color:rgba(255,255,255,0.45);line-height:1.7;margin-bottom:20px">\u8f38\u5165\u5ba2\u6236\u5730\u5740\u5373\u6642\u67e5\u8a62<br>\u53ef\u884c\u6027\u8a55\u4f30 - \u6700\u8fd1\u9ede\u4f4d - \u5f80\u8fd4\u6642\u9593</div>'
           + '<div style="display:inline-flex;align-items:center;gap:6px;font-size:10px;color:rgba(251,191,36,0.7);border:1px solid rgba(251,191,36,0.3);padding:4px 10px;border-radius:2px;letter-spacing:1px">&gt; \u76f4\u63a5\u9032\u5165</div>'
@@ -1241,7 +1227,7 @@ const App = () => {
               ))}
               {pwChangeMsg && (
                 <div style={{fontSize:10,marginTop:6,padding:'4px 8px',borderRadius:2,background:pwChangeMsg.startsWith('ok')?'rgba(34,197,94,0.15)':'rgba(239,68,68,0.15)',color:pwChangeMsg.startsWith('ok')?'#4ade80':'#f87171'}}>
-                  {pwChangeMsg.replace(/^(ok|error):/, '')}
+                  {pwChangeMsg.startsWith('ok:') || pwChangeMsg.startsWith('error:') ? pwChangeMsg.slice(pwChangeMsg.indexOf(':')+1) : pwChangeMsg}
                 </div>
               )}
               <button onClick={handleChangePw} style={{width:'100%',marginTop:8,padding:'8px 0',background:'rgba(0,200,255,0.12)',border:'1px solid rgba(0,200,255,0.3)',borderRadius:2,color:'#00c8ff',fontSize:11,letterSpacing:2,cursor:'pointer',fontFamily:'inherit'}}>
@@ -1249,19 +1235,26 @@ const App = () => {
               </button>
             </div>
           )}
-          <button onClick={() => { setPwInput(''); setPwError(false); setLookupOnly(false); setAppMode('home'); }} style={{width:'100%',marginTop:10,padding:'8px 0',background:'transparent',border:'none',color:'rgba(255,255,255,0.25)',fontSize:10,letterSpacing:2,cursor:'pointer',fontFamily:'inherit'}}>
-            {'← 返回'}
+          <button onClick={() => { setPwInput(''); setPwError(false); setLookupOnly(false); setMapContainerMounted(false); mapInstanceRef.current = null; setMapInitialized(false); setAppMode('home'); }} style={{width:'100%',marginTop:10,padding:'8px 0',background:'transparent',border:'none',color:'rgba(255,255,255,0.25)',fontSize:10,letterSpacing:2,cursor:'pointer',fontFamily:'inherit'}}>
+            返回
           </button>
         </div>
       </div>
     );
   }
+
+  // ===== Extracted onClick handlers (keeps JSX clean) =====
+  const handleRecalc = () => {
+    setRecalcTrigger(function(prev) { return prev + 1; });
+    setManualOverrides({});
+    setSelectedPointForEdit(null);
+  };
+
+
   return (
     <div className="flex w-full bg-gray-100 font-sans text-gray-900 overflow-hidden relative" style={{height: `${windowHeight}px`}}>
       
       <div className="w-[400px] bg-white shadow-2xl flex flex-col z-20 h-full flex-shrink-0 border-r border-gray-200">
-        
-        {/* 固定頂部標題 */}
         <div className="p-4 bg-slate-900 text-white flex-shrink-0 shadow-md z-10" style={{borderBottom:'1px solid rgba(0,200,255,0.2)'}}>
           <div className="flex items-center justify-between mb-1">
             <div className="flex items-center gap-2.5">
@@ -1270,19 +1263,17 @@ const App = () => {
                 {activeTab === 'lookup' ? '指送地址查詢' : '配送區域劃分工具'}
               </h1>
             </div>
-            <button onClick={() => { setAppMode('home'); setLookupOnly(false); }}
+            <button onClick={() => { setAppMode('home'); setLookupOnly(false); setMapContainerMounted(false); mapInstanceRef.current = null; setMapInitialized(false); }}
               className="text-[10px] tracking-widest uppercase"
               style={{color:'rgba(0,200,255,0.5)',background:'none',border:'none',cursor:'pointer',letterSpacing:2}}
               onMouseEnter={e => e.currentTarget.style.color='rgba(0,200,255,0.9)'}
               onMouseLeave={e => e.currentTarget.style.color='rgba(0,200,255,0.5)'}
-            >← HOME</button>
+            >HOME</button>
           </div>
           <div className="text-[10px]" style={{color:'rgba(255,255,255,0.35)',letterSpacing:1}}>
             {lookupOnly ? '全區 625 筆 | 即時查詢' : activeTab === 'lookup' ? '全區 625 筆 | 即時查詢' : `${REGION_LABELS[activeRegion] || '自訂'} | ${deliveryPoints.length} 筆`}
           </div>
         </div>
-
-        {/* 固定營運數據區塊 */}
         {!lookupOnly && <div className="grid grid-cols-2 gap-3 p-4 bg-slate-50 border-b border-gray-200 flex-shrink-0">
             <div className="text-center p-3 bg-white rounded-lg border border-gray-100 shadow-sm">
                 <div className="text-[10px] text-gray-500 font-bold mb-1">單量最大落差</div>
@@ -1306,12 +1297,7 @@ const App = () => {
             </div>
         </div>}
 
-        {/* 分頁切換已移除：派車工具固定顯示設定，查詢工具為獨立入口 */}
-
-        {/* 核心捲動區域 */}
         <div className="flex-1 overflow-y-auto p-4 space-y-5 custom-scrollbar bg-white">
-            
-        {/* 錯誤提示 */}
         {errorMessage && (
             <div className="bg-red-50 text-red-600 border border-red-200 p-3 rounded-md text-sm flex items-start gap-2 shadow-sm">
                 <IconAlert className="w-4 h-4 flex-shrink-0 mt-0.5" />
@@ -1320,10 +1306,7 @@ const App = () => {
         )}
 
         {activeTab === 'settings' && <>
-        {/* 控制面板區塊 */}
         <div className="bg-gray-50 p-4 rounded-xl border border-gray-200 space-y-5">
-            
-            {/* 區域選擇按鈕 */}
             <div className="bg-white p-3 rounded-lg border border-gray-200 shadow-sm space-y-3">
                 <h3 className="text-xs font-bold text-gray-700 border-b border-gray-100 pb-2">配送區域切換</h3>
                 <div className="grid grid-cols-2 gap-2">
@@ -1335,8 +1318,6 @@ const App = () => {
                   ))}
                 </div>
             </div>
-
-            {/* 資料管理按鈕列 */}
             <div className="flex gap-2">
                 <button onClick={() => { setAddForm({ name: '', route: '', address: '', lat: '', lng: '' }); setShowAddModal(true); }}
                   className="flex-1 flex items-center justify-center gap-1.5 py-2 rounded-lg text-sm font-bold bg-emerald-50 text-emerald-700 border border-emerald-200 hover:bg-emerald-100 transition-all">
@@ -1351,7 +1332,7 @@ const App = () => {
                 </div>
             </div>
             <div className="text-[10px] text-gray-400 leading-relaxed bg-gray-50 p-2 rounded border border-gray-100">
-              📋 匯入格式：客戶簡稱 | 配送路線說明 | 送貨地址 | 經緯度（緯度,經度）<br/>
+              [格式] 匯入格式：客戶簡稱 | 配送路線說明 | 送貨地址 | 經緯度（緯度,經度）<br/>
               第一列為標題列（自動跳過），支援 .xlsx .csv .tsv .txt
             </div>
 
@@ -1362,8 +1343,6 @@ const App = () => {
                    </div>
                    <input type="range" min="1" max="10" step="1" value={vehicleCount} onChange={(e) => setVehicleCount(parseInt(e.target.value))} className="w-full h-1.5 bg-gray-300 rounded-lg appearance-none cursor-pointer accent-blue-600" />
                 </div>
-
-                {/* 平衡模式 */}
                 <div className="space-y-2">
                    <label className="text-sm text-gray-700 font-bold">均分模式</label>
                    <div className="grid grid-cols-3 gap-1.5">
@@ -1387,11 +1366,9 @@ const App = () => {
                       <span>車輛滿載平均</span>
                    </div>
                 </div>
-
-                {/* 多輪篩選設定 */}
                 <div className="space-y-2">
                    <div className="flex justify-between items-center text-sm">
-                      <label className="text-gray-700 font-bold flex items-center gap-1">🎯 最佳結果篩選</label>
+                      <label className="text-gray-700 font-bold flex items-center gap-1">[*] 最佳結果篩選</label>
                       <span className="font-bold text-blue-600 bg-blue-50 px-2 py-0.5 rounded">{multiRunCount} 輪</span>
                    </div>
                    <input type="range" min="1" max="30" step="1" value={multiRunCount} onChange={(e) => setMultiRunCount(parseInt(e.target.value))} className="w-full h-1.5 bg-gray-300 rounded-lg appearance-none cursor-pointer accent-blue-600" />
@@ -1404,8 +1381,6 @@ const App = () => {
                    </div>
                 </div>
             </div>
-
-            {/* 區域分配結果清單 */}
             <div>
                 <div className="flex items-center justify-between mb-3 border-b pb-2">
                     <h2 className="text-sm font-bold text-gray-800">各車輛指派結果</h2>
@@ -1435,8 +1410,6 @@ const App = () => {
                         </div>
                     ))}
                 </div>
-
-                {/* 展開之車輛詳細清單 */}
                 {activeCluster !== null && (
                   <div className="mt-4 bg-gray-50 border border-gray-200 p-3 rounded-xl">
                      <div className="flex justify-between items-center mb-3">
@@ -1459,12 +1432,10 @@ const App = () => {
                 )}
             </div>
         </>}
-
-        {/* ===== 指送查詢分頁 ===== */}
         {activeTab === 'lookup' && <>
             <div className="bg-white p-4 rounded-xl border border-amber-200 shadow-sm space-y-4">
-                <h3 className="text-sm font-bold text-amber-700 border-b border-amber-100 pb-2 flex items-center gap-1.5">📦 指送地址可行性查詢</h3>
-                <p className="text-xs text-gray-500 leading-relaxed">輸入客戶詢問的配送地址，系統自動比對最近建檔點位，判斷是否在配送範圍內（往返 ≤ 25 分鐘）。</p>
+                <h3 className="text-sm font-bold text-amber-700 border-b border-amber-100 pb-2 flex items-center gap-1.5">[pkg] 指送地址可行性查詢</h3>
+                <p className="text-xs text-gray-500 leading-relaxed">輸入客戶詢問的配送地址，系統自動比對最近建檔點位，判斷是否在配送範圍內（往返 25 分鐘以內）。</p>
                 <div className="flex gap-2">
                     <input value={deliveryLookupAddr} onChange={e => setDeliveryLookupAddr(e.target.value)}
                         onKeyDown={e => e.key === 'Enter' && handleDeliveryLookup()}
@@ -1479,7 +1450,7 @@ const App = () => {
                     <div className={`p-4 rounded-xl text-sm space-y-2 ${deliveryLookupResult.ok ? 'bg-green-50 border border-green-200' : 'bg-red-50 border border-red-200'}`}>
                         <div className={`font-bold text-lg ${deliveryLookupResult.ok ? 'text-green-700' : 'text-red-700'}`}>{deliveryLookupResult.msg}</div>
                         {deliveryLookupResult.route && (
-                            <div className="text-green-800 font-bold text-base">建議由「<span className="text-green-600 bg-green-100 px-2 py-0.5 rounded">{deliveryLookupResult.route}</span>」承接配送</div>
+                            <div className="text-green-800 font-bold text-base">建議由[<span className="text-green-600 bg-green-100 px-2 py-0.5 rounded">{deliveryLookupResult.route}</span>]承接配送</div>
                         )}
                         {deliveryLookupResult.top2 && (
                             <div className="text-gray-600 text-xs space-y-2 pt-2 border-t border-gray-200 mt-2">
@@ -1493,11 +1464,11 @@ const App = () => {
                                         </div>
                                         <div className="flex justify-between text-[11px]">
                                             <span className="text-gray-400">路線：{p.route}</span>
-                                            <span className="text-gray-500">{p.roadDist} km・{p.roundTripMin} 分（往返）</span>
+                                            <span className="text-gray-500">{p.roadDist} km - {p.roundTripMin} 分（往返）</span>
                                         </div>
                                     </div>
                                 ))}
-                                {deliveryLookupResult.resolved && <div className="text-gray-400 text-[10px] mt-1 p-2 bg-gray-50 rounded">🗺️ 系統定位：{deliveryLookupResult.resolved}</div>}
+                                {deliveryLookupResult.resolved && <div className="text-gray-400 text-[10px] mt-1 p-2 bg-gray-50 rounded">{'Map: '}{deliveryLookupResult.resolved}</div>}
                             </div>
                         )}
                     </div>
@@ -1506,140 +1477,18 @@ const App = () => {
             <div className="bg-gray-50 p-3 rounded-lg border border-gray-100 space-y-2">
                 <h4 className="text-xs font-bold text-gray-600">計算說明</h4>
                 <div className="text-[10px] text-gray-400 leading-relaxed space-y-1">
-                    <div>• 地址轉座標：Google Maps Geocoding API（台灣完整覆蓋）</div>
-                    <div>• 距離公式：Haversine 直線距離 × 1.3 路網修正係數</div>
-                    <div>• 往返時間：路程距離 × 2 ÷ 平均車速 35 km/h</div>
-                    <div>• 門檻設定：往返 ≤ 25 分鐘判定為可配送</div>
+                    <div>- 地址轉座標：Google Maps Geocoding API（台灣完整覆蓋）</div>
+                    <div>- 距離公式：Haversine 直線距離 x1.3 路網修正係數</div>
+                    <div>- 往返時間：路程距離 x2 除以 平均車速 35 km per h</div>
+                    <div>- 門檻設定：往返 25 分鐘內判定為可配送</div>
                 </div>
             </div>
 
-            {/* ===== 查詢紀錄統計 ===== */}
-            {(() => {
-              const todayStr = new Date().toLocaleDateString('zh-TW');
-              const todayLogs = queryLogs.filter(l => new Date(l.ts).toLocaleDateString('zh-TW') === todayStr);
-              const total = queryLogs.length;
-              const success = queryLogs.filter(l => l.ok).length;
-              const fail = total - success;
-              const todayTotal = todayLogs.length;
-              const todaySuccess = todayLogs.filter(l => l.ok).length;
-              const todayFail = todayTotal - todaySuccess;
-              return (
-                <div className="bg-slate-800 rounded-xl p-4 space-y-3">
-                  <div className="flex items-center justify-between">
-                    <h4 className="text-xs font-bold text-white tracking-widest uppercase">查詢紀錄統計</h4>
-                    <button onClick={() => setShowLogs(v => !v)} className="text-[10px] text-cyan-400 border border-cyan-800 px-2 py-1 rounded hover:bg-cyan-900 transition-all">
-                      {showLogs ? '收合' : '展開明細'}
-                    </button>
-                  </div>
-                  <div className="text-[10px] text-slate-400 tracking-widest mb-1">當日紀錄</div>
-                  <div className="grid grid-cols-3 gap-2">
-                    <div className="bg-slate-700 rounded-lg p-2 text-center">
-                      <div className="text-[10px] text-slate-400 mb-1">今日查詢</div>
-                      <div className="text-lg font-black text-white">{todayTotal}</div>
-                    </div>
-                    <div className="bg-green-900 rounded-lg p-2 text-center">
-                      <div className="text-[10px] text-green-400 mb-1">可配送</div>
-                      <div className="text-lg font-black text-green-300">{todaySuccess}</div>
-                    </div>
-                    <div className="bg-red-900 rounded-lg p-2 text-center">
-                      <div className="text-[10px] text-red-400 mb-1">超出範圍</div>
-                      <div className="text-lg font-black text-red-300">{todayFail}</div>
-                    </div>
-                  </div>
-                  <div className="text-[10px] text-slate-400 tracking-widest mb-1 pt-1 border-t border-slate-700">累計紀錄</div>
-                  <div className="grid grid-cols-3 gap-2">
-                    <div className="bg-slate-700 rounded-lg p-2 text-center">
-                      <div className="text-[10px] text-slate-400 mb-1">總查詢</div>
-                      <div className="text-lg font-black text-white">{total}</div>
-                    </div>
-                    <div className="bg-green-900 rounded-lg p-2 text-center">
-                      <div className="text-[10px] text-green-400 mb-1">可配送</div>
-                      <div className="text-lg font-black text-green-300">{success}</div>
-                    </div>
-                    <div className="bg-red-900 rounded-lg p-2 text-center">
-                      <div className="text-[10px] text-red-400 mb-1">超出範圍</div>
-                      <div className="text-lg font-black text-red-300">{fail}</div>
-                    </div>
-                  </div>
-
-                  {/* 匯出區間 */}
-                  <div className="space-y-2">
-                    <div className="text-[10px] text-slate-400 tracking-widest uppercase">匯出日期區間</div>
-                    <div className="flex gap-2">
-                      <input type="date" value={logDateFrom} onChange={e => setLogDateFrom(e.target.value)}
-                        className="flex-1 bg-slate-700 border border-slate-600 text-white text-xs rounded px-2 py-1.5 outline-none focus:border-cyan-500" />
-                      <span className="text-slate-500 self-center text-xs">至</span>
-                      <input type="date" value={logDateTo} onChange={e => setLogDateTo(e.target.value)}
-                        className="flex-1 bg-slate-700 border border-slate-600 text-white text-xs rounded px-2 py-1.5 outline-none focus:border-cyan-500" />
-                    </div>
-                    <button onClick={() => {
-                      const from = logDateFrom ? new Date(logDateFrom + 'T00:00:00') : new Date(0);
-                      const to = logDateTo ? new Date(logDateTo + 'T23:59:59') : new Date();
-                      const filtered = queryLogs.filter(l => { const d = new Date(l.ts); return d >= from && d <= to; });
-                      if (filtered.length === 0) { alert('該區間無紀錄'); return; }
-                      const BOM = '﻿';
-                      const header = ['查詢時間','輸入地址','系統定位','結果','最近點位','路線','距離(km)','往返(分)'];
-                      const rows = filtered.map(l => [
-                        new Date(l.ts).toLocaleString('zh-TW'),
-                        '"' + l.addr.replace(/"/g,'""') + '"',
-                        '"' + (l.resolved||'').replace(/"/g,'""') + '"',
-                        l.ok ? '可配送' : '超出範圍',
-                        '"' + (l.nearestName||'').replace(/"/g,'""') + '"',
-                        '"' + (l.route||'').replace(/"/g,'""') + '"',
-                        l.distKm, l.roundTrip
-                      ].join(','));
-                      const blob = new Blob([BOM + [header.join(','), ...rows].join('\n')], { type: 'text/csv;charset=utf-8;' });
-                      const a = document.createElement('a');
-                      a.href = URL.createObjectURL(blob);
-                      a.download = '指送查詢紀錄_' + (logDateFrom||'all') + '_' + (logDateTo||'all') + '.csv';
-                      a.click();
-                    }} className="w-full py-2 bg-cyan-700 hover:bg-cyan-600 text-white text-xs font-bold rounded tracking-widest transition-all">
-                      匯出 CSV
-                    </button>
-                    {queryLogs.length > 0 && (
-                      <button onClick={() => {
-                        const pw = window.prompt('請輸入管理員授權碼以清除紀錄：');
-                        if (pw === null) return;
-                        if (pw !== 'LOGI89567324') { window.alert('授權碼錯誤，無法清除紀錄'); return; }
-                        if (window.confirm('授權成功。確定清除所有查詢紀錄？')) {
-                          setQueryLogs([]); try { localStorage.removeItem('query_logs'); } catch(e) {}
-                        }
-                      }} className="w-full py-1.5 bg-transparent border border-red-800 text-red-400 text-[10px] rounded tracking-widest hover:bg-red-900 transition-all">
-                        清除紀錄（需授權碼）
-                      </button>
-                    )}
-                  </div>
-
-                  {/* 明細列表 */}
-                  {showLogs && (
-                    <div className="max-h-48 overflow-y-auto space-y-1.5 pr-1">
-                      {queryLogs.length === 0 && <div className="text-slate-500 text-xs text-center py-4">尚無查詢紀錄</div>}
-                      {queryLogs.map((l, i) => (
-                        <div key={i} className={`rounded p-2 text-[10px] border-l-2 ${l.ok ? 'bg-green-950 border-green-500' : 'bg-red-950 border-red-500'}`}>
-                          <div className="flex justify-between text-slate-400 mb-0.5">
-                            <span>{new Date(l.ts).toLocaleString('zh-TW', {month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit'})}</span>
-                            <span className={l.ok ? 'text-green-400' : 'text-red-400'}>{l.ok ? '可配送' : '超出範圍'}</span>
-                          </div>
-                          <div className="text-white truncate">{l.addr}</div>
-                          {l.nearestName && <div className="text-slate-400 truncate">最近：{l.nearestName} {l.distKm}km</div>}
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </div>
-              );
-            })()}
         </>}
         </div>
-        
-        {/* 固定底部按鈕 */}
         {!lookupOnly && <div className="p-4 border-t border-gray-200 bg-white flex-shrink-0 grid grid-cols-2 gap-2 shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.05)]">
             <button 
-                onClick={() => {
-                    setRecalcTrigger(prev => prev + 1);
-                    setManualOverrides({}); 
-                    setSelectedPointForEdit(null); 
-                }} 
+                onClick={handleRecalc} 
                 className="flex items-center justify-center gap-1.5 bg-gray-100 border border-gray-300 text-gray-700 py-2.5 rounded-lg hover:bg-gray-200 transition-all text-xs font-bold shadow-sm"
             >
                 <IconRefresh className="w-4 h-4" />重新運算
@@ -1649,12 +1498,8 @@ const App = () => {
             </button>
         </div>}
       </div>
-
-      {/* Main Map Area */}
       <div className="flex-1 relative bg-gray-200 h-full">
          <div ref={(el) => { mapContainerRef.current = el; if (el && !mapContainerMounted) setMapContainerMounted(true); }} className="w-full h-full z-0" style={{minHeight: '400px'}} />
-         
-         {/* 懸浮資訊面板與視覺控制 */}
          <div className="absolute top-4 right-4 flex flex-col gap-2 z-[1000]">
              <div className="bg-white/95 backdrop-blur-sm p-4 rounded-xl shadow-lg border border-gray-200 text-xs w-[280px]">
                 <h4 className="font-bold mb-2 flex items-center gap-1.5 text-gray-800 border-b pb-1.5">
@@ -1666,8 +1511,6 @@ const App = () => {
                     <li><strong className="text-blue-600">按下重新運算，將會清除所有微調並歸零。</strong></li>
                 </ul>
              </div>
-             
-             {/* 勢力範圍切換按鈕 - 僅配送區域劃分工具顯示 */}
              {!lookupOnly && <button 
                 onClick={() => setShowPolygons(!showPolygons)}
                 className={`self-end flex items-center gap-2 px-3 py-2 rounded-lg shadow-md border text-xs font-bold transition-colors
@@ -1676,19 +1519,15 @@ const App = () => {
                 <IconMap className="w-4 h-4" />
                 {showPolygons ? '隱藏勢力範圍' : '顯示勢力範圍'}
              </button>}
-
-             {/* 行政區界 - 常駐顯示 */}
              <div className="self-end flex items-center gap-2 px-3 py-2 rounded-lg shadow-sm border border-slate-200 bg-slate-50 text-xs font-bold text-slate-600">
                 {adminBoundsLoading 
                   ? <div className="animate-spin h-3.5 w-3.5 border-b-2 border-slate-500 rounded-full"></div>
                   : adminBoundsError
-                  ? <button onClick={() => { setAdminBoundsError(false); setShowAdminBounds(true); }} className="text-red-500 flex items-center gap-1"><span>⚠️</span>重試載入</button>
+                  ? <button onClick={() => { setAdminBoundsError(false); setShowAdminBounds(true); }} className="text-red-500 flex items-center gap-1"><span>[!]</span>重試載入</button>
                   : <><IconPin className="w-4 h-4" /><span>行政區界</span></>}
              </div>
 
          </div>
-
-         {/* 載入中遮罩 */}
          {!mapInitialized && (
              <div className="absolute inset-0 flex items-center justify-center bg-gray-100/80 backdrop-blur z-50">
                 <div className="text-center p-6 bg-white rounded-2xl shadow-xl border border-gray-100">
@@ -1697,8 +1536,6 @@ const App = () => {
                 </div>
              </div>
          )}
-
-      {/* ===== 新增點位 Modal ===== */}
       {showAddModal && (
         <div className="fixed inset-0 bg-black/40 backdrop-blur-sm z-[9999] flex items-center justify-center p-4" onClick={() => setShowAddModal(false)}>
           <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md p-6 space-y-4" onClick={e => e.stopPropagation()}>
@@ -1724,8 +1561,6 @@ const App = () => {
           </div>
         </div>
       )}
-
-      {/* ===== 編輯點位 Modal ===== */}
       {editingPointData && (
         <div className="fixed inset-0 bg-black/40 backdrop-blur-sm z-[9999] flex items-center justify-center p-4" onClick={() => setEditingPointData(null)}>
           <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md p-6 space-y-4" onClick={e => e.stopPropagation()}>
@@ -1753,10 +1588,6 @@ const App = () => {
           </div>
         </div>
       )}
-
-         {/* =======================================
-             🚀 站點編輯浮動面板 (Manual Override Modal)
-             ======================================= */}
          {selectedPointForEdit && (
             <div className="absolute inset-0 z-[2000] flex items-center justify-center bg-black/30 backdrop-blur-sm transition-opacity">
                <div className="bg-white rounded-xl shadow-2xl w-80 overflow-hidden border border-gray-200 animate-in fade-in zoom-in duration-200">
@@ -1765,7 +1596,7 @@ const App = () => {
                          <IconPin className="w-5 h-5 text-blue-400" />
                          站點手動指派
                      </div>
-                     <button onClick={() => setSelectedPointForEdit(null)} className="text-gray-400 hover:text-white transition-colors text-xl leading-none">&times;</button>
+                     <button onClick={() => setSelectedPointForEdit(null)} className="text-gray-400 hover:text-white transition-colors text-xl leading-none">X</button>
                   </div>
                   <div className="p-5">
                       <div className="mb-4">
@@ -1794,8 +1625,6 @@ const App = () => {
                              ))}
                          </div>
                       </div>
-
-                      {/* 恢復自動分配按鈕 */}
                       {manualOverrides[selectedPointForEdit.id] !== undefined && (
                           <button 
                              onClick={() => {
