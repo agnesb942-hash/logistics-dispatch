@@ -298,7 +298,7 @@ const calcWCSS = (clusteredData, k) => {
 // ----------------------------------------------------------------------
 
 const App = () => {
-  // ── 入口頁狀態 ──────────────────────────────────────
+  // === 入口頁狀態 ===
   // mode: 'home' | 'dispatch' | 'lookup'
   const [appMode, setAppMode] = useState('home');
   const [pwInput, setPwInput] = useState('');
@@ -1078,7 +1078,7 @@ const App = () => {
     document.body.removeChild(link);
   };
 
-  // ── 入口首頁 ───────────────────────────────────────
+  // === 入口首頁 ===
   if (appMode === 'home') {
     return (
       <div style={{
@@ -1095,14 +1095,10 @@ const App = () => {
         {/* 背景格線 */}
         <div style={{
           position: 'absolute', inset: 0,
-          backgroundImage: `
-            linear-gradient(rgba(0,200,255,0.04) 1px, transparent 1px),
-            linear-gradient(90deg, rgba(0,200,255,0.04) 1px, transparent 1px)
-          `,
+          backgroundImage: 'linear-gradient(rgba(0,200,255,0.04) 1px, transparent 1px), linear-gradient(90deg, rgba(0,200,255,0.04) 1px, transparent 1px)',
           backgroundSize: '40px 40px',
           pointerEvents: 'none',
         }} />
-        {/* 角落裝飾線 */}
         <div style={{position:'absolute',top:24,left:24,width:60,height:60,borderTop:'2px solid rgba(0,200,255,0.4)',borderLeft:'2px solid rgba(0,200,255,0.4)'}} />
         <div style={{position:'absolute',top:24,right:24,width:60,height:60,borderTop:'2px solid rgba(0,200,255,0.4)',borderRight:'2px solid rgba(0,200,255,0.4)'}} />
         <div style={{position:'absolute',bottom:24,left:24,width:60,height:60,borderBottom:'2px solid rgba(0,200,255,0.4)',borderLeft:'2px solid rgba(0,200,255,0.4)'}} />
@@ -1150,7 +1146,7 @@ const App = () => {
           onClick={() => setAppMode('dispatch_login')}
           >
             <div style={{position:'absolute',top:-1,left:20,right:20,height:2,background:'linear-gradient(90deg,transparent,#00c8ff,transparent)'}} />
-            <div style={{fontSize:28,marginBottom:16}}>⬡</div>
+            <div style={{fontSize:28,marginBottom:16}}>◈</div>
             <div style={{fontSize:13,fontWeight:700,color:'#00c8ff',letterSpacing:2,marginBottom:8,textTransform:'uppercase'}}>
               配送區域劃分工具
             </div>
@@ -1203,7 +1199,7 @@ const App = () => {
               border:'1px solid rgba(251,191,36,0.3)',
               padding:'4px 10px',borderRadius:2,letterSpacing:1,
             }}>
-              ▶ 直接進入
+              → 直接進入
             </div>
           </div>
         </div>
@@ -1217,7 +1213,7 @@ const App = () => {
     );
   }
 
-  // ── 密碼輸入頁 ─────────────────────────────────────
+  // === 密碼輸入頁 ===
   if (appMode === 'dispatch_login') {
     return (
       <div style={{
@@ -1230,7 +1226,7 @@ const App = () => {
       }}>
         <div style={{
           position: 'absolute', inset: 0,
-          backgroundImage: `linear-gradient(rgba(0,200,255,0.04) 1px, transparent 1px), linear-gradient(90deg, rgba(0,200,255,0.04) 1px, transparent 1px)`,
+          backgroundImage: 'linear-gradient(rgba(0,200,255,0.04) 1px, transparent 1px), linear-gradient(90deg, rgba(0,200,255,0.04) 1px, transparent 1px)',
           backgroundSize: '40px 40px', pointerEvents: 'none',
         }} />
         <div style={{
