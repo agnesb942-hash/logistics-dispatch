@@ -1542,8 +1542,7 @@ const App = () => {
                         '"' + (l.route||'').replace(/"/g,'""') + '"',
                         l.distKm, l.roundTrip
                       ].join(','));
-                      const blob = new Blob([BOM + [header.join(','), ...rows].join('
-')], { type: 'text/csv;charset=utf-8;' });
+                      const blob = new Blob([BOM + [header.join(','), ...rows].join('\n')], { type: 'text/csv;charset=utf-8;' });
                       const a = document.createElement('a');
                       a.href = URL.createObjectURL(blob);
                       a.download = '指送查詢紀錄_' + (logDateFrom||'all') + '_' + (logDateTo||'all') + '.csv';
