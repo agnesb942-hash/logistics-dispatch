@@ -450,37 +450,45 @@ const App = () => {
       const targetLng = location.lng;
       const resolvedName = geoData.results[0].formatted_address || '';
 
-      // 第二步：找最近建檔點位（跨所有區域比對）
-      let bestPoint = null, bestDist = Infinity;
-      for (const p of ALL_POINTS) {
-        const d = haversineKm(targetLat, targetLng, p.lat, p.lng);
-        if (d < bestDist) { bestDist = d; bestPoint = p; }
-      }
-      if (!bestPoint) {
+      // 第二步：找最近兩個建檔點位（跨所有區域比對，依距離排序）
+      const allWithDist = ALL_POINTS.map(p => ({
+        ...p,
+        dist: haversineKm(targetLat, targetLng, p.lat, p.lng)
+      })).sort((a, b) => a.dist - b.dist);
+
+      if (allWithDist.length === 0) {
         setDeliveryLookupResult({ ok: false, msg: '系統尚無建檔點位資料可供比對。' });
         setDeliveryLookupLoading(false);
         return;
       }
 
-      // 第三步：估算行駛時間（路網修正係數 1.3，平均時速 35 km/h）
-      const roadDist = bestDist * 1.3;
-      const roundTripMin = (roadDist * 2 / 35) * 60;
+      // 取最近兩筆
+      const top2 = allWithDist.slice(0, 2).map(p => {
+        const roadDist = p.dist * 1.3;
+        const roundTripMin = (roadDist * 2 / 35) * 60;
+        return { ...p, roadDist: roadDist.toFixed(1), roundTripMin: roundTripMin.toFixed(1) };
+      });
+
+      const best = top2[0];
+      const roundTripMin = parseFloat(best.roundTripMin);
 
       if (roundTripMin <= 25) {
         setDeliveryLookupResult({
           ok: true, msg: '✅ 可配送',
-          route: bestPoint.route, nearestName: bestPoint.name,
-          distKm: roadDist.toFixed(1), roundTrip: roundTripMin.toFixed(1),
+          route: best.route, nearestName: best.name,
+          distKm: best.roadDist, roundTrip: best.roundTripMin,
           resolved: resolvedName, lat: targetLat, lng: targetLng,
-          trafficNote: '（估算值）'
+          trafficNote: '（估算值）',
+          top2,
         });
       } else {
         setDeliveryLookupResult({
           ok: false, msg: '❌ 超出配送範圍',
-          nearestName: bestPoint.name,
-          distKm: roadDist.toFixed(1), roundTrip: roundTripMin.toFixed(1),
+          nearestName: best.name,
+          distKm: best.roadDist, roundTrip: best.roundTripMin,
           resolved: resolvedName, lat: targetLat, lng: targetLng,
-          trafficNote: '（估算值）'
+          trafficNote: '（估算值）',
+          top2,
         });
       }
     } catch (err) {
@@ -970,10 +978,7 @@ const App = () => {
     // 切換到派車設定分頁時，恢復叢集標記
     if (activeTab !== 'lookup' || !deliveryLookupResult || !deliveryLookupResult.lat) return;
 
-    const { lat, lng, nearestName, ok } = deliveryLookupResult;
-
-    // 找到最近建檔點位的座標
-    const nearestPoint = ALL_POINTS.find(p => p.name === nearestName);
+    const { lat, lng, ok, top2 } = deliveryLookupResult;
 
     // 查詢地址標記（大圖釘）
     const queryIcon = window.L.divIcon({
@@ -994,38 +999,43 @@ const App = () => {
       .addTo(map);
     lookupLayersRef.current.push(queryMarker);
 
-    // 最近建檔點位標記
-    if (nearestPoint) {
-      const nearestIcon = window.L.divIcon({
-        className: 'custom-div-icon',
-        html: `<div style="
-          background: #f59e0b;
-          width: 16px; height: 16px;
-          border-radius: 50%;
-          border: 3px solid white;
-          box-shadow: 0 0 0 3px #f59e0b55;
-        "></div>`,
-        iconSize: [16, 16],
-        iconAnchor: [8, 8]
+    // 最近兩個建檔點位標記 + 連線
+    const markerColors = ['#f59e0b', '#8b5cf6'];
+    const markerLabels = ['第1近', '第2近'];
+    const allMapMarkers = [queryMarker];
+
+    if (top2) {
+      top2.forEach((p, idx) => {
+        const ptIcon = window.L.divIcon({
+          className: 'custom-div-icon',
+          html: `<div style="
+            background: ${markerColors[idx]};
+            width: ${idx === 0 ? 16 : 13}px; height: ${idx === 0 ? 16 : 13}px;
+            border-radius: 50%;
+            border: 3px solid white;
+            box-shadow: 0 0 0 3px ${markerColors[idx]}55;
+          "></div>`,
+          iconSize: [idx === 0 ? 16 : 13, idx === 0 ? 16 : 13],
+          iconAnchor: [idx === 0 ? 8 : 6.5, idx === 0 ? 8 : 6.5]
+        });
+        const ptMarker = window.L.marker([p.lat, p.lng], { icon: ptIcon })
+          .bindTooltip(`<div class="text-xs font-sans p-1"><strong>📍 ${markerLabels[idx]}建檔點位</strong><br/>${p.name}<br/><span class="text-gray-500">${p.route}・${p.roadDist} km・往返 ${p.roundTripMin} 分</span></div>`, { direction: 'top', offset: [0, -10] })
+          .addTo(map);
+        lookupLayersRef.current.push(ptMarker);
+        allMapMarkers.push(ptMarker);
+
+        // 連線（第1近實線，第2近虛線）
+        const line = window.L.polyline(
+          [[lat, lng], [p.lat, p.lng]],
+          { color: markerColors[idx], weight: idx === 0 ? 2.5 : 1.5, dashArray: idx === 0 ? null : '4, 6', opacity: idx === 0 ? 0.85 : 0.5 }
+        ).addTo(map);
+        lookupLayersRef.current.push(line);
       });
-      const nearestMarker = window.L.marker([nearestPoint.lat, nearestPoint.lng], { icon: nearestIcon })
-        .bindTooltip(`<div class="text-xs font-sans p-1"><strong>📍 最近建檔點位</strong><br/>${nearestPoint.name}<br/><span class="text-gray-500">${nearestPoint.route}</span></div>`, { direction: 'top', offset: [0, -10] })
-        .addTo(map);
-      lookupLayersRef.current.push(nearestMarker);
-
-      // 連線（虛線）
-      const line = window.L.polyline(
-        [[lat, lng], [nearestPoint.lat, nearestPoint.lng]],
-        { color: ok ? '#16a34a' : '#dc2626', weight: 2, dashArray: '6, 6', opacity: 0.7 }
-      ).addTo(map);
-      lookupLayersRef.current.push(line);
-
-      // 自動縮放到兩點範圍
-      const group = window.L.featureGroup([queryMarker, nearestMarker]);
-      map.fitBounds(group.getBounds(), { padding: [80, 80] });
-    } else {
-      map.setView([lat, lng], 14);
     }
+
+    // 自動縮放到所有標記範圍
+    const group = window.L.featureGroup(allMapMarkers);
+    map.fitBounds(group.getBounds(), { padding: [80, 80] });
 
   }, [deliveryLookupResult, activeTab, mapInitialized]);
 
@@ -1272,18 +1282,23 @@ const App = () => {
                         {deliveryLookupResult.route && (
                             <div className="text-green-800 font-bold text-base">建議由「<span className="text-green-600 bg-green-100 px-2 py-0.5 rounded">{deliveryLookupResult.route}</span>」承接配送</div>
                         )}
-                        {deliveryLookupResult.nearestName && (
-                            <div className="text-gray-600 text-xs space-y-1.5 pt-2 border-t border-gray-200 mt-2">
-                                <div className="flex justify-between"><span className="text-gray-400">最近建檔點位</span><span className="font-bold text-gray-700">{deliveryLookupResult.nearestName}</span></div>
-                                <div className="flex justify-between"><span className="text-gray-400">實際路程距離（單程）</span><span className="font-bold text-gray-700">{deliveryLookupResult.distKm} km</span></div>
-                                <div className="flex justify-between items-center">
-                                    <span className="text-gray-400">預估往返時間</span>
-                                    <span className={`font-bold ${deliveryLookupResult.ok ? 'text-green-700' : 'text-red-600'}`}>
-                                        {deliveryLookupResult.roundTrip} 分鐘
-                                        <span className="ml-1 text-[10px] font-normal text-gray-400">{deliveryLookupResult.trafficNote}</span>
-                                    </span>
-                                </div>
-                                {deliveryLookupResult.resolved && <div className="text-gray-400 text-[10px] mt-2 p-2 bg-gray-50 rounded">🗺️ 系統定位：{deliveryLookupResult.resolved}</div>}
+                        {deliveryLookupResult.top2 && (
+                            <div className="text-gray-600 text-xs space-y-2 pt-2 border-t border-gray-200 mt-2">
+                                {deliveryLookupResult.top2.map((p, idx) => (
+                                    <div key={p.name} className={`p-2.5 rounded-lg border ${idx === 0 ? 'bg-white border-gray-200' : 'bg-gray-50 border-gray-100'}`}>
+                                        <div className="flex items-center gap-1.5 mb-1.5">
+                                            <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded ${idx === 0 ? 'bg-blue-100 text-blue-700' : 'bg-gray-200 text-gray-600'}`}>
+                                                第 {idx + 1} 近
+                                            </span>
+                                            <span className="font-bold text-gray-800">{p.name}</span>
+                                        </div>
+                                        <div className="flex justify-between text-[11px]">
+                                            <span className="text-gray-400">路線：{p.route}</span>
+                                            <span className="text-gray-500">{p.roadDist} km・{p.roundTripMin} 分（往返）</span>
+                                        </div>
+                                    </div>
+                                ))}
+                                {deliveryLookupResult.resolved && <div className="text-gray-400 text-[10px] mt-1 p-2 bg-gray-50 rounded">🗺️ 系統定位：{deliveryLookupResult.resolved}</div>}
                             </div>
                         )}
                     </div>
