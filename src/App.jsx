@@ -1241,7 +1241,7 @@ const App = () => {
               ))}
               {pwChangeMsg && (
                 <div style={{fontSize:10,marginTop:6,padding:'4px 8px',borderRadius:2,background:pwChangeMsg.startsWith('ok')?'rgba(34,197,94,0.15)':'rgba(239,68,68,0.15)',color:pwChangeMsg.startsWith('ok')?'#4ade80':'#f87171'}}>
-                  {pwChangeMsg.replace(/^(ok|error):/, '')}
+                  {pwChangeMsg.startsWith('ok:') || pwChangeMsg.startsWith('error:') ? pwChangeMsg.slice(pwChangeMsg.indexOf(':')+1) : pwChangeMsg}
                 </div>
               )}
               <button onClick={handleChangePw} style={{width:'100%',marginTop:8,padding:'8px 0',background:'rgba(0,200,255,0.12)',border:'1px solid rgba(0,200,255,0.3)',borderRadius:2,color:'#00c8ff',fontSize:11,letterSpacing:2,cursor:'pointer',fontFamily:'inherit'}}>
