@@ -395,6 +395,7 @@ const App = () => {
   const [mapInitialized, setMapInitialized] = useState(false);
   const mapContainerRef = useRef(null);
   const mapInstanceRef = useRef(null);
+  const [mapContainerMounted, setMapContainerMounted] = useState(false);
   const markersRef = useRef({});
   const polygonLayersRef = useRef([]); // Ref for storing polygon layers & stem lines
   const adminLayerRef = useRef(null);
@@ -838,32 +839,21 @@ const App = () => {
   // mapContainerRef.current is NOT a valid dep (ref doesn't trigger re-render)
   // Instead we poll until container is available after leaflet loads
   useEffect(() => {
-    if (!leafletReady) return;
+    if (!leafletReady || !mapContainerMounted || !mapContainerRef.current || !window.L) return;
     if (mapInstanceRef.current) {
-      // Already initialized - just invalidate size (handles re-entry from home)
       setTimeout(() => mapInstanceRef.current && mapInstanceRef.current.invalidateSize(), 100);
       return;
     }
-    // Poll for container mount (handles case where appMode switches to 'main' after leaflet loads)
-    let attempts = 0;
-    const tryInit = () => {
-      if (mapInstanceRef.current) return;
-      if (!mapContainerRef.current || !window.L) {
-        if (++attempts < 50) setTimeout(tryInit, 100); // retry up to 5s
-        return;
-      }
-      const map = window.L.map(mapContainerRef.current, { preferCanvas: true }).setView([23.05, 120.22], 12);
-      window.L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-        attribution: '&copy; OpenStreetMap contributors', subdomains: 'abc', maxZoom: 19
-      }).addTo(map);
-      mapInstanceRef.current = map;
-      setMapInitialized(true);
-      setTimeout(() => map.invalidateSize(), 100);
-      const resizeObserver = new ResizeObserver(() => map.invalidateSize());
-      resizeObserver.observe(mapContainerRef.current);
-    };
-    tryInit();
-  }, [leafletReady, appMode]);
+    const map = window.L.map(mapContainerRef.current, { preferCanvas: true }).setView([23.05, 120.22], 12);
+    window.L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+      attribution: '&copy; OpenStreetMap contributors', subdomains: 'abc', maxZoom: 19
+    }).addTo(map);
+    mapInstanceRef.current = map;
+    setMapInitialized(true);
+    setTimeout(() => map.invalidateSize(), 100);
+    const ro = new ResizeObserver(() => map.invalidateSize());
+    ro.observe(mapContainerRef.current);
+  }, [leafletReady, mapContainerMounted]);
 
   // Update Markers AND Polygons based on Final Data
   useEffect(() => {
@@ -1525,9 +1515,14 @@ const App = () => {
 
             {/* ===== 查詢紀錄統計 ===== */}
             {(() => {
+              const todayStr = new Date().toLocaleDateString('zh-TW');
+              const todayLogs = queryLogs.filter(l => new Date(l.ts).toLocaleDateString('zh-TW') === todayStr);
               const total = queryLogs.length;
               const success = queryLogs.filter(l => l.ok).length;
               const fail = total - success;
+              const todayTotal = todayLogs.length;
+              const todaySuccess = todayLogs.filter(l => l.ok).length;
+              const todayFail = todayTotal - todaySuccess;
               return (
                 <div className="bg-slate-800 rounded-xl p-4 space-y-3">
                   <div className="flex items-center justify-between">
@@ -1536,6 +1531,22 @@ const App = () => {
                       {showLogs ? '收合' : '展開明細'}
                     </button>
                   </div>
+                  <div className="text-[10px] text-slate-400 tracking-widest mb-1">當日紀錄</div>
+                  <div className="grid grid-cols-3 gap-2">
+                    <div className="bg-slate-700 rounded-lg p-2 text-center">
+                      <div className="text-[10px] text-slate-400 mb-1">今日查詢</div>
+                      <div className="text-lg font-black text-white">{todayTotal}</div>
+                    </div>
+                    <div className="bg-green-900 rounded-lg p-2 text-center">
+                      <div className="text-[10px] text-green-400 mb-1">可配送</div>
+                      <div className="text-lg font-black text-green-300">{todaySuccess}</div>
+                    </div>
+                    <div className="bg-red-900 rounded-lg p-2 text-center">
+                      <div className="text-[10px] text-red-400 mb-1">超出範圍</div>
+                      <div className="text-lg font-black text-red-300">{todayFail}</div>
+                    </div>
+                  </div>
+                  <div className="text-[10px] text-slate-400 tracking-widest mb-1 pt-1 border-t border-slate-700">累計紀錄</div>
                   <div className="grid grid-cols-3 gap-2">
                     <div className="bg-slate-700 rounded-lg p-2 text-center">
                       <div className="text-[10px] text-slate-400 mb-1">總查詢</div>
@@ -1586,9 +1597,15 @@ const App = () => {
                       匯出 CSV
                     </button>
                     {queryLogs.length > 0 && (
-                      <button onClick={() => { if(window.confirm('確定清除所有查詢紀錄？')) { setQueryLogs([]); try { localStorage.removeItem('query_logs'); } catch(e) {} } }}
-                        className="w-full py-1.5 bg-transparent border border-red-800 text-red-400 text-[10px] rounded tracking-widest hover:bg-red-900 transition-all">
-                        清除紀錄
+                      <button onClick={() => {
+                        const pw = window.prompt('請輸入管理員授權碼以清除紀錄：');
+                        if (pw === null) return;
+                        if (pw !== 'LOGI89567324') { window.alert('授權碼錯誤，無法清除紀錄'); return; }
+                        if (window.confirm('授權成功。確定清除所有查詢紀錄？')) {
+                          setQueryLogs([]); try { localStorage.removeItem('query_logs'); } catch(e) {}
+                        }
+                      }} className="w-full py-1.5 bg-transparent border border-red-800 text-red-400 text-[10px] rounded tracking-widest hover:bg-red-900 transition-all">
+                        清除紀錄（需授權碼）
                       </button>
                     )}
                   </div>
@@ -1635,7 +1652,7 @@ const App = () => {
 
       {/* Main Map Area */}
       <div className="flex-1 relative bg-gray-200 h-full">
-         <div ref={mapContainerRef} className="w-full h-full z-0" style={{minHeight: '400px'}} />
+         <div ref={(el) => { mapContainerRef.current = el; if (el && !mapContainerMounted) setMapContainerMounted(true); }} className="w-full h-full z-0" style={{minHeight: '400px'}} />
          
          {/* 懸浮資訊面板與視覺控制 */}
          <div className="absolute top-4 right-4 flex flex-col gap-2 z-[1000]">
@@ -1800,6 +1817,7 @@ const App = () => {
          )}
       </div>
     </div>
+  </div>
   );
 };
 
