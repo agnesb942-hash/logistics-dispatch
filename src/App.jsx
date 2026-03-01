@@ -1094,7 +1094,7 @@ const App = () => {
           iconAnchor: [idx === 0 ? 8 : 6.5, idx === 0 ? 8 : 6.5]
         });
         const ptMarker = window.L.marker([p.lat, p.lng], { icon: ptIcon })
-          .bindTooltip(`<div class="text-xs font-sans p-1"><strong>📍 ${markerLabels[idx]}建檔點位</strong><br/>${p.name}<br/><span class="text-gray-500">${p.route}・${p.roadDist} km・往返 ${p.roundTripMin} 分</span></div>`, { direction: 'top', offset: [0, -10] })
+          .bindTooltip(`<div class="text-xs font-sans p-1"><strong>[P] ${markerLabels[idx]}建檔點位</strong><br/>${p.name}<br/><span class="text-gray-500">${p.route}・${p.roadDist} km・往返 ${p.roundTripMin} 分</span></div>`, { direction: 'top', offset: [0, -10] })
           .addTo(map);
         lookupLayersRef.current.push(ptMarker);
         allMapMarkers.push(ptMarker);
@@ -1166,14 +1166,14 @@ const App = () => {
       + '<div style="display:flex;gap:32px;position:relative;z-index:1;flex-wrap:wrap;justify-content:center;padding:0 24px">'
         + '<div id="card-dispatch" style="' + cardStyle('0,200,255') + '">'
           + '<div style="position:absolute;top:-1px;left:20px;right:20px;height:2px;background:linear-gradient(90deg,transparent,#00c8ff,transparent)"></div>'
-          + '<div style="font-size:28px;margin-bottom:16px;color:#00c8ff">🚚</div>'
+          + '<div style="font-size:28px;margin-bottom:16px;color:#00c8ff">&#128666;</div>'
           + '<div style="font-size:13px;font-weight:700;color:#00c8ff;letter-spacing:2px;margin-bottom:8px;text-transform:uppercase">\u914d\u9001\u5340\u57df\u5283\u5206\u5de5\u5177</div>'
           + '<div style="font-size:11px;color:rgba(255,255,255,0.45);line-height:1.7;margin-bottom:20px">K-Means++ \u6f14\u7b97\u6cd5\u81ea\u52d5\u5206\u7fa4<br>\u8eca\u8f1b\u6307\u6d3e - \u91cc\u7a0b\u5747\u8861 - \u624b\u52d5\u5fae\u8abf</div>'
           + '<div style="display:inline-flex;align-items:center;gap:6px;font-size:10px;color:rgba(0,200,255,0.7);border:1px solid rgba(0,200,255,0.3);padding:4px 10px;border-radius:2px;letter-spacing:1px">[LOCK] \u9700\u8981\u6388\u6b0a</div>'
         + '</div>'
         + '<div id="card-lookup" style="width:280px;padding:32px 28px;border-radius:4px;cursor:pointer;position:relative;transition:all 0.2s;border:1px solid rgba(251,191,36,0.2);background:rgba(251,191,36,0.04)">'
           + '<div style="position:absolute;top:-1px;left:20px;right:20px;height:2px;background:linear-gradient(90deg,transparent,#fbbf24,transparent)"></div>'
-          + '<div style="font-size:24px;margin-bottom:16px;color:#fbbf24">🗺️</div>'
+          + '<div style="font-size:24px;margin-bottom:16px;color:#fbbf24">&#128506;</div>'
           + '<div style="font-size:13px;font-weight:700;color:#fbbf24;letter-spacing:2px;margin-bottom:8px;text-transform:uppercase">\u6307\u9001\u5730\u5740\u67e5\u8a62</div>'
           + '<div style="font-size:11px;color:rgba(255,255,255,0.45);line-height:1.7;margin-bottom:20px">\u8f38\u5165\u5ba2\u6236\u5730\u5740\u5373\u6642\u67e5\u8a62<br>\u53ef\u884c\u6027\u8a55\u4f30 - \u6700\u8fd1\u9ede\u4f4d - \u5f80\u8fd4\u6642\u9593</div>'
           + '<div style="display:inline-flex;align-items:center;gap:6px;font-size:10px;color:rgba(251,191,36,0.7);border:1px solid rgba(251,191,36,0.3);padding:4px 10px;border-radius:2px;letter-spacing:1px">&gt; \u76f4\u63a5\u9032\u5165</div>'
@@ -1249,8 +1249,8 @@ const App = () => {
               </button>
             </div>
           )}
-          <button onClick={() => { setPwInput(''); setPwError(false); setLookupOnly(false); setAppMode('home'); }} style={{width:'100%',marginTop:10,padding:'8px 0',background:'transparent',border:'none',color:'rgba(255,255,255,0.25)',fontSize:10,letterSpacing:2,cursor:'pointer',fontFamily:'inherit'}}>
-            {'← 返回'}
+          <button onClick={() => { setPwInput(''); setPwError(false); setLookupOnly(false); setMapContainerMounted(false); mapInstanceRef.current = null; setMapInitialized(false); setAppMode('home'); }} style={{width:'100%',marginTop:10,padding:'8px 0',background:'transparent',border:'none',color:'rgba(255,255,255,0.25)',fontSize:10,letterSpacing:2,cursor:'pointer',fontFamily:'inherit'}}>
+            {'<-- 返回'}
           </button>
         </div>
       </div>
@@ -1270,12 +1270,12 @@ const App = () => {
                 {activeTab === 'lookup' ? '指送地址查詢' : '配送區域劃分工具'}
               </h1>
             </div>
-            <button onClick={() => { setAppMode('home'); setLookupOnly(false); }}
+            <button onClick={() => { setAppMode('home'); setLookupOnly(false); setMapContainerMounted(false); mapInstanceRef.current = null; setMapInitialized(false); }}
               className="text-[10px] tracking-widest uppercase"
               style={{color:'rgba(0,200,255,0.5)',background:'none',border:'none',cursor:'pointer',letterSpacing:2}}
               onMouseEnter={e => e.currentTarget.style.color='rgba(0,200,255,0.9)'}
               onMouseLeave={e => e.currentTarget.style.color='rgba(0,200,255,0.5)'}
-            >← HOME</button>
+            >&lt;-- HOME</button>
           </div>
           <div className="text-[10px]" style={{color:'rgba(255,255,255,0.35)',letterSpacing:1}}>
             {lookupOnly ? '全區 625 筆 | 即時查詢' : activeTab === 'lookup' ? '全區 625 筆 | 即時查詢' : `${REGION_LABELS[activeRegion] || '自訂'} | ${deliveryPoints.length} 筆`}
@@ -1391,7 +1391,7 @@ const App = () => {
                 {/* 多輪篩選設定 */}
                 <div className="space-y-2">
                    <div className="flex justify-between items-center text-sm">
-                      <label className="text-gray-700 font-bold flex items-center gap-1">🎯 最佳結果篩選</label>
+                      <label className="text-gray-700 font-bold flex items-center gap-1">[*] 最佳結果篩選</label>
                       <span className="font-bold text-blue-600 bg-blue-50 px-2 py-0.5 rounded">{multiRunCount} 輪</span>
                    </div>
                    <input type="range" min="1" max="30" step="1" value={multiRunCount} onChange={(e) => setMultiRunCount(parseInt(e.target.value))} className="w-full h-1.5 bg-gray-300 rounded-lg appearance-none cursor-pointer accent-blue-600" />
@@ -1463,8 +1463,8 @@ const App = () => {
         {/* ===== 指送查詢分頁 ===== */}
         {activeTab === 'lookup' && <>
             <div className="bg-white p-4 rounded-xl border border-amber-200 shadow-sm space-y-4">
-                <h3 className="text-sm font-bold text-amber-700 border-b border-amber-100 pb-2 flex items-center gap-1.5">📦 指送地址可行性查詢</h3>
-                <p className="text-xs text-gray-500 leading-relaxed">輸入客戶詢問的配送地址，系統自動比對最近建檔點位，判斷是否在配送範圍內（往返 ≤ 25 分鐘）。</p>
+                <h3 className="text-sm font-bold text-amber-700 border-b border-amber-100 pb-2 flex items-center gap-1.5">[pkg] 指送地址可行性查詢</h3>
+                <p className="text-xs text-gray-500 leading-relaxed">輸入客戶詢問的配送地址，系統自動比對最近建檔點位，判斷是否在配送範圍內（往返 25 分鐘以內）。</p>
                 <div className="flex gap-2">
                     <input value={deliveryLookupAddr} onChange={e => setDeliveryLookupAddr(e.target.value)}
                         onKeyDown={e => e.key === 'Enter' && handleDeliveryLookup()}
@@ -1507,9 +1507,9 @@ const App = () => {
                 <h4 className="text-xs font-bold text-gray-600">計算說明</h4>
                 <div className="text-[10px] text-gray-400 leading-relaxed space-y-1">
                     <div>- 地址轉座標：Google Maps Geocoding API（台灣完整覆蓋）</div>
-                    <div>- 距離公式：Haversine 直線距離 × 1.3 路網修正係數</div>
-                    <div>- 往返時間：路程距離 × 2 ÷ 平均車速 35 km per h</div>
-                    <div>- 門檻設定：往返 ≤ 25 分鐘判定為可配送</div>
+                    <div>- 距離公式：Haversine 直線距離 x1.3 路網修正係數</div>
+                    <div>- 往返時間：路程距離 x2 除以 平均車速 35 km per h</div>
+                    <div>- 門檻設定：往返 25 分鐘內判定為可配送</div>
                 </div>
             </div>
 
@@ -1526,7 +1526,7 @@ const App = () => {
               return (
                 <div className="bg-slate-800 rounded-xl p-4 space-y-3">
                   <div className="flex items-center justify-between">
-                    <h4 className="text-xs font-bold text-white tracking-widest uppercase">查詢紀錄統計</h4>
+                    <div><h4 className="text-xs font-bold text-white tracking-widest uppercase">查詢紀錄統計</h4><div className="text-[9px] text-slate-500 mt-0.5">儲存於本機瀏覽器，換裝置或清除快取後歸零</div></div>
                     <button onClick={() => setShowLogs(v => !v)} className="text-[10px] text-cyan-400 border border-cyan-800 px-2 py-1 rounded hover:bg-cyan-900 transition-all">
                       {showLogs ? '收合' : '展開明細'}
                     </button>
