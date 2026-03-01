@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 
 // ----------------------------------------------------------------------
@@ -1493,7 +1492,6 @@ const App = () => {
          )}
       </div>
     </div>
-  </div>
   );
 };
 
