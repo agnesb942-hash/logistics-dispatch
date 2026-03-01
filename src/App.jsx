@@ -1765,9 +1765,7 @@ const App = () => {
         </div>
       )}
 
-         {/* =======================================
-             🚀 站點編輯浮動面板 (Manual Override Modal)
-             ======================================= */}
+         {/* Station Edit Panel - Manual Override Modal */}
          {selectedPointForEdit && (
             <div className="absolute inset-0 z-[2000] flex items-center justify-center bg-black/30 backdrop-blur-sm transition-opacity">
                <div className="bg-white rounded-xl shadow-2xl w-80 overflow-hidden border border-gray-200 animate-in fade-in zoom-in duration-200">
