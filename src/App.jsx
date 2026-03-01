@@ -426,34 +426,73 @@ const App = () => {
     if (!deliveryLookupAddr.trim()) return;
     setDeliveryLookupLoading(true);
     setDeliveryLookupResult(null);
-    try {
-      // 第一步：地址轉座標（Nominatim），加入 10 秒逾時保護
+
+    // 自動產生降階查詢候選清單：完整地址 → 去門牌 → 去號數 → 只到路名
+    const raw = deliveryLookupAddr.trim();
+    const buildCandidates = (addr) => {
+      const candidates = [];
+      candidates.push(addr); // 原始輸入
+      // 去除末尾數字門牌（例如 86號、86-2號）
+      const noNum = addr.replace(/\d+(-\d+)?號.*$/, '').trim();
+      if (noNum && noNum !== addr) candidates.push(noNum);
+      // 去除巷弄（保留到路/街/大道）
+      const noLane = addr.replace(/[0-9]+[巷弄].*$/, '').trim();
+      if (noLane && noLane !== addr && noLane !== noNum) candidates.push(noLane);
+      return [...new Set(candidates)];
+    };
+    const candidates = buildCandidates(raw);
+
+    const nominatimFetch = async (query) => {
       const controller = new AbortController();
       const timeoutId = setTimeout(() => controller.abort(), 10000);
-      let geoData;
       try {
-        const geoRes = await fetch(
-          `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(deliveryLookupAddr.trim())}&format=json&countrycodes=tw&limit=1`,
+        const res = await fetch(
+          `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(query + ' 台灣')}&format=json&countrycodes=tw&limit=1`,
           { headers: { 'Accept': 'application/json', 'Accept-Language': 'zh-TW' }, signal: controller.signal }
         );
         clearTimeout(timeoutId);
-        if (!geoRes.ok) throw new Error(`HTTP ${geoRes.status}`);
-        geoData = await geoRes.json();
-      } catch (fetchErr) {
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const data = await res.json();
+        return data && data.length > 0 ? data[0] : null;
+      } catch (err) {
         clearTimeout(timeoutId);
-        const isTimeout = fetchErr.name === 'AbortError';
-        setDeliveryLookupResult({ ok: false, msg: isTimeout ? '地址查詢逾時，請確認網路連線後重試。' : '⚠️ 此功能需部署為獨立網頁才能使用。Claude Artifact 沙盒環境封鎖對外部 API 的連線，導致地址查詢無法執行。' });
+        if (err.name === 'AbortError') throw new Error('TIMEOUT');
+        throw err;
+      }
+    };
+
+    try {
+      let geoResult = null;
+      let usedQuery = raw;
+      let isFallback = false;
+
+      for (let i = 0; i < candidates.length; i++) {
+        try {
+          geoResult = await nominatimFetch(candidates[i]);
+          if (geoResult) {
+            usedQuery = candidates[i];
+            isFallback = i > 0;
+            break;
+          }
+        } catch (err) {
+          if (err.message === 'TIMEOUT') {
+            setDeliveryLookupResult({ ok: false, msg: '地址查詢逾時，請確認網路連線後重試。' });
+            setDeliveryLookupLoading(false);
+            return;
+          }
+          // 其他錯誤繼續嘗試下一個候選
+        }
+      }
+
+      if (!geoResult) {
+        setDeliveryLookupResult({ ok: false, msg: '無法辨識該地址，請嘗試簡化輸入（例如只填到路名，如「台南市安南區工業一路」）。' });
         setDeliveryLookupLoading(false);
         return;
       }
-      if (!geoData || geoData.length === 0) {
-        setDeliveryLookupResult({ ok: false, msg: '無法辨識該地址，請確認輸入是否正確（建議包含縣市區名稱）。' });
-        setDeliveryLookupLoading(false);
-        return;
-      }
-      const targetLat = parseFloat(geoData[0].lat);
-      const targetLng = parseFloat(geoData[0].lon);
-      const resolvedName = geoData[0].display_name || '';
+
+      const targetLat = parseFloat(geoResult.lat);
+      const targetLng = parseFloat(geoResult.lon);
+      const resolvedName = geoResult.display_name || '';
 
       // 第二步：找最近建檔點位（直線距離）
       let bestPoint = null, bestDist = Infinity;
@@ -470,6 +509,7 @@ const App = () => {
       // 第三步：估算行駛時間（路網修正係數 1.3，平均時速 35 km/h）
       const roadDist = bestDist * 1.3;
       const roundTripMin = (roadDist * 2 / 35) * 60;
+      const fallbackNote = isFallback ? `（地址簡化為「${usedQuery}」後定位）` : '';
 
       if (roundTripMin <= 25) {
         setDeliveryLookupResult({
@@ -477,7 +517,7 @@ const App = () => {
           route: bestPoint.route, nearestName: bestPoint.name,
           distKm: roadDist.toFixed(1), roundTrip: roundTripMin.toFixed(1),
           resolved: resolvedName, lat: targetLat, lng: targetLng,
-          trafficNote: '（估算值）'
+          trafficNote: `（估算值）${fallbackNote}`
         });
       } else {
         setDeliveryLookupResult({
@@ -485,11 +525,11 @@ const App = () => {
           nearestName: bestPoint.name,
           distKm: roadDist.toFixed(1), roundTrip: roundTripMin.toFixed(1),
           resolved: resolvedName, lat: targetLat, lng: targetLng,
-          trafficNote: '（估算值）'
+          trafficNote: `（估算值）${fallbackNote}`
         });
       }
     } catch (err) {
-      setDeliveryLookupResult({ ok: false, msg: '⚠️ 此功能需部署為獨立網頁才能使用。Claude Artifact 沙盒環境封鎖對外部 API 的連線，導致地址查詢無法執行。' });
+      setDeliveryLookupResult({ ok: false, msg: '地址查詢服務暫時無法使用，請稍後再試。' });
     }
     setDeliveryLookupLoading(false);
   };
