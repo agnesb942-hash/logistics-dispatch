@@ -387,7 +387,7 @@ const App = () => {
   const [errorMessage, setErrorMessage] = useState("");
   const [isLoadingFile, setIsLoadingFile] = useState(false);
   const [showPolygons, setShowPolygons] = useState(true); // Toggle for Convex Hulls
-  const [showAdminBounds, setShowAdminBounds] = useState(false); // Toggle for admin boundaries
+  const [showAdminBounds, setShowAdminBounds] = useState(true); // Always-on admin boundaries
   const [adminBoundsLoading, setAdminBoundsLoading] = useState(false);
   const [adminBoundsError, setAdminBoundsError] = useState(false);
   const [windowHeight, setWindowHeight] = useState(600);
@@ -834,20 +834,36 @@ const App = () => {
     loadLeaflet();
   }, []);
 
-  // Step 2: Initialize map as soon as Leaflet is ready AND container is mounted (no artificial delay)
+  // Step 2: Initialize map - triggered by leafletReady OR appMode change (entering main)
+  // mapContainerRef.current is NOT a valid dep (ref doesn't trigger re-render)
+  // Instead we poll until container is available after leaflet loads
   useEffect(() => {
-    if (!leafletReady || mapInstanceRef.current || !mapContainerRef.current) return;
-    if (!window.L) return;
-    const map = window.L.map(mapContainerRef.current, { preferCanvas: true }).setView([23.05, 120.22], 12);
-    window.L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-      attribution: '&copy; OpenStreetMap contributors', subdomains: 'abc', maxZoom: 19
-    }).addTo(map);
-    mapInstanceRef.current = map;
-    setMapInitialized(true);
-    setTimeout(() => map.invalidateSize(), 50);
-    const resizeObserver = new ResizeObserver(() => map.invalidateSize());
-    resizeObserver.observe(mapContainerRef.current);
-  }, [leafletReady, mapContainerRef.current]);
+    if (!leafletReady) return;
+    if (mapInstanceRef.current) {
+      // Already initialized - just invalidate size (handles re-entry from home)
+      setTimeout(() => mapInstanceRef.current && mapInstanceRef.current.invalidateSize(), 100);
+      return;
+    }
+    // Poll for container mount (handles case where appMode switches to 'main' after leaflet loads)
+    let attempts = 0;
+    const tryInit = () => {
+      if (mapInstanceRef.current) return;
+      if (!mapContainerRef.current || !window.L) {
+        if (++attempts < 50) setTimeout(tryInit, 100); // retry up to 5s
+        return;
+      }
+      const map = window.L.map(mapContainerRef.current, { preferCanvas: true }).setView([23.05, 120.22], 12);
+      window.L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+        attribution: '&copy; OpenStreetMap contributors', subdomains: 'abc', maxZoom: 19
+      }).addTo(map);
+      mapInstanceRef.current = map;
+      setMapInitialized(true);
+      setTimeout(() => map.invalidateSize(), 100);
+      const resizeObserver = new ResizeObserver(() => map.invalidateSize());
+      resizeObserver.observe(mapContainerRef.current);
+    };
+    tryInit();
+  }, [leafletReady, appMode]);
 
   // Update Markers AND Polygons based on Final Data
   useEffect(() => {
@@ -968,8 +984,8 @@ const App = () => {
 
       const layer = window.L.geoJSON(filtered, {
         style: {
-          color: '#64748b',
-          weight: 1.5,
+          color: '#1e293b',
+          weight: 2.5,
           fillColor: '#94a3b8',
           fillOpacity: 0.04,
           dashArray: '4, 4'
@@ -1160,14 +1176,14 @@ const App = () => {
       + '<div style="display:flex;gap:32px;position:relative;z-index:1;flex-wrap:wrap;justify-content:center;padding:0 24px">'
         + '<div id="card-dispatch" style="' + cardStyle('0,200,255') + '">'
           + '<div style="position:absolute;top:-1px;left:20px;right:20px;height:2px;background:linear-gradient(90deg,transparent,#00c8ff,transparent)"></div>'
-          + '<div style="font-size:24px;margin-bottom:16px;color:#00c8ff">[ ]</div>'
+          + '<div style="font-size:28px;margin-bottom:16px;color:#00c8ff">🚚</div>'
           + '<div style="font-size:13px;font-weight:700;color:#00c8ff;letter-spacing:2px;margin-bottom:8px;text-transform:uppercase">\u914d\u9001\u5340\u57df\u5283\u5206\u5de5\u5177</div>'
           + '<div style="font-size:11px;color:rgba(255,255,255,0.45);line-height:1.7;margin-bottom:20px">K-Means++ \u6f14\u7b97\u6cd5\u81ea\u52d5\u5206\u7fa4<br>\u8eca\u8f1b\u6307\u6d3e - \u91cc\u7a0b\u5747\u8861 - \u624b\u52d5\u5fae\u8abf</div>'
           + '<div style="display:inline-flex;align-items:center;gap:6px;font-size:10px;color:rgba(0,200,255,0.7);border:1px solid rgba(0,200,255,0.3);padding:4px 10px;border-radius:2px;letter-spacing:1px">[LOCK] \u9700\u8981\u6388\u6b0a</div>'
         + '</div>'
         + '<div id="card-lookup" style="width:280px;padding:32px 28px;border-radius:4px;cursor:pointer;position:relative;transition:all 0.2s;border:1px solid rgba(251,191,36,0.2);background:rgba(251,191,36,0.04)">'
           + '<div style="position:absolute;top:-1px;left:20px;right:20px;height:2px;background:linear-gradient(90deg,transparent,#fbbf24,transparent)"></div>'
-          + '<div style="font-size:24px;margin-bottom:16px;color:#fbbf24">( )</div>'
+          + '<div style="font-size:24px;margin-bottom:16px;color:#fbbf24">🗺️</div>'
           + '<div style="font-size:13px;font-weight:700;color:#fbbf24;letter-spacing:2px;margin-bottom:8px;text-transform:uppercase">\u6307\u9001\u5730\u5740\u67e5\u8a62</div>'
           + '<div style="font-size:11px;color:rgba(255,255,255,0.45);line-height:1.7;margin-bottom:20px">\u8f38\u5165\u5ba2\u6236\u5730\u5740\u5373\u6642\u67e5\u8a62<br>\u53ef\u884c\u6027\u8a55\u4f30 - \u6700\u8fd1\u9ede\u4f4d - \u5f80\u8fd4\u6642\u9593</div>'
           + '<div style="display:inline-flex;align-items:center;gap:6px;font-size:10px;color:rgba(251,191,36,0.7);border:1px solid rgba(251,191,36,0.3);padding:4px 10px;border-radius:2px;letter-spacing:1px">&gt; \u76f4\u63a5\u9032\u5165</div>'
@@ -1634,30 +1650,24 @@ const App = () => {
                 </ul>
              </div>
              
-             {/* 勢力範圍切換按鈕 */}
-             <button 
+             {/* 勢力範圍切換按鈕 - 僅配送區域劃分工具顯示 */}
+             {!lookupOnly && <button 
                 onClick={() => setShowPolygons(!showPolygons)}
                 className={`self-end flex items-center gap-2 px-3 py-2 rounded-lg shadow-md border text-xs font-bold transition-colors
                   ${showPolygons ? 'bg-blue-50 text-blue-700 border-blue-200' : 'bg-white text-gray-600 border-gray-300 hover:bg-gray-50'}`}
              >
                 <IconMap className="w-4 h-4" />
                 {showPolygons ? '隱藏勢力範圍' : '顯示勢力範圍'}
-             </button>
+             </button>}
 
-             {/* 行政區界切換按鈕 */}
-             <button 
-                onClick={() => { setAdminBoundsError(false); setShowAdminBounds(!showAdminBounds); }}
-                className={`self-end flex items-center gap-2 px-3 py-2 rounded-lg shadow-md border text-xs font-bold transition-colors
-                  ${adminBoundsError ? 'bg-red-50 text-red-600 border-red-300' :
-                    showAdminBounds ? 'bg-slate-100 text-slate-700 border-slate-300' : 'bg-white text-gray-600 border-gray-300 hover:bg-gray-50'}`}
-             >
+             {/* 行政區界 - 常駐顯示 */}
+             <div className="self-end flex items-center gap-2 px-3 py-2 rounded-lg shadow-sm border border-slate-200 bg-slate-50 text-xs font-bold text-slate-600">
                 {adminBoundsLoading 
-                  ? <div className="animate-spin h-3.5 w-3.5 border-b-2 border-current rounded-full"></div>
+                  ? <div className="animate-spin h-3.5 w-3.5 border-b-2 border-slate-500 rounded-full"></div>
                   : adminBoundsError
-                  ? <span>⚠️</span>
-                  : <IconPin className="w-4 h-4" />}
-                {adminBoundsLoading ? '載入中...' : adminBoundsError ? '載入失敗，點擊重試' : showAdminBounds ? '隱藏行政區界' : '顯示行政區界'}
-             </button>
+                  ? <button onClick={() => { setAdminBoundsError(false); setShowAdminBounds(true); }} className="text-red-500 flex items-center gap-1"><span>⚠️</span>重試載入</button>
+                  : <><IconPin className="w-4 h-4" /><span>行政區界</span></>}
+             </div>
 
          </div>
 
