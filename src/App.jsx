@@ -799,43 +799,55 @@ const App = () => {
   // ==========================================
   // Map Initialization & Updates
   // ==========================================
+  // Step 1: Load Leaflet as early as possible (runs on first render, before user even enters main)
   useEffect(() => {
-    if (document.getElementById('leaflet-script')) {
-      if (window.L) setLeafletReady(true);
-      return;
-    }
-    if (!document.getElementById('leaflet-css')) {
-      const link = document.createElement('link');
-      link.id = 'leaflet-css';
-      link.rel = 'stylesheet';
-      link.href = 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css';
-      document.head.appendChild(link);
-    }
-    const script = document.createElement('script');
-    script.id = 'leaflet-script';
-    script.src = 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js';
-    script.async = true;
-    script.onload = () => setLeafletReady(true);
-    document.body.appendChild(script);
+    const loadLeaflet = () => {
+      if (window.L) { setLeafletReady(true); return; }
+      if (!document.getElementById('leaflet-css')) {
+        const link = document.createElement('link');
+        link.id = 'leaflet-css';
+        link.rel = 'stylesheet';
+        link.href = 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css';
+        document.head.appendChild(link);
+      }
+      if (document.getElementById('leaflet-script')) {
+        // Script tag exists but onload may have already fired before we listened
+        // Poll until window.L is available
+        const poll = setInterval(() => { if (window.L) { setLeafletReady(true); clearInterval(poll); } }, 100);
+        setTimeout(() => clearInterval(poll), 10000);
+        return;
+      }
+      const script = document.createElement('script');
+      script.id = 'leaflet-script';
+      script.src = 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js';
+      script.async = true;
+      script.onload = () => setLeafletReady(true);
+      script.onerror = () => {
+        // Fallback: retry once with unpkg
+        const s2 = document.createElement('script');
+        s2.src = 'https://unpkg.com/leaflet@1.9.4/dist/leaflet.js';
+        s2.onload = () => setLeafletReady(true);
+        document.body.appendChild(s2);
+      };
+      document.body.appendChild(script);
+    };
+    loadLeaflet();
   }, []);
 
+  // Step 2: Initialize map as soon as Leaflet is ready AND container is mounted (no artificial delay)
   useEffect(() => {
-    if (leafletReady && !mapInstanceRef.current && mapContainerRef.current) {
-      const initTimer = setTimeout(() => {
-        if (!mapContainerRef.current || mapInstanceRef.current) return;
-        const map = window.L.map(mapContainerRef.current, { preferCanvas: true }).setView([23.05, 120.22], 12);
-        window.L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-          attribution: '&copy; OpenStreetMap contributors', subdomains: 'abc', maxZoom: 19
-        }).addTo(map);
-        mapInstanceRef.current = map;
-        setMapInitialized(true);
-        setTimeout(() => map.invalidateSize(), 100);
-        const resizeObserver = new ResizeObserver(() => map.invalidateSize());
-        resizeObserver.observe(mapContainerRef.current);
-      }, 300);
-      return () => clearTimeout(initTimer);
-    }
-  }, [leafletReady, windowHeight]);
+    if (!leafletReady || mapInstanceRef.current || !mapContainerRef.current) return;
+    if (!window.L) return;
+    const map = window.L.map(mapContainerRef.current, { preferCanvas: true }).setView([23.05, 120.22], 12);
+    window.L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+      attribution: '&copy; OpenStreetMap contributors', subdomains: 'abc', maxZoom: 19
+    }).addTo(map);
+    mapInstanceRef.current = map;
+    setMapInitialized(true);
+    setTimeout(() => map.invalidateSize(), 50);
+    const resizeObserver = new ResizeObserver(() => map.invalidateSize());
+    resizeObserver.observe(mapContainerRef.current);
+  }, [leafletReady, mapContainerRef.current]);
 
   // Update Markers AND Polygons based on Final Data
   useEffect(() => {
@@ -1117,6 +1129,13 @@ const App = () => {
   };
 
   // === 入口首頁 ===
+  // 首頁即預載 Leaflet，不等進入主介面才開始下載
+  if (appMode === 'home' && !document.getElementById('leaflet-script') && !window.L) {
+    const _pl = document.createElement('link');
+    _pl.rel = 'preload'; _pl.as = 'script';
+    _pl.href = 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js';
+    if (!document.querySelector('link[href*="leaflet.min.js"]')) document.head.appendChild(_pl);
+  }
   const currentYear = new Date().getFullYear();
   if (appMode === 'home') {
     const yr = String(new Date().getFullYear());
