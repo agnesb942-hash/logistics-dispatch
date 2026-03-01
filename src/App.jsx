@@ -301,6 +301,7 @@ const App = () => {
   // === 入口頁狀態 ===
   // mode: 'home' | 'dispatch' | 'lookup'
   const [appMode, setAppMode] = useState('home');
+  const [lookupOnly, setLookupOnly] = useState(false);
   const [pwInput, setPwInput] = useState('');
   const [pwError, setPwError] = useState(false);
   const DISPATCH_PASSWORD = 'logistics2024';
@@ -308,6 +309,7 @@ const App = () => {
   const handleDispatchLogin = () => {
     if (pwInput === DISPATCH_PASSWORD) {
       setAppMode('main');
+      setLookupOnly(false);
       setActiveTab('settings');
       setPwError(false);
       setPwInput('');
@@ -1125,7 +1127,7 @@ const App = () => {
           const card = e.target.closest && e.target.closest('#card-dispatch,#card-lookup');
           if (!card) return;
           if (card.id === 'card-dispatch') setAppMode('dispatch_login');
-          else { setActiveTab('lookup'); setAppMode('main'); }
+          else { setLookupOnly(true); setActiveTab('lookup'); setAppMode('main'); }
         }}
       />
     );
@@ -1160,7 +1162,7 @@ const App = () => {
           <button onClick={handleDispatchLogin} style={{width:'100%',marginTop:20,padding:'10px 0',background:'rgba(0,200,255,0.12)',border:'1px solid rgba(0,200,255,0.4)',borderRadius:2,color:'#00c8ff',fontSize:12,letterSpacing:3,fontWeight:700,cursor:'pointer',fontFamily:'inherit',textTransform:'uppercase'}}>
             ENTER
           </button>
-          <button onClick={() => { setPwInput(''); setPwError(false); setAppMode('home'); }} style={{width:'100%',marginTop:10,padding:'8px 0',background:'transparent',border:'none',color:'rgba(255,255,255,0.25)',fontSize:10,letterSpacing:2,cursor:'pointer',fontFamily:'inherit'}}>
+          <button onClick={() => { setPwInput(''); setPwError(false); setLookupOnly(false); setAppMode('home'); }} style={{width:'100%',marginTop:10,padding:'8px 0',background:'transparent',border:'none',color:'rgba(255,255,255,0.25)',fontSize:10,letterSpacing:2,cursor:'pointer',fontFamily:'inherit'}}>
             {'← 返回'}
           </button>
         </div>
@@ -1181,7 +1183,7 @@ const App = () => {
                 {activeTab === 'lookup' ? '指送地址查詢' : '配送區域劃分工具'}
               </h1>
             </div>
-            <button onClick={() => setAppMode('home')}
+            <button onClick={() => { setAppMode('home'); setLookupOnly(false); }}
               className="text-[10px] tracking-widest uppercase"
               style={{color:'rgba(0,200,255,0.5)',background:'none',border:'none',cursor:'pointer',letterSpacing:2}}
               onMouseEnter={e => e.currentTarget.style.color='rgba(0,200,255,0.9)'}
@@ -1189,12 +1191,12 @@ const App = () => {
             >← HOME</button>
           </div>
           <div className="text-[10px]" style={{color:'rgba(255,255,255,0.35)',letterSpacing:1}}>
-            {activeTab === 'lookup' ? '全區 625 筆 | 即時查詢' : `${REGION_LABELS[activeRegion] || '自訂'} | ${deliveryPoints.length} 筆`}
+            {lookupOnly ? '全區 625 筆 | 即時查詢' : activeTab === 'lookup' ? '全區 625 筆 | 即時查詢' : `${REGION_LABELS[activeRegion] || '自訂'} | ${deliveryPoints.length} 筆`}
           </div>
         </div>
 
         {/* 固定營運數據區塊 */}
-        <div className="grid grid-cols-2 gap-3 p-4 bg-slate-50 border-b border-gray-200 flex-shrink-0">
+        {!lookupOnly && <div className="grid grid-cols-2 gap-3 p-4 bg-slate-50 border-b border-gray-200 flex-shrink-0">
             <div className="text-center p-3 bg-white rounded-lg border border-gray-100 shadow-sm">
                 <div className="text-[10px] text-gray-500 font-bold mb-1">單量最大落差</div>
                 <div className={`text-xl font-black ${maxCount - minCount > 20 ? 'text-red-500' : 'text-green-600'}`}>
@@ -1215,10 +1217,10 @@ const App = () => {
                 <div className="text-[10px] text-gray-500 font-bold mb-1">里程範圍</div>
                 <div className="text-sm font-black text-slate-700">{minKm}~{maxKm} <span className="text-xs font-bold text-gray-400">km</span></div>
             </div>
-        </div>
+        </div>}
 
         {/* 分頁切換 */}
-        <div className="flex border-b border-gray-200 bg-white flex-shrink-0">
+        {!lookupOnly && <div className="flex border-b border-gray-200 bg-white flex-shrink-0">
           <button onClick={() => setActiveTab('settings')}
             className={`flex-1 py-2.5 text-sm font-bold transition-all border-b-2 ${activeTab === 'settings' ? 'border-blue-600 text-blue-600 bg-blue-50/50' : 'border-transparent text-gray-500 hover:text-gray-700'}`}>
             🚛 派車設定
@@ -1227,7 +1229,7 @@ const App = () => {
             className={`flex-1 py-2.5 text-sm font-bold transition-all border-b-2 ${activeTab === 'lookup' ? 'border-amber-500 text-amber-600 bg-amber-50/50' : 'border-transparent text-gray-500 hover:text-gray-700'}`}>
             📦 指送查詢
           </button>
-        </div>
+        </div>}
 
         {/* 核心捲動區域 */}
         <div className="flex-1 overflow-y-auto p-4 space-y-5 custom-scrollbar bg-white">
@@ -1437,7 +1439,7 @@ const App = () => {
         </div>
         
         {/* 固定底部按鈕 */}
-        <div className="p-4 border-t border-gray-200 bg-white flex-shrink-0 grid grid-cols-2 gap-2 shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.05)]">
+        {!lookupOnly && <div className="p-4 border-t border-gray-200 bg-white flex-shrink-0 grid grid-cols-2 gap-2 shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.05)]">
             <button 
                 onClick={() => {
                     setRecalcTrigger(prev => prev + 1);
@@ -1451,7 +1453,7 @@ const App = () => {
             <button onClick={handleExport} className="flex items-center justify-center gap-1.5 bg-blue-600 border border-transparent text-white py-2.5 rounded-lg hover:bg-blue-700 transition-all text-xs font-bold shadow-sm">
                 <IconDownload className="w-4 h-4" />匯出報表
             </button>
-        </div>
+        </div>}
       </div>
 
       {/* Main Map Area */}
