@@ -1256,6 +1256,49 @@ const App = () => {
       </div>
     );
   }
+
+  // ===== Extracted onClick handlers (keeps JSX clean) =====
+  const handleExportQueryLogs = () => {
+    const from = logDateFrom ? new Date(logDateFrom + 'T00:00:00') : new Date(0);
+    const to = logDateTo ? new Date(logDateTo + 'T23:59:59') : new Date();
+    const filtered = queryLogs.filter(function(l) { var d = new Date(l.ts); return d >= from && d <= to; });
+    if (filtered.length === 0) { alert('該區間無紀錄'); return; }
+    const BOM = '\uFEFF';
+    const header = ['查詢時間','輸入地址','系統定位','結果','最近點位','路線','距離(km)','往返(分)'];
+    const rows = filtered.map(function(l) {
+      return [
+        new Date(l.ts).toLocaleString('zh-TW'),
+        '"' + l.addr.split('"').join('""') + '"',
+        '"' + (l.resolved||'').split('"').join('""') + '"',
+        l.ok ? '可配送' : '超出範圍',
+        '"' + (l.nearestName||'').split('"').join('""') + '"',
+        '"' + (l.route||'').split('"').join('""') + '"',
+        l.distKm, l.roundTrip
+      ].join(',');
+    });
+    const blob = new Blob([BOM + [header.join(',')].concat(rows).join('\n')], { type: 'text/csv;charset=utf-8;' });
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = '指送查詢紀錄_' + (logDateFrom||'all') + '_' + (logDateTo||'all') + '.csv';
+    a.click();
+  };
+
+  const handleClearQueryLogs = () => {
+    const pw = window.prompt('請輸入管理員授權碼以清除紀錄：');
+    if (pw === null) return;
+    if (pw !== 'LOGI89567324') { window.alert('授權碼錯誤，無法清除紀錄'); return; }
+    if (window.confirm('授權成功 - 確定清除所有查詢紀錄？')) {
+      setQueryLogs([]); try { localStorage.removeItem('query_logs'); } catch(e) {}
+    }
+  };
+
+  const handleRecalc = () => {
+    setRecalcTrigger(function(prev) { return prev + 1; });
+    setManualOverrides({});
+    setSelectedPointForEdit(null);
+  };
+
+
   return (
     <div className="flex w-full bg-gray-100 font-sans text-gray-900 overflow-hidden relative" style={{height: `${windowHeight}px`}}>
       
@@ -1572,39 +1615,11 @@ const App = () => {
                       <input type="date" value={logDateTo} onChange={e => setLogDateTo(e.target.value)}
                         className="flex-1 bg-slate-700 border border-slate-600 text-white text-xs rounded px-2 py-1.5 outline-none focus:border-cyan-500" />
                     </div>
-                    <button onClick={() => {
-                      const from = logDateFrom ? new Date(logDateFrom + 'T00:00:00') : new Date(0);
-                      const to = logDateTo ? new Date(logDateTo + 'T23:59:59') : new Date();
-                      const filtered = queryLogs.filter(l => { const d = new Date(l.ts); return d >= from && d <= to; });
-                      if (filtered.length === 0) { alert('該區間無紀錄'); return; }
-                      const BOM = '﻿';
-                      const header = ['查詢時間','輸入地址','系統定位','結果','最近點位','路線','距離(km)','往返(分)'];
-                      const rows = filtered.map(l => [
-                        new Date(l.ts).toLocaleString('zh-TW'),
-                        '"' + l.addr.split('"').join('""') + '"',
-                        '"' + (l.resolved||'').split('"').join('""') + '"',
-                        l.ok ? '可配送' : '超出範圍',
-                        '"' + (l.nearestName||'').split('"').join('""') + '"',
-                        '"' + (l.route||'').split('"').join('""') + '"',
-                        l.distKm, l.roundTrip
-                      ].join(','));
-                      const blob = new Blob([BOM + [header.join(','), ...rows].join('\n')], { type: 'text/csv;charset=utf-8;' });
-                      const a = document.createElement('a');
-                      a.href = URL.createObjectURL(blob);
-                      a.download = '指送查詢紀錄_' + (logDateFrom||'all') + '_' + (logDateTo||'all') + '.csv';
-                      a.click();
-                    }} className="w-full py-2 bg-cyan-700 hover:bg-cyan-600 text-white text-xs font-bold rounded tracking-widest transition-all">
+                    <button onClick={handleExportQueryLogs} className="w-full py-2 bg-cyan-700 hover:bg-cyan-600 text-white text-xs font-bold rounded tracking-widest transition-all">
                       匯出 CSV
                     </button>
                     {queryLogs.length > 0 && (
-                      <button onClick={() => {
-                        const pw = window.prompt('請輸入管理員授權碼以清除紀錄：');
-                        if (pw === null) return;
-                        if (pw !== 'LOGI89567324') { window.alert('授權碼錯誤，無法清除紀錄'); return; }
-                        if (window.confirm('授權成功 - 確定清除所有查詢紀錄？')) {
-                          setQueryLogs([]); try { localStorage.removeItem('query_logs'); } catch(e) {}
-                        }
-                      }} className="w-full py-1.5 bg-transparent border border-red-800 text-red-400 text-[10px] rounded tracking-widest hover:bg-red-900 transition-all">
+                      <button onClick={handleClearQueryLogs} className="w-full py-1.5 bg-transparent border border-red-800 text-red-400 text-[10px] rounded tracking-widest hover:bg-red-900 transition-all">
                         清除紀錄（需授權碼）
                       </button>
                     )}
@@ -1635,11 +1650,7 @@ const App = () => {
         {/* 固定底部按鈕 */}
         {!lookupOnly && <div className="p-4 border-t border-gray-200 bg-white flex-shrink-0 grid grid-cols-2 gap-2 shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.05)]">
             <button 
-                onClick={() => {
-                    setRecalcTrigger(prev => prev + 1);
-                    setManualOverrides({}); 
-                    setSelectedPointForEdit(null); 
-                }} 
+                onClick={handleRecalc} 
                 className="flex items-center justify-center gap-1.5 bg-gray-100 border border-gray-300 text-gray-700 py-2.5 rounded-lg hover:bg-gray-200 transition-all text-xs font-bold shadow-sm"
             >
                 <IconRefresh className="w-4 h-4" />重新運算
