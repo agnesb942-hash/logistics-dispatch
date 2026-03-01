@@ -1479,7 +1479,7 @@ const App = () => {
                     <div className={`p-4 rounded-xl text-sm space-y-2 ${deliveryLookupResult.ok ? 'bg-green-50 border border-green-200' : 'bg-red-50 border border-red-200'}`}>
                         <div className={`font-bold text-lg ${deliveryLookupResult.ok ? 'text-green-700' : 'text-red-700'}`}>{deliveryLookupResult.msg}</div>
                         {deliveryLookupResult.route && (
-                            <div className="text-green-800 font-bold text-base">建議由「<span className="text-green-600 bg-green-100 px-2 py-0.5 rounded">{deliveryLookupResult.route}</span>」承接配送</div>
+                            <div className="text-green-800 font-bold text-base">建議由[<span className="text-green-600 bg-green-100 px-2 py-0.5 rounded">{deliveryLookupResult.route}</span>]承接配送</div>
                         )}
                         {deliveryLookupResult.top2 && (
                             <div className="text-gray-600 text-xs space-y-2 pt-2 border-t border-gray-200 mt-2">
@@ -1493,11 +1493,11 @@ const App = () => {
                                         </div>
                                         <div className="flex justify-between text-[11px]">
                                             <span className="text-gray-400">路線：{p.route}</span>
-                                            <span className="text-gray-500">{p.roadDist} km・{p.roundTripMin} 分（往返）</span>
+                                            <span className="text-gray-500">{p.roadDist} km - {p.roundTripMin} 分（往返）</span>
                                         </div>
                                     </div>
                                 ))}
-                                {deliveryLookupResult.resolved && <div className="text-gray-400 text-[10px] mt-1 p-2 bg-gray-50 rounded">🗺️ 系統定位：{deliveryLookupResult.resolved}</div>}
+                                {deliveryLookupResult.resolved && <div className="text-gray-400 text-[10px] mt-1 p-2 bg-gray-50 rounded">{'Map: '}{deliveryLookupResult.resolved}</div>}
                             </div>
                         )}
                     </div>
@@ -1506,10 +1506,10 @@ const App = () => {
             <div className="bg-gray-50 p-3 rounded-lg border border-gray-100 space-y-2">
                 <h4 className="text-xs font-bold text-gray-600">計算說明</h4>
                 <div className="text-[10px] text-gray-400 leading-relaxed space-y-1">
-                    <div>• 地址轉座標：Google Maps Geocoding API（台灣完整覆蓋）</div>
-                    <div>• 距離公式：Haversine 直線距離 × 1.3 路網修正係數</div>
-                    <div>• 往返時間：路程距離 × 2 ÷ 平均車速 35 km/h</div>
-                    <div>• 門檻設定：往返 ≤ 25 分鐘判定為可配送</div>
+                    <div>- 地址轉座標：Google Maps Geocoding API（台灣完整覆蓋）</div>
+                    <div>- 距離公式：Haversine 直線距離 × 1.3 路網修正係數</div>
+                    <div>- 往返時間：路程距離 × 2 ÷ 平均車速 35 km per h</div>
+                    <div>- 門檻設定：往返 ≤ 25 分鐘判定為可配送</div>
                 </div>
             </div>
 
@@ -1601,7 +1601,7 @@ const App = () => {
                         const pw = window.prompt('請輸入管理員授權碼以清除紀錄：');
                         if (pw === null) return;
                         if (pw !== 'LOGI89567324') { window.alert('授權碼錯誤，無法清除紀錄'); return; }
-                        if (window.confirm('授權成功。確定清除所有查詢紀錄？')) {
+                        if (window.confirm('授權成功 - 確定清除所有查詢紀錄？')) {
                           setQueryLogs([]); try { localStorage.removeItem('query_logs'); } catch(e) {}
                         }
                       }} className="w-full py-1.5 bg-transparent border border-red-800 text-red-400 text-[10px] rounded tracking-widest hover:bg-red-900 transition-all">
@@ -1682,7 +1682,7 @@ const App = () => {
                 {adminBoundsLoading 
                   ? <div className="animate-spin h-3.5 w-3.5 border-b-2 border-slate-500 rounded-full"></div>
                   : adminBoundsError
-                  ? <button onClick={() => { setAdminBoundsError(false); setShowAdminBounds(true); }} className="text-red-500 flex items-center gap-1"><span>⚠️</span>重試載入</button>
+                  ? <button onClick={() => { setAdminBoundsError(false); setShowAdminBounds(true); }} className="text-red-500 flex items-center gap-1"><span>[!]</span>重試載入</button>
                   : <><IconPin className="w-4 h-4" /><span>行政區界</span></>}
              </div>
 
