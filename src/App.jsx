@@ -1303,8 +1303,6 @@ const App = () => {
     <div className="flex w-full bg-gray-100 font-sans text-gray-900 overflow-hidden relative" style={{height: `${windowHeight}px`}}>
       
       <div className="w-[400px] bg-white shadow-2xl flex flex-col z-20 h-full flex-shrink-0 border-r border-gray-200">
-        
-        {/* 固定頂部標題 */}
         <div className="p-4 bg-slate-900 text-white flex-shrink-0 shadow-md z-10" style={{borderBottom:'1px solid rgba(0,200,255,0.2)'}}>
           <div className="flex items-center justify-between mb-1">
             <div className="flex items-center gap-2.5">
@@ -1324,8 +1322,6 @@ const App = () => {
             {lookupOnly ? '全區 625 筆 | 即時查詢' : activeTab === 'lookup' ? '全區 625 筆 | 即時查詢' : `${REGION_LABELS[activeRegion] || '自訂'} | ${deliveryPoints.length} 筆`}
           </div>
         </div>
-
-        {/* 固定營運數據區塊 */}
         {!lookupOnly && <div className="grid grid-cols-2 gap-3 p-4 bg-slate-50 border-b border-gray-200 flex-shrink-0">
             <div className="text-center p-3 bg-white rounded-lg border border-gray-100 shadow-sm">
                 <div className="text-[10px] text-gray-500 font-bold mb-1">單量最大落差</div>
@@ -1349,12 +1345,7 @@ const App = () => {
             </div>
         </div>}
 
-        {/* 分頁切換已移除：派車工具固定顯示設定，查詢工具為獨立入口 */}
-
-        {/* 核心捲動區域 */}
         <div className="flex-1 overflow-y-auto p-4 space-y-5 custom-scrollbar bg-white">
-            
-        {/* 錯誤提示 */}
         {errorMessage && (
             <div className="bg-red-50 text-red-600 border border-red-200 p-3 rounded-md text-sm flex items-start gap-2 shadow-sm">
                 <IconAlert className="w-4 h-4 flex-shrink-0 mt-0.5" />
@@ -1363,10 +1354,7 @@ const App = () => {
         )}
 
         {activeTab === 'settings' && <>
-        {/* 控制面板區塊 */}
         <div className="bg-gray-50 p-4 rounded-xl border border-gray-200 space-y-5">
-            
-            {/* 區域選擇按鈕 */}
             <div className="bg-white p-3 rounded-lg border border-gray-200 shadow-sm space-y-3">
                 <h3 className="text-xs font-bold text-gray-700 border-b border-gray-100 pb-2">配送區域切換</h3>
                 <div className="grid grid-cols-2 gap-2">
@@ -1378,8 +1366,6 @@ const App = () => {
                   ))}
                 </div>
             </div>
-
-            {/* 資料管理按鈕列 */}
             <div className="flex gap-2">
                 <button onClick={() => { setAddForm({ name: '', route: '', address: '', lat: '', lng: '' }); setShowAddModal(true); }}
                   className="flex-1 flex items-center justify-center gap-1.5 py-2 rounded-lg text-sm font-bold bg-emerald-50 text-emerald-700 border border-emerald-200 hover:bg-emerald-100 transition-all">
@@ -1405,8 +1391,6 @@ const App = () => {
                    </div>
                    <input type="range" min="1" max="10" step="1" value={vehicleCount} onChange={(e) => setVehicleCount(parseInt(e.target.value))} className="w-full h-1.5 bg-gray-300 rounded-lg appearance-none cursor-pointer accent-blue-600" />
                 </div>
-
-                {/* 平衡模式 */}
                 <div className="space-y-2">
                    <label className="text-sm text-gray-700 font-bold">均分模式</label>
                    <div className="grid grid-cols-3 gap-1.5">
@@ -1430,8 +1414,6 @@ const App = () => {
                       <span>車輛滿載平均</span>
                    </div>
                 </div>
-
-                {/* 多輪篩選設定 */}
                 <div className="space-y-2">
                    <div className="flex justify-between items-center text-sm">
                       <label className="text-gray-700 font-bold flex items-center gap-1">[*] 最佳結果篩選</label>
@@ -1447,8 +1429,6 @@ const App = () => {
                    </div>
                 </div>
             </div>
-
-            {/* 區域分配結果清單 */}
             <div>
                 <div className="flex items-center justify-between mb-3 border-b pb-2">
                     <h2 className="text-sm font-bold text-gray-800">各車輛指派結果</h2>
@@ -1478,8 +1458,6 @@ const App = () => {
                         </div>
                     ))}
                 </div>
-
-                {/* 展開之車輛詳細清單 */}
                 {activeCluster !== null && (
                   <div className="mt-4 bg-gray-50 border border-gray-200 p-3 rounded-xl">
                      <div className="flex justify-between items-center mb-3">
@@ -1502,8 +1480,6 @@ const App = () => {
                 )}
             </div>
         </>}
-
-        {/* ===== 指送查詢分頁 ===== */}
         {activeTab === 'lookup' && <>
             <div className="bg-white p-4 rounded-xl border border-amber-200 shadow-sm space-y-4">
                 <h3 className="text-sm font-bold text-amber-700 border-b border-amber-100 pb-2 flex items-center gap-1.5">[pkg] 指送地址可行性查詢</h3>
@@ -1555,8 +1531,6 @@ const App = () => {
                     <div>- 門檻設定：往返 25 分鐘內判定為可配送</div>
                 </div>
             </div>
-
-            {/* ===== 查詢紀錄統計 ===== */}
             {(() => {
               const todayStr = new Date().toLocaleDateString('zh-TW');
               const todayLogs = queryLogs.filter(l => new Date(l.ts).toLocaleDateString('zh-TW') === todayStr);
@@ -1604,8 +1578,6 @@ const App = () => {
                       <div className="text-lg font-black text-red-300">{fail}</div>
                     </div>
                   </div>
-
-                  {/* 匯出區間 */}
                   <div className="space-y-2">
                     <div className="text-[10px] text-slate-400 tracking-widest uppercase">匯出日期區間</div>
                     <div className="flex gap-2">
@@ -1624,8 +1596,6 @@ const App = () => {
                       </button>
                     )}
                   </div>
-
-                  {/* 明細列表 */}
                   {showLogs && (
                     <div className="max-h-48 overflow-y-auto space-y-1.5 pr-1">
                       {queryLogs.length === 0 && <div className="text-slate-500 text-xs text-center py-4">尚無查詢紀錄</div>}
@@ -1646,8 +1616,6 @@ const App = () => {
             })()}
         </>}
         </div>
-        
-        {/* 固定底部按鈕 */}
         {!lookupOnly && <div className="p-4 border-t border-gray-200 bg-white flex-shrink-0 grid grid-cols-2 gap-2 shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.05)]">
             <button 
                 onClick={handleRecalc} 
@@ -1660,12 +1628,8 @@ const App = () => {
             </button>
         </div>}
       </div>
-
-      {/* Main Map Area */}
       <div className="flex-1 relative bg-gray-200 h-full">
          <div ref={(el) => { mapContainerRef.current = el; if (el && !mapContainerMounted) setMapContainerMounted(true); }} className="w-full h-full z-0" style={{minHeight: '400px'}} />
-         
-         {/* 懸浮資訊面板與視覺控制 */}
          <div className="absolute top-4 right-4 flex flex-col gap-2 z-[1000]">
              <div className="bg-white/95 backdrop-blur-sm p-4 rounded-xl shadow-lg border border-gray-200 text-xs w-[280px]">
                 <h4 className="font-bold mb-2 flex items-center gap-1.5 text-gray-800 border-b pb-1.5">
@@ -1677,8 +1641,6 @@ const App = () => {
                     <li><strong className="text-blue-600">按下重新運算，將會清除所有微調並歸零。</strong></li>
                 </ul>
              </div>
-             
-             {/* 勢力範圍切換按鈕 - 僅配送區域劃分工具顯示 */}
              {!lookupOnly && <button 
                 onClick={() => setShowPolygons(!showPolygons)}
                 className={`self-end flex items-center gap-2 px-3 py-2 rounded-lg shadow-md border text-xs font-bold transition-colors
@@ -1687,8 +1649,6 @@ const App = () => {
                 <IconMap className="w-4 h-4" />
                 {showPolygons ? '隱藏勢力範圍' : '顯示勢力範圍'}
              </button>}
-
-             {/* 行政區界 - 常駐顯示 */}
              <div className="self-end flex items-center gap-2 px-3 py-2 rounded-lg shadow-sm border border-slate-200 bg-slate-50 text-xs font-bold text-slate-600">
                 {adminBoundsLoading 
                   ? <div className="animate-spin h-3.5 w-3.5 border-b-2 border-slate-500 rounded-full"></div>
@@ -1698,8 +1658,6 @@ const App = () => {
              </div>
 
          </div>
-
-         {/* 載入中遮罩 */}
          {!mapInitialized && (
              <div className="absolute inset-0 flex items-center justify-center bg-gray-100/80 backdrop-blur z-50">
                 <div className="text-center p-6 bg-white rounded-2xl shadow-xl border border-gray-100">
@@ -1708,8 +1666,6 @@ const App = () => {
                 </div>
              </div>
          )}
-
-      {/* ===== 新增點位 Modal ===== */}
       {showAddModal && (
         <div className="fixed inset-0 bg-black/40 backdrop-blur-sm z-[9999] flex items-center justify-center p-4" onClick={() => setShowAddModal(false)}>
           <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md p-6 space-y-4" onClick={e => e.stopPropagation()}>
@@ -1735,8 +1691,6 @@ const App = () => {
           </div>
         </div>
       )}
-
-      {/* ===== 編輯點位 Modal ===== */}
       {editingPointData && (
         <div className="fixed inset-0 bg-black/40 backdrop-blur-sm z-[9999] flex items-center justify-center p-4" onClick={() => setEditingPointData(null)}>
           <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md p-6 space-y-4" onClick={e => e.stopPropagation()}>
@@ -1764,8 +1718,6 @@ const App = () => {
           </div>
         </div>
       )}
-
-         {/* Station Edit Panel - Manual Override Modal */}
          {selectedPointForEdit && (
             <div className="absolute inset-0 z-[2000] flex items-center justify-center bg-black/30 backdrop-blur-sm transition-opacity">
                <div className="bg-white rounded-xl shadow-2xl w-80 overflow-hidden border border-gray-200 animate-in fade-in zoom-in duration-200">
@@ -1803,8 +1755,6 @@ const App = () => {
                              ))}
                          </div>
                       </div>
-
-                      {/* 恢復自動分配按鈕 */}
                       {manualOverrides[selectedPointForEdit.id] !== undefined && (
                           <button 
                              onClick={() => {
