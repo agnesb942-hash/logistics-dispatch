@@ -1079,6 +1079,7 @@ const App = () => {
   };
 
   // === 入口首頁 ===
+  const currentYear = new Date().getFullYear();
   if (appMode === 'home') {
     return (
       <div style={{
@@ -1107,7 +1108,7 @@ const App = () => {
         {/* 標題 */}
         <div style={{textAlign:'center',marginBottom:60,position:'relative',zIndex:1}}>
           <div style={{fontSize:11,letterSpacing:8,color:'rgba(0,200,255,0.6)',marginBottom:16,textTransform:'uppercase'}}>
-            LOGISTICS / DISPATCH / SYSTEM
+            LOGISTICS - DISPATCH - SYSTEM
           </div>
           <h1 style={{
             fontSize: 'clamp(28px, 4vw, 42px)',
@@ -1152,7 +1153,7 @@ const App = () => {
             </div>
             <div style={{fontSize:11,color:'rgba(255,255,255,0.45)',lineHeight:1.7,marginBottom:20}}>
               K-Means++ 演算法自動分群<br/>
-              車輛指派 / 里程均衡 / 手動微調
+              車輛指派 - 里程均衡 - 手動微調
             </div>
             <div style={{
               display:'inline-flex',alignItems:'center',gap:6,
@@ -1191,7 +1192,7 @@ const App = () => {
             </div>
             <div style={{fontSize:11,color:'rgba(255,255,255,0.45)',lineHeight:1.7,marginBottom:20}}>
               輸入客戶地址即時查詢<br/>
-              可行性評估 / 最近點位 / 往返時間
+              可行性評估 - 最近點位 - 往返時間
             </div>
             <div style={{
               display:'inline-flex',alignItems:'center',gap:6,
@@ -1199,14 +1200,14 @@ const App = () => {
               border:'1px solid rgba(251,191,36,0.3)',
               padding:'4px 10px',borderRadius:2,letterSpacing:1,
             }}>
-              → 直接進入
+              ▷ 直接進入
             </div>
           </div>
         </div>
 
         {/* 底部版本標記 */}
         <div style={{position:'absolute',bottom:20,fontSize:10,color:'rgba(255,255,255,0.15)',letterSpacing:3}}>
-          v2.0 / KAOHSIUNG / {new Date().getFullYear()}
+          v2.0 - KAOHSIUNG - {currentYear}
         </div>
       </div>
     </div>
