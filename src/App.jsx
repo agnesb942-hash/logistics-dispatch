@@ -304,10 +304,21 @@ const App = () => {
   const [lookupOnly, setLookupOnly] = useState(false);
   const [pwInput, setPwInput] = useState('');
   const [pwError, setPwError] = useState(false);
-  const DISPATCH_PASSWORD = 'logistics2024';
+  const [pwChangeMode, setPwChangeMode] = useState(false);
+  const [pwOld, setPwOld] = useState('');
+  const [pwNew1, setPwNew1] = useState('');
+  const [pwNew2, setPwNew2] = useState('');
+  const [pwChangeMsg, setPwChangeMsg] = useState('');
+
+  const getStoredPw = () => {
+    try { return localStorage.getItem('dispatch_pw') || 'logistics2024'; } catch(e) { return 'logistics2024'; }
+  };
+  const setStoredPw = (pw) => {
+    try { localStorage.setItem('dispatch_pw', pw); } catch(e) {}
+  };
 
   const handleDispatchLogin = () => {
-    if (pwInput === DISPATCH_PASSWORD) {
+    if (pwInput === getStoredPw()) {
       setAppMode('main');
       setLookupOnly(false);
       setActiveTab('settings');
@@ -317,6 +328,15 @@ const App = () => {
       setPwError(true);
       setTimeout(() => setPwError(false), 1500);
     }
+  };
+
+  const handleChangePw = () => {
+    if (pwOld !== getStoredPw()) { setPwChangeMsg('error:舊密碼錯誤'); return; }
+    if (pwNew1.length < 6) { setPwChangeMsg('error:新密碼至少 6 位'); return; }
+    if (pwNew1 !== pwNew2) { setPwChangeMsg('error:兩次輸入不一致'); return; }
+    setStoredPw(pwNew1);
+    setPwChangeMsg('ok:密碼已更新');
+    setTimeout(() => { setPwChangeMode(false); setPwOld(''); setPwNew1(''); setPwNew2(''); setPwChangeMsg(''); }, 1500);
   };
 
   // Main Data States
@@ -342,6 +362,19 @@ const App = () => {
   const [deliveryLookupAddr, setDeliveryLookupAddr] = useState('');
   const [deliveryLookupResult, setDeliveryLookupResult] = useState(null);
   const [deliveryLookupLoading, setDeliveryLookupLoading] = useState(false);
+  const [queryLogs, setQueryLogs] = useState(() => {
+    try { return JSON.parse(localStorage.getItem('query_logs') || '[]'); } catch(e) { return []; }
+  });
+  const [showLogs, setShowLogs] = useState(false);
+  const [logDateFrom, setLogDateFrom] = useState('');
+  const [logDateTo, setLogDateTo] = useState('');
+  const saveQueryLog = (log) => {
+    setQueryLogs(prev => {
+      const next = [log, ...prev].slice(0, 1000);
+      try { localStorage.setItem('query_logs', JSON.stringify(next)); } catch(e) {}
+      return next;
+    });
+  };
 
   // Algorithmic Data vs Final Data (Overrides applied)
   const [baseClusteredData, setBaseClusteredData] = useState([]);
@@ -493,6 +526,7 @@ const App = () => {
       const best = top2[0];
       const roundTripMin = parseFloat(best.roundTripMin);
 
+      const ts = new Date().toISOString();
       if (roundTripMin <= 25) {
         setDeliveryLookupResult({
           ok: true, msg: '✅ 可配送',
@@ -502,6 +536,7 @@ const App = () => {
           trafficNote: '（估算值）',
           top2,
         });
+        saveQueryLog({ ts, addr: deliveryLookupAddr.trim(), resolved: resolvedName, ok: true, distKm: best.roadDist, roundTrip: best.roundTripMin, nearestName: best.name, route: best.route });
       } else {
         setDeliveryLookupResult({
           ok: false, msg: '❌ 超出配送範圍',
@@ -511,6 +546,7 @@ const App = () => {
           trafficNote: '（估算值）',
           top2,
         });
+        saveQueryLog({ ts, addr: deliveryLookupAddr.trim(), resolved: resolvedName, ok: false, distKm: best.roadDist, roundTrip: best.roundTripMin, nearestName: best.name, route: '' });
       }
     } catch (err) {
       setDeliveryLookupResult({ ok: false, msg: '地址查詢服務暫時無法使用，請稍後再試。' });
@@ -1162,6 +1198,32 @@ const App = () => {
           <button onClick={handleDispatchLogin} style={{width:'100%',marginTop:20,padding:'10px 0',background:'rgba(0,200,255,0.12)',border:'1px solid rgba(0,200,255,0.4)',borderRadius:2,color:'#00c8ff',fontSize:12,letterSpacing:3,fontWeight:700,cursor:'pointer',fontFamily:'inherit',textTransform:'uppercase'}}>
             ENTER
           </button>
+          <button onClick={() => setPwChangeMode(v => !v)} style={{width:'100%',marginTop:8,padding:'8px 0',background:'transparent',border:'1px solid rgba(0,200,255,0.15)',borderRadius:2,color:'rgba(0,200,255,0.4)',fontSize:10,letterSpacing:2,cursor:'pointer',fontFamily:'inherit'}}>
+            {pwChangeMode ? 'X 取消修改' : '⚙ 修改密碼'}
+          </button>
+          {pwChangeMode && (
+            <div style={{marginTop:12,padding:'12px',background:'rgba(0,0,0,0.3)',borderRadius:4,border:'1px solid rgba(0,200,255,0.1)'}}>
+              <div style={{fontSize:10,color:'rgba(255,255,255,0.35)',letterSpacing:2,marginBottom:8}}>CHANGE PASSWORD</div>
+              {['舊密碼','新密碼','確認新密碼'].map((label,idx) => (
+                <div key={idx} style={{marginBottom:6}}>
+                  <div style={{fontSize:9,color:'rgba(255,255,255,0.3)',marginBottom:3,letterSpacing:1}}>{label}</div>
+                  <input type="password"
+                    value={idx===0?pwOld:idx===1?pwNew1:pwNew2}
+                    onChange={e => idx===0?setPwOld(e.target.value):idx===1?setPwNew1(e.target.value):setPwNew2(e.target.value)}
+                    style={{width:'100%',padding:'7px 10px',background:'rgba(255,255,255,0.05)',border:'1px solid rgba(0,200,255,0.15)',borderRadius:2,color:'#fff',fontSize:12,outline:'none',boxSizing:'border-box',fontFamily:'inherit'}}
+                  />
+                </div>
+              ))}
+              {pwChangeMsg && (
+                <div style={{fontSize:10,marginTop:6,padding:'4px 8px',borderRadius:2,background:pwChangeMsg.startsWith('ok')?'rgba(34,197,94,0.15)':'rgba(239,68,68,0.15)',color:pwChangeMsg.startsWith('ok')?'#4ade80':'#f87171'}}>
+                  {pwChangeMsg.replace(/^(ok|error):/, '')}
+                </div>
+              )}
+              <button onClick={handleChangePw} style={{width:'100%',marginTop:8,padding:'8px 0',background:'rgba(0,200,255,0.12)',border:'1px solid rgba(0,200,255,0.3)',borderRadius:2,color:'#00c8ff',fontSize:11,letterSpacing:2,cursor:'pointer',fontFamily:'inherit'}}>
+                確認更改
+              </button>
+            </div>
+          )}
           <button onClick={() => { setPwInput(''); setPwError(false); setLookupOnly(false); setAppMode('home'); }} style={{width:'100%',marginTop:10,padding:'8px 0',background:'transparent',border:'none',color:'rgba(255,255,255,0.25)',fontSize:10,letterSpacing:2,cursor:'pointer',fontFamily:'inherit'}}>
             {'← 返回'}
           </button>
@@ -1219,17 +1281,7 @@ const App = () => {
             </div>
         </div>}
 
-        {/* 分頁切換 */}
-        {!lookupOnly && <div className="flex border-b border-gray-200 bg-white flex-shrink-0">
-          <button onClick={() => setActiveTab('settings')}
-            className={`flex-1 py-2.5 text-sm font-bold transition-all border-b-2 ${activeTab === 'settings' ? 'border-blue-600 text-blue-600 bg-blue-50/50' : 'border-transparent text-gray-500 hover:text-gray-700'}`}>
-            🚛 派車設定
-          </button>
-          <button onClick={() => setActiveTab('lookup')}
-            className={`flex-1 py-2.5 text-sm font-bold transition-all border-b-2 ${activeTab === 'lookup' ? 'border-amber-500 text-amber-600 bg-amber-50/50' : 'border-transparent text-gray-500 hover:text-gray-700'}`}>
-            📦 指送查詢
-          </button>
-        </div>}
+        {/* 分頁切換已移除：派車工具固定顯示設定，查詢工具為獨立入口 */}
 
         {/* 核心捲動區域 */}
         <div className="flex-1 overflow-y-auto p-4 space-y-5 custom-scrollbar bg-white">
@@ -1435,6 +1487,97 @@ const App = () => {
                     <div>• 門檻設定：往返 ≤ 25 分鐘判定為可配送</div>
                 </div>
             </div>
+
+            {/* ===== 查詢紀錄統計 ===== */}
+            {(() => {
+              const total = queryLogs.length;
+              const success = queryLogs.filter(l => l.ok).length;
+              const fail = total - success;
+              return (
+                <div className="bg-slate-800 rounded-xl p-4 space-y-3">
+                  <div className="flex items-center justify-between">
+                    <h4 className="text-xs font-bold text-white tracking-widest uppercase">查詢紀錄統計</h4>
+                    <button onClick={() => setShowLogs(v => !v)} className="text-[10px] text-cyan-400 border border-cyan-800 px-2 py-1 rounded hover:bg-cyan-900 transition-all">
+                      {showLogs ? '收合' : '展開明細'}
+                    </button>
+                  </div>
+                  <div className="grid grid-cols-3 gap-2">
+                    <div className="bg-slate-700 rounded-lg p-2 text-center">
+                      <div className="text-[10px] text-slate-400 mb-1">總查詢</div>
+                      <div className="text-lg font-black text-white">{total}</div>
+                    </div>
+                    <div className="bg-green-900 rounded-lg p-2 text-center">
+                      <div className="text-[10px] text-green-400 mb-1">可配送</div>
+                      <div className="text-lg font-black text-green-300">{success}</div>
+                    </div>
+                    <div className="bg-red-900 rounded-lg p-2 text-center">
+                      <div className="text-[10px] text-red-400 mb-1">超出範圍</div>
+                      <div className="text-lg font-black text-red-300">{fail}</div>
+                    </div>
+                  </div>
+
+                  {/* 匯出區間 */}
+                  <div className="space-y-2">
+                    <div className="text-[10px] text-slate-400 tracking-widest uppercase">匯出日期區間</div>
+                    <div className="flex gap-2">
+                      <input type="date" value={logDateFrom} onChange={e => setLogDateFrom(e.target.value)}
+                        className="flex-1 bg-slate-700 border border-slate-600 text-white text-xs rounded px-2 py-1.5 outline-none focus:border-cyan-500" />
+                      <span className="text-slate-500 self-center text-xs">至</span>
+                      <input type="date" value={logDateTo} onChange={e => setLogDateTo(e.target.value)}
+                        className="flex-1 bg-slate-700 border border-slate-600 text-white text-xs rounded px-2 py-1.5 outline-none focus:border-cyan-500" />
+                    </div>
+                    <button onClick={() => {
+                      const from = logDateFrom ? new Date(logDateFrom + 'T00:00:00') : new Date(0);
+                      const to = logDateTo ? new Date(logDateTo + 'T23:59:59') : new Date();
+                      const filtered = queryLogs.filter(l => { const d = new Date(l.ts); return d >= from && d <= to; });
+                      if (filtered.length === 0) { alert('該區間無紀錄'); return; }
+                      const BOM = '﻿';
+                      const header = ['查詢時間','輸入地址','系統定位','結果','最近點位','路線','距離(km)','往返(分)'];
+                      const rows = filtered.map(l => [
+                        new Date(l.ts).toLocaleString('zh-TW'),
+                        '"' + l.addr.replace(/"/g,'""') + '"',
+                        '"' + (l.resolved||'').replace(/"/g,'""') + '"',
+                        l.ok ? '可配送' : '超出範圍',
+                        '"' + (l.nearestName||'').replace(/"/g,'""') + '"',
+                        '"' + (l.route||'').replace(/"/g,'""') + '"',
+                        l.distKm, l.roundTrip
+                      ].join(','));
+                      const blob = new Blob([BOM + [header.join(','), ...rows].join('
+')], { type: 'text/csv;charset=utf-8;' });
+                      const a = document.createElement('a');
+                      a.href = URL.createObjectURL(blob);
+                      a.download = '指送查詢紀錄_' + (logDateFrom||'all') + '_' + (logDateTo||'all') + '.csv';
+                      a.click();
+                    }} className="w-full py-2 bg-cyan-700 hover:bg-cyan-600 text-white text-xs font-bold rounded tracking-widest transition-all">
+                      匯出 CSV
+                    </button>
+                    {queryLogs.length > 0 && (
+                      <button onClick={() => { if(window.confirm('確定清除所有查詢紀錄？')) { setQueryLogs([]); try { localStorage.removeItem('query_logs'); } catch(e) {} } }}
+                        className="w-full py-1.5 bg-transparent border border-red-800 text-red-400 text-[10px] rounded tracking-widest hover:bg-red-900 transition-all">
+                        清除紀錄
+                      </button>
+                    )}
+                  </div>
+
+                  {/* 明細列表 */}
+                  {showLogs && (
+                    <div className="max-h-48 overflow-y-auto space-y-1.5 pr-1">
+                      {queryLogs.length === 0 && <div className="text-slate-500 text-xs text-center py-4">尚無查詢紀錄</div>}
+                      {queryLogs.map((l, i) => (
+                        <div key={i} className={`rounded p-2 text-[10px] border-l-2 ${l.ok ? 'bg-green-950 border-green-500' : 'bg-red-950 border-red-500'}`}>
+                          <div className="flex justify-between text-slate-400 mb-0.5">
+                            <span>{new Date(l.ts).toLocaleString('zh-TW', {month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit'})}</span>
+                            <span className={l.ok ? 'text-green-400' : 'text-red-400'}>{l.ok ? '可配送' : '超出範圍'}</span>
+                          </div>
+                          <div className="text-white truncate">{l.addr}</div>
+                          {l.nearestName && <div className="text-slate-400 truncate">最近：{l.nearestName} {l.distKm}km</div>}
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              );
+            })()}
         </>}
         </div>
         
