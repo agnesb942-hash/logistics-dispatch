@@ -1081,166 +1081,68 @@ const App = () => {
   // === 入口首頁 ===
   const currentYear = new Date().getFullYear();
   if (appMode === 'home') {
+    const yr = String(new Date().getFullYear());
+    const cardStyle = (accent) => [
+      'width:280px;padding:32px 28px;border-radius:4px;cursor:pointer;position:relative;',
+      'transition:all 0.2s;border:1px solid rgba(',accent,',0.25);',
+      'background:rgba(',accent,',0.04)',
+    ].join('');
+    const html = '<div style="position:absolute;inset:0;background-image:'
+      + 'linear-gradient(rgba(0,200,255,0.04) 1px,transparent 1px),'
+      + 'linear-gradient(90deg,rgba(0,200,255,0.04) 1px,transparent 1px);'
+      + 'background-size:40px 40px;pointer-events:none"></div>'
+      + '<div style="position:absolute;top:24px;left:24px;width:60px;height:60px;border-top:2px solid rgba(0,200,255,0.4);border-left:2px solid rgba(0,200,255,0.4)"></div>'
+      + '<div style="position:absolute;top:24px;right:24px;width:60px;height:60px;border-top:2px solid rgba(0,200,255,0.4);border-right:2px solid rgba(0,200,255,0.4)"></div>'
+      + '<div style="position:absolute;bottom:24px;left:24px;width:60px;height:60px;border-bottom:2px solid rgba(0,200,255,0.4);border-left:2px solid rgba(0,200,255,0.4)"></div>'
+      + '<div style="position:absolute;bottom:24px;right:24px;width:60px;height:60px;border-bottom:2px solid rgba(0,200,255,0.4);border-right:2px solid rgba(0,200,255,0.4)"></div>'
+      + '<div style="text-align:center;margin-bottom:60px;position:relative;z-index:1">'
+        + '<div style="font-size:11px;letter-spacing:8px;color:rgba(0,200,255,0.6);margin-bottom:16px;text-transform:uppercase">LOGISTICS - DISPATCH - SYSTEM</div>'
+        + '<h1 style="font-size:clamp(28px,4vw,42px);font-weight:700;color:#fff;letter-spacing:2px;margin:0 0 8px;line-height:1.2">\u7269\u6d41\u914d\u9001\u7ba1\u7406\u5e73\u53f0</h1>'
+        + '<div style="width:80px;height:2px;background:linear-gradient(90deg,transparent,#00c8ff,transparent);margin:16px auto 0"></div>'
+      + '</div>'
+      + '<div style="display:flex;gap:32px;position:relative;z-index:1;flex-wrap:wrap;justify-content:center;padding:0 24px">'
+        + '<div id="card-dispatch" style="' + cardStyle('0,200,255') + '">'
+          + '<div style="position:absolute;top:-1px;left:20px;right:20px;height:2px;background:linear-gradient(90deg,transparent,#00c8ff,transparent)"></div>'
+          + '<div style="font-size:24px;margin-bottom:16px;color:#00c8ff">[ ]</div>'
+          + '<div style="font-size:13px;font-weight:700;color:#00c8ff;letter-spacing:2px;margin-bottom:8px;text-transform:uppercase">\u914d\u9001\u5340\u57df\u5283\u5206\u5de5\u5177</div>'
+          + '<div style="font-size:11px;color:rgba(255,255,255,0.45);line-height:1.7;margin-bottom:20px">K-Means++ \u6f14\u7b97\u6cd5\u81ea\u52d5\u5206\u7fa4<br>\u8eca\u8f1b\u6307\u6d3e - \u91cc\u7a0b\u5747\u8861 - \u624b\u52d5\u5fae\u8abf</div>'
+          + '<div style="display:inline-flex;align-items:center;gap:6px;font-size:10px;color:rgba(0,200,255,0.7);border:1px solid rgba(0,200,255,0.3);padding:4px 10px;border-radius:2px;letter-spacing:1px">[LOCK] \u9700\u8981\u6388\u6b0a</div>'
+        + '</div>'
+        + '<div id="card-lookup" style="width:280px;padding:32px 28px;border-radius:4px;cursor:pointer;position:relative;transition:all 0.2s;border:1px solid rgba(251,191,36,0.2);background:rgba(251,191,36,0.04)">'
+          + '<div style="position:absolute;top:-1px;left:20px;right:20px;height:2px;background:linear-gradient(90deg,transparent,#fbbf24,transparent)"></div>'
+          + '<div style="font-size:24px;margin-bottom:16px;color:#fbbf24">( )</div>'
+          + '<div style="font-size:13px;font-weight:700;color:#fbbf24;letter-spacing:2px;margin-bottom:8px;text-transform:uppercase">\u6307\u9001\u5730\u5740\u67e5\u8a62</div>'
+          + '<div style="font-size:11px;color:rgba(255,255,255,0.45);line-height:1.7;margin-bottom:20px">\u8f38\u5165\u5ba2\u6236\u5730\u5740\u5373\u6642\u67e5\u8a62<br>\u53ef\u884c\u6027\u8a55\u4f30 - \u6700\u8fd1\u9ede\u4f4d - \u5f80\u8fd4\u6642\u9593</div>'
+          + '<div style="display:inline-flex;align-items:center;gap:6px;font-size:10px;color:rgba(251,191,36,0.7);border:1px solid rgba(251,191,36,0.3);padding:4px 10px;border-radius:2px;letter-spacing:1px">&gt; \u76f4\u63a5\u9032\u5165</div>'
+        + '</div>'
+      + '</div>'
+      + '<div style="position:absolute;bottom:20px;font-size:10px;color:rgba(255,255,255,0.15);letter-spacing:3px">v2.0 - KAOHSIUNG - ' + yr + '</div>';
     return (
-      <div style={{
-        height: `${windowHeight}px`,
-        background: '#080c14',
-        fontFamily: "'JetBrains Mono', 'Courier New', monospace",
-        display: 'flex',
-        flexDirection: 'column',
-        alignItems: 'center',
-        justifyContent: 'center',
-        position: 'relative',
-        overflow: 'hidden',
-      }}>
-        {/* 背景格線 */}
-        <div style={{
-          position: 'absolute', inset: 0,
-          backgroundImage: 'linear-gradient(rgba(0,200,255,0.04) 1px, transparent 1px), linear-gradient(90deg, rgba(0,200,255,0.04) 1px, transparent 1px)',
-          backgroundSize: '40px 40px',
-          pointerEvents: 'none',
-        }} />
-        <div style={{position:'absolute',top:24,left:24,width:60,height:60,borderTop:'2px solid rgba(0,200,255,0.4)',borderLeft:'2px solid rgba(0,200,255,0.4)'}} />
-        <div style={{position:'absolute',top:24,right:24,width:60,height:60,borderTop:'2px solid rgba(0,200,255,0.4)',borderRight:'2px solid rgba(0,200,255,0.4)'}} />
-        <div style={{position:'absolute',bottom:24,left:24,width:60,height:60,borderBottom:'2px solid rgba(0,200,255,0.4)',borderLeft:'2px solid rgba(0,200,255,0.4)'}} />
-        <div style={{position:'absolute',bottom:24,right:24,width:60,height:60,borderBottom:'2px solid rgba(0,200,255,0.4)',borderRight:'2px solid rgba(0,200,255,0.4)'}} />
-
-        {/* 標題 */}
-        <div style={{textAlign:'center',marginBottom:60,position:'relative',zIndex:1}}>
-          <div style={{fontSize:11,letterSpacing:8,color:'rgba(0,200,255,0.6)',marginBottom:16,textTransform:'uppercase'}}>
-            LOGISTICS - DISPATCH - SYSTEM
-          </div>
-          <h1 style={{
-            fontSize: 'clamp(28px, 4vw, 42px)',
-            fontWeight: 700,
-            color: '#fff',
-            letterSpacing: 2,
-            margin: '0 0 8px',
-            lineHeight: 1.2,
-          }}>
-            物流配送管理平台
-          </h1>
-          <div style={{width:80,height:2,background:'linear-gradient(90deg,transparent,#00c8ff,transparent)',margin:'16px auto 0'}} />
-        </div>
-
-        {/* 兩個工具卡片 */}
-        <div style={{display:'flex',gap:32,position:'relative',zIndex:1,flexWrap:'wrap',justifyContent:'center',padding:'0 24px'}}>
-
-          {/* 卡片 1：配送區域劃分工具（需密碼） */}
-          <div style={{
-            width: 280, padding: '32px 28px',
-            background: 'rgba(0,200,255,0.04)',
-            border: '1px solid rgba(0,200,255,0.25)',
-            borderRadius: 4,
-            cursor: 'pointer',
-            position: 'relative',
-            transition: 'all 0.2s',
-          }}
-          onMouseEnter={e => {
-            e.currentTarget.style.background = 'rgba(0,200,255,0.09)';
-            e.currentTarget.style.borderColor = 'rgba(0,200,255,0.6)';
-          }}
-          onMouseLeave={e => {
-            e.currentTarget.style.background = 'rgba(0,200,255,0.04)';
-            e.currentTarget.style.borderColor = 'rgba(0,200,255,0.25)';
-          }}
-          onClick={() => setAppMode('dispatch_login')}
-          >
-            <div style={{position:'absolute',top:-1,left:20,right:20,height:2,background:'linear-gradient(90deg,transparent,#00c8ff,transparent)'}} />
-            <div style={{fontSize:28,marginBottom:16}}>◈</div>
-            <div style={{fontSize:13,fontWeight:700,color:'#00c8ff',letterSpacing:2,marginBottom:8,textTransform:'uppercase'}}>
-              配送區域劃分工具
-            </div>
-            <div style={{fontSize:11,color:'rgba(255,255,255,0.45)',lineHeight:1.7,marginBottom:20}}>
-              K-Means++ 演算法自動分群<br/>
-              車輛指派 - 里程均衡 - 手動微調
-            </div>
-            <div style={{
-              display:'inline-flex',alignItems:'center',gap:6,
-              fontSize:10,color:'rgba(0,200,255,0.7)',
-              border:'1px solid rgba(0,200,255,0.3)',
-              padding:'4px 10px',borderRadius:2,letterSpacing:1,
-            }}>
-              🔒 需要授權
-            </div>
-          </div>
-
-          {/* 卡片 2：指送地址查詢（無需密碼） */}
-          <div style={{
-            width: 280, padding: '32px 28px',
-            background: 'rgba(251,191,36,0.04)',
-            border: '1px solid rgba(251,191,36,0.2)',
-            borderRadius: 4,
-            cursor: 'pointer',
-            position: 'relative',
-            transition: 'all 0.2s',
-          }}
-          onMouseEnter={e => {
-            e.currentTarget.style.background = 'rgba(251,191,36,0.09)';
-            e.currentTarget.style.borderColor = 'rgba(251,191,36,0.5)';
-          }}
-          onMouseLeave={e => {
-            e.currentTarget.style.background = 'rgba(251,191,36,0.04)';
-            e.currentTarget.style.borderColor = 'rgba(251,191,36,0.2)';
-          }}
-          onClick={() => { setActiveTab('lookup'); setAppMode('main'); }}
-          >
-            <div style={{position:'absolute',top:-1,left:20,right:20,height:2,background:'linear-gradient(90deg,transparent,#fbbf24,transparent)'}} />
-            <div style={{fontSize:28,marginBottom:16}}>◎</div>
-            <div style={{fontSize:13,fontWeight:700,color:'#fbbf24',letterSpacing:2,marginBottom:8,textTransform:'uppercase'}}>
-              指送地址查詢
-            </div>
-            <div style={{fontSize:11,color:'rgba(255,255,255,0.45)',lineHeight:1.7,marginBottom:20}}>
-              輸入客戶地址即時查詢<br/>
-              可行性評估 - 最近點位 - 往返時間
-            </div>
-            <div style={{
-              display:'inline-flex',alignItems:'center',gap:6,
-              fontSize:10,color:'rgba(251,191,36,0.7)',
-              border:'1px solid rgba(251,191,36,0.3)',
-              padding:'4px 10px',borderRadius:2,letterSpacing:1,
-            }}>
-              ▷ 直接進入
-            </div>
-          </div>
-        </div>
-
-        {/* 底部版本標記 */}
-        <div style={{position:'absolute',bottom:20,fontSize:10,color:'rgba(255,255,255,0.15)',letterSpacing:3}}>
-          v2.0 - KAOHSIUNG - {currentYear}
-        </div>
-      </div>
-    </div>
+      <div
+        style={{height:windowHeight+'px',background:'#080c14',fontFamily:"monospace",display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',position:'relative',overflow:'hidden'}}
+        dangerouslySetInnerHTML={{__html:html}}
+        onClick={(e) => {
+          const card = e.target.closest && e.target.closest('#card-dispatch,#card-lookup');
+          if (!card) return;
+          if (card.id === 'card-dispatch') setAppMode('dispatch_login');
+          else { setActiveTab('lookup'); setAppMode('main'); }
+        }}
+      />
     );
   }
-
   // === 密碼輸入頁 ===
   if (appMode === 'dispatch_login') {
+    const bgStyle = {position:'absolute',inset:0,backgroundImage:'linear-gradient(rgba(0,200,255,0.04) 1px,transparent 1px),linear-gradient(90deg,rgba(0,200,255,0.04) 1px,transparent 1px)',backgroundSize:'40px 40px',pointerEvents:'none'};
+    const borderColor = pwError ? 'rgba(239,68,68,0.6)' : 'rgba(0,200,255,0.25)';
+    const topLineColor = pwError ? '#ef4444' : '#00c8ff';
     return (
-      <div style={{
-        height: `${windowHeight}px`,
-        background: '#080c14',
-        fontFamily: "'JetBrains Mono', 'Courier New', monospace",
-        display: 'flex', flexDirection: 'column',
-        alignItems: 'center', justifyContent: 'center',
-        position: 'relative', overflow: 'hidden',
-      }}>
-        <div style={{
-          position: 'absolute', inset: 0,
-          backgroundImage: 'linear-gradient(rgba(0,200,255,0.04) 1px, transparent 1px), linear-gradient(90deg, rgba(0,200,255,0.04) 1px, transparent 1px)',
-          backgroundSize: '40px 40px', pointerEvents: 'none',
-        }} />
-        <div style={{
-          width: 340, padding: '40px 36px',
-          background: 'rgba(0,200,255,0.04)',
-          border: `1px solid ${pwError ? 'rgba(239,68,68,0.6)' : 'rgba(0,200,255,0.25)'}`,
-          borderRadius: 4, position: 'relative', zIndex: 1,
-          transition: 'border-color 0.3s',
-        }}>
-          <div style={{position:'absolute',top:-1,left:20,right:20,height:2,background:`linear-gradient(90deg,transparent,${pwError?'#ef4444':'#00c8ff'},transparent)`,transition:'background 0.3s'}} />
+      <div style={{height:windowHeight+'px',background:'#080c14',fontFamily:"'JetBrains Mono','Courier New',monospace",display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',position:'relative',overflow:'hidden'}}>
+        <div style={bgStyle} />
+        <div style={{width:340,padding:'40px 36px',background:'rgba(0,200,255,0.04)',border:'1px solid '+borderColor,borderRadius:4,position:'relative',zIndex:1,transition:'border-color 0.3s'}}>
+          <div style={{position:'absolute',top:-1,left:20,right:20,height:2,background:'linear-gradient(90deg,transparent,'+topLineColor+',transparent)',transition:'background 0.3s'}} />
           <div style={{marginBottom:28}}>
             <div style={{fontSize:10,letterSpacing:4,color:'rgba(0,200,255,0.5)',marginBottom:10,textTransform:'uppercase'}}>Authorization Required</div>
-            <div style={{fontSize:16,fontWeight:700,color:'#fff',letterSpacing:1}}>配送區域劃分工具</div>
+            <div style={{fontSize:16,fontWeight:700,color:'#fff',letterSpacing:1}}>{'配送區域劃分工具'}</div>
           </div>
           <div style={{marginBottom:8,fontSize:10,color:'rgba(255,255,255,0.35)',letterSpacing:2}}>ACCESS CODE</div>
           <input
@@ -1248,58 +1150,23 @@ const App = () => {
             value={pwInput}
             onChange={e => setPwInput(e.target.value)}
             onKeyDown={e => e.key === 'Enter' && handleDispatchLogin()}
-            placeholder="輸入授權碼"
+            placeholder={'輸入授權碼'}
             autoFocus
-            style={{
-              width: '100%', padding: '10px 14px',
-              background: 'rgba(255,255,255,0.05)',
-              border: `1px solid ${pwError ? 'rgba(239,68,68,0.5)' : 'rgba(0,200,255,0.2)'}`,
-              borderRadius: 2, color: '#fff',
-              fontSize: 14, letterSpacing: 3,
-              outline: 'none', boxSizing: 'border-box',
-              transition: 'border-color 0.3s',
-              fontFamily: 'inherit',
-            }}
+            style={{width:'100%',padding:'10px 14px',background:'rgba(255,255,255,0.05)',border:'1px solid '+(pwError?'rgba(239,68,68,0.5)':'rgba(0,200,255,0.2)'),borderRadius:2,color:'#fff',fontSize:14,letterSpacing:3,outline:'none',boxSizing:'border-box',transition:'border-color 0.3s',fontFamily:'inherit'}}
           />
           {pwError && (
-            <div style={{marginTop:8,fontSize:10,color:'#ef4444',letterSpacing:1}}>
-              ✕ 授權碼錯誤，請重試
-            </div>
+            <div style={{marginTop:8,fontSize:10,color:'#ef4444',letterSpacing:1}}>X {'授權碼錯誤，請重試'}</div>
           )}
-          <button
-            onClick={handleDispatchLogin}
-            style={{
-              width:'100%',marginTop:20,padding:'10px 0',
-              background: 'rgba(0,200,255,0.12)',
-              border:'1px solid rgba(0,200,255,0.4)',
-              borderRadius:2,color:'#00c8ff',
-              fontSize:12,letterSpacing:3,fontWeight:700,
-              cursor:'pointer',fontFamily:'inherit',
-              textTransform:'uppercase',
-              transition:'all 0.2s',
-            }}
-            onMouseEnter={e => { e.currentTarget.style.background='rgba(0,200,255,0.22)'; }}
-            onMouseLeave={e => { e.currentTarget.style.background='rgba(0,200,255,0.12)'; }}
-          >
+          <button onClick={handleDispatchLogin} style={{width:'100%',marginTop:20,padding:'10px 0',background:'rgba(0,200,255,0.12)',border:'1px solid rgba(0,200,255,0.4)',borderRadius:2,color:'#00c8ff',fontSize:12,letterSpacing:3,fontWeight:700,cursor:'pointer',fontFamily:'inherit',textTransform:'uppercase'}}>
             ENTER
           </button>
-          <button
-            onClick={() => { setPwInput(''); setPwError(false); setAppMode('home'); }}
-            style={{
-              width:'100%',marginTop:10,padding:'8px 0',
-              background:'transparent',border:'none',
-              color:'rgba(255,255,255,0.25)',fontSize:10,
-              letterSpacing:2,cursor:'pointer',fontFamily:'inherit',
-            }}
-          >
-            ← 返回
+          <button onClick={() => { setPwInput(''); setPwError(false); setAppMode('home'); }} style={{width:'100%',marginTop:10,padding:'8px 0',background:'transparent',border:'none',color:'rgba(255,255,255,0.25)',fontSize:10,letterSpacing:2,cursor:'pointer',fontFamily:'inherit'}}>
+            {'← 返回'}
           </button>
         </div>
       </div>
-    </div>
     );
   }
-
   return (
     <div className="flex w-full bg-gray-100 font-sans text-gray-900 overflow-hidden relative" style={{height: `${windowHeight}px`}}>
       
