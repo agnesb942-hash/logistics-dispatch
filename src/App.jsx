@@ -1380,7 +1380,7 @@ const App = () => {
                 </div>
             </div>
             <div className="text-[10px] text-gray-400 leading-relaxed bg-gray-50 p-2 rounded border border-gray-100">
-              📋 匯入格式：客戶簡稱 | 配送路線說明 | 送貨地址 | 經緯度（緯度,經度）<br/>
+              [格式] 匯入格式：客戶簡稱 | 配送路線說明 | 送貨地址 | 經緯度（緯度,經度）<br/>
               第一列為標題列（自動跳過），支援 .xlsx .csv .tsv .txt
             </div>
 
