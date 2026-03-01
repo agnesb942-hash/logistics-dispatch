@@ -298,6 +298,25 @@ const calcWCSS = (clusteredData, k) => {
 // ----------------------------------------------------------------------
 
 const App = () => {
+  // ── 入口頁狀態 ──────────────────────────────────────
+  // mode: 'home' | 'dispatch' | 'lookup'
+  const [appMode, setAppMode] = useState('home');
+  const [pwInput, setPwInput] = useState('');
+  const [pwError, setPwError] = useState(false);
+  const DISPATCH_PASSWORD = 'logistics2024';
+
+  const handleDispatchLogin = () => {
+    if (pwInput === DISPATCH_PASSWORD) {
+      setAppMode('main');
+      setActiveTab('settings');
+      setPwError(false);
+      setPwInput('');
+    } else {
+      setPwError(true);
+      setTimeout(() => setPwError(false), 1500);
+    }
+  };
+
   // Main Data States
   // 固定欄位對應（不可更改）
   const colConfig = { name: 1, route: 2, address: 3, lat: 4, lng: 5, combinedLatLng: true, skipHeader: true };
@@ -1059,18 +1078,255 @@ const App = () => {
     document.body.removeChild(link);
   };
 
+  // ── 入口首頁 ───────────────────────────────────────
+  if (appMode === 'home') {
+    return (
+      <div style={{
+        height: `${windowHeight}px`,
+        background: '#080c14',
+        fontFamily: "'JetBrains Mono', 'Courier New', monospace",
+        display: 'flex',
+        flexDirection: 'column',
+        alignItems: 'center',
+        justifyContent: 'center',
+        position: 'relative',
+        overflow: 'hidden',
+      }}>
+        {/* 背景格線 */}
+        <div style={{
+          position: 'absolute', inset: 0,
+          backgroundImage: `
+            linear-gradient(rgba(0,200,255,0.04) 1px, transparent 1px),
+            linear-gradient(90deg, rgba(0,200,255,0.04) 1px, transparent 1px)
+          `,
+          backgroundSize: '40px 40px',
+          pointerEvents: 'none',
+        }} />
+        {/* 角落裝飾線 */}
+        <div style={{position:'absolute',top:24,left:24,width:60,height:60,borderTop:'2px solid rgba(0,200,255,0.4)',borderLeft:'2px solid rgba(0,200,255,0.4)'}} />
+        <div style={{position:'absolute',top:24,right:24,width:60,height:60,borderTop:'2px solid rgba(0,200,255,0.4)',borderRight:'2px solid rgba(0,200,255,0.4)'}} />
+        <div style={{position:'absolute',bottom:24,left:24,width:60,height:60,borderBottom:'2px solid rgba(0,200,255,0.4)',borderLeft:'2px solid rgba(0,200,255,0.4)'}} />
+        <div style={{position:'absolute',bottom:24,right:24,width:60,height:60,borderBottom:'2px solid rgba(0,200,255,0.4)',borderRight:'2px solid rgba(0,200,255,0.4)'}} />
+
+        {/* 標題 */}
+        <div style={{textAlign:'center',marginBottom:60,position:'relative',zIndex:1}}>
+          <div style={{fontSize:11,letterSpacing:8,color:'rgba(0,200,255,0.6)',marginBottom:16,textTransform:'uppercase'}}>
+            LOGISTICS · DISPATCH · SYSTEM
+          </div>
+          <h1 style={{
+            fontSize: 'clamp(28px, 4vw, 42px)',
+            fontWeight: 700,
+            color: '#fff',
+            letterSpacing: 2,
+            margin: '0 0 8px',
+            lineHeight: 1.2,
+          }}>
+            物流配送管理平台
+          </h1>
+          <div style={{width:80,height:2,background:'linear-gradient(90deg,transparent,#00c8ff,transparent)',margin:'16px auto 0'}} />
+        </div>
+
+        {/* 兩個工具卡片 */}
+        <div style={{display:'flex',gap:32,position:'relative',zIndex:1,flexWrap:'wrap',justifyContent:'center',padding:'0 24px'}}>
+
+          {/* 卡片 1：配送區域劃分工具（需密碼） */}
+          <div style={{
+            width: 280, padding: '32px 28px',
+            background: 'rgba(0,200,255,0.04)',
+            border: '1px solid rgba(0,200,255,0.25)',
+            borderRadius: 4,
+            cursor: 'pointer',
+            position: 'relative',
+            transition: 'all 0.2s',
+          }}
+          onMouseEnter={e => {
+            e.currentTarget.style.background = 'rgba(0,200,255,0.09)';
+            e.currentTarget.style.borderColor = 'rgba(0,200,255,0.6)';
+          }}
+          onMouseLeave={e => {
+            e.currentTarget.style.background = 'rgba(0,200,255,0.04)';
+            e.currentTarget.style.borderColor = 'rgba(0,200,255,0.25)';
+          }}
+          onClick={() => setAppMode('dispatch_login')}
+          >
+            <div style={{position:'absolute',top:-1,left:20,right:20,height:2,background:'linear-gradient(90deg,transparent,#00c8ff,transparent)'}} />
+            <div style={{fontSize:28,marginBottom:16}}>⬡</div>
+            <div style={{fontSize:13,fontWeight:700,color:'#00c8ff',letterSpacing:2,marginBottom:8,textTransform:'uppercase'}}>
+              配送區域劃分工具
+            </div>
+            <div style={{fontSize:11,color:'rgba(255,255,255,0.45)',lineHeight:1.7,marginBottom:20}}>
+              K-Means++ 演算法自動分群<br/>
+              車輛指派 · 里程均衡 · 手動微調
+            </div>
+            <div style={{
+              display:'inline-flex',alignItems:'center',gap:6,
+              fontSize:10,color:'rgba(0,200,255,0.7)',
+              border:'1px solid rgba(0,200,255,0.3)',
+              padding:'4px 10px',borderRadius:2,letterSpacing:1,
+            }}>
+              🔒 需要授權
+            </div>
+          </div>
+
+          {/* 卡片 2：指送地址查詢（無需密碼） */}
+          <div style={{
+            width: 280, padding: '32px 28px',
+            background: 'rgba(251,191,36,0.04)',
+            border: '1px solid rgba(251,191,36,0.2)',
+            borderRadius: 4,
+            cursor: 'pointer',
+            position: 'relative',
+            transition: 'all 0.2s',
+          }}
+          onMouseEnter={e => {
+            e.currentTarget.style.background = 'rgba(251,191,36,0.09)';
+            e.currentTarget.style.borderColor = 'rgba(251,191,36,0.5)';
+          }}
+          onMouseLeave={e => {
+            e.currentTarget.style.background = 'rgba(251,191,36,0.04)';
+            e.currentTarget.style.borderColor = 'rgba(251,191,36,0.2)';
+          }}
+          onClick={() => { setActiveTab('lookup'); setAppMode('main'); }}
+          >
+            <div style={{position:'absolute',top:-1,left:20,right:20,height:2,background:'linear-gradient(90deg,transparent,#fbbf24,transparent)'}} />
+            <div style={{fontSize:28,marginBottom:16}}>◎</div>
+            <div style={{fontSize:13,fontWeight:700,color:'#fbbf24',letterSpacing:2,marginBottom:8,textTransform:'uppercase'}}>
+              指送地址查詢
+            </div>
+            <div style={{fontSize:11,color:'rgba(255,255,255,0.45)',lineHeight:1.7,marginBottom:20}}>
+              輸入客戶地址即時查詢<br/>
+              可行性評估 · 最近點位 · 往返時間
+            </div>
+            <div style={{
+              display:'inline-flex',alignItems:'center',gap:6,
+              fontSize:10,color:'rgba(251,191,36,0.7)',
+              border:'1px solid rgba(251,191,36,0.3)',
+              padding:'4px 10px',borderRadius:2,letterSpacing:1,
+            }}>
+              ▶ 直接進入
+            </div>
+          </div>
+        </div>
+
+        {/* 底部版本標記 */}
+        <div style={{position:'absolute',bottom:20,fontSize:10,color:'rgba(255,255,255,0.15)',letterSpacing:3}}>
+          v2.0 · KAOHSIUNG · {new Date().getFullYear()}
+        </div>
+      </div>
+    </div>
+    );
+  }
+
+  // ── 密碼輸入頁 ─────────────────────────────────────
+  if (appMode === 'dispatch_login') {
+    return (
+      <div style={{
+        height: `${windowHeight}px`,
+        background: '#080c14',
+        fontFamily: "'JetBrains Mono', 'Courier New', monospace",
+        display: 'flex', flexDirection: 'column',
+        alignItems: 'center', justifyContent: 'center',
+        position: 'relative', overflow: 'hidden',
+      }}>
+        <div style={{
+          position: 'absolute', inset: 0,
+          backgroundImage: `linear-gradient(rgba(0,200,255,0.04) 1px, transparent 1px), linear-gradient(90deg, rgba(0,200,255,0.04) 1px, transparent 1px)`,
+          backgroundSize: '40px 40px', pointerEvents: 'none',
+        }} />
+        <div style={{
+          width: 340, padding: '40px 36px',
+          background: 'rgba(0,200,255,0.04)',
+          border: `1px solid ${pwError ? 'rgba(239,68,68,0.6)' : 'rgba(0,200,255,0.25)'}`,
+          borderRadius: 4, position: 'relative', zIndex: 1,
+          transition: 'border-color 0.3s',
+        }}>
+          <div style={{position:'absolute',top:-1,left:20,right:20,height:2,background:`linear-gradient(90deg,transparent,${pwError?'#ef4444':'#00c8ff'},transparent)`,transition:'background 0.3s'}} />
+          <div style={{marginBottom:28}}>
+            <div style={{fontSize:10,letterSpacing:4,color:'rgba(0,200,255,0.5)',marginBottom:10,textTransform:'uppercase'}}>Authorization Required</div>
+            <div style={{fontSize:16,fontWeight:700,color:'#fff',letterSpacing:1}}>配送區域劃分工具</div>
+          </div>
+          <div style={{marginBottom:8,fontSize:10,color:'rgba(255,255,255,0.35)',letterSpacing:2}}>ACCESS CODE</div>
+          <input
+            type="password"
+            value={pwInput}
+            onChange={e => setPwInput(e.target.value)}
+            onKeyDown={e => e.key === 'Enter' && handleDispatchLogin()}
+            placeholder="輸入授權碼"
+            autoFocus
+            style={{
+              width: '100%', padding: '10px 14px',
+              background: 'rgba(255,255,255,0.05)',
+              border: `1px solid ${pwError ? 'rgba(239,68,68,0.5)' : 'rgba(0,200,255,0.2)'}`,
+              borderRadius: 2, color: '#fff',
+              fontSize: 14, letterSpacing: 3,
+              outline: 'none', boxSizing: 'border-box',
+              transition: 'border-color 0.3s',
+              fontFamily: 'inherit',
+            }}
+          />
+          {pwError && (
+            <div style={{marginTop:8,fontSize:10,color:'#ef4444',letterSpacing:1}}>
+              ✕ 授權碼錯誤，請重試
+            </div>
+          )}
+          <button
+            onClick={handleDispatchLogin}
+            style={{
+              width:'100%',marginTop:20,padding:'10px 0',
+              background: 'rgba(0,200,255,0.12)',
+              border:'1px solid rgba(0,200,255,0.4)',
+              borderRadius:2,color:'#00c8ff',
+              fontSize:12,letterSpacing:3,fontWeight:700,
+              cursor:'pointer',fontFamily:'inherit',
+              textTransform:'uppercase',
+              transition:'all 0.2s',
+            }}
+            onMouseEnter={e => { e.currentTarget.style.background='rgba(0,200,255,0.22)'; }}
+            onMouseLeave={e => { e.currentTarget.style.background='rgba(0,200,255,0.12)'; }}
+          >
+            ENTER
+          </button>
+          <button
+            onClick={() => { setPwInput(''); setPwError(false); setAppMode('home'); }}
+            style={{
+              width:'100%',marginTop:10,padding:'8px 0',
+              background:'transparent',border:'none',
+              color:'rgba(255,255,255,0.25)',fontSize:10,
+              letterSpacing:2,cursor:'pointer',fontFamily:'inherit',
+            }}
+          >
+            ← 返回
+          </button>
+        </div>
+      </div>
+    </div>
+    );
+  }
+
   return (
     <div className="flex w-full bg-gray-100 font-sans text-gray-900 overflow-hidden relative" style={{height: `${windowHeight}px`}}>
       
       <div className="w-[400px] bg-white shadow-2xl flex flex-col z-20 h-full flex-shrink-0 border-r border-gray-200">
         
         {/* 固定頂部標題 */}
-        <div className="p-5 bg-slate-800 text-white flex-shrink-0 shadow-md z-10">
-          <div className="flex items-center gap-3 mb-1">
-              <IconTruck className="w-6 h-6 text-blue-400" />
-              <h1 className="text-lg font-bold tracking-wide">智能配送派車系統</h1>
+        <div className="p-4 bg-slate-900 text-white flex-shrink-0 shadow-md z-10" style={{borderBottom:'1px solid rgba(0,200,255,0.2)'}}>
+          <div className="flex items-center justify-between mb-1">
+            <div className="flex items-center gap-2.5">
+              <IconTruck className="w-5 h-5" style={{color:'#00c8ff'}} />
+              <h1 className="text-sm font-bold tracking-widest uppercase" style={{letterSpacing:3}}>
+                {activeTab === 'lookup' ? '指送地址查詢' : '配送區域劃分工具'}
+              </h1>
+            </div>
+            <button onClick={() => setAppMode('home')}
+              className="text-[10px] tracking-widest uppercase"
+              style={{color:'rgba(0,200,255,0.5)',background:'none',border:'none',cursor:'pointer',letterSpacing:2}}
+              onMouseEnter={e => e.currentTarget.style.color='rgba(0,200,255,0.9)'}
+              onMouseLeave={e => e.currentTarget.style.color='rgba(0,200,255,0.5)'}
+            >← HOME</button>
           </div>
-          <div className="text-xs text-slate-400">{REGION_LABELS[activeRegion] || '自訂'} · <span className="text-white font-bold">{deliveryPoints.length}</span> 筆</div>
+          <div className="text-[10px]" style={{color:'rgba(255,255,255,0.35)',letterSpacing:1}}>
+            {activeTab === 'lookup' ? '全區 625 筆 · 即時查詢' : `${REGION_LABELS[activeRegion] || '自訂'} · ${deliveryPoints.length} 筆`}
+          </div>
         </div>
 
         {/* 固定營運數據區塊 */}
