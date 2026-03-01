@@ -1120,8 +1120,8 @@ const App = () => {
     const csvRows = [headers.join(',')];
     finalClusteredData.forEach(item => {
       const row = [
-        item.id, `"${item.name.replace(/"/g, '""')}"`, `"${item.address.replace(/"/g, '""')}"`,
-        item.lat, item.lng, `"${item.route.replace(/"/g, '""')}"`, getTruckName(item.cluster), item.isManual ? '管理員手動微調' : 'AI演算法最佳化'
+        item.id, `"${item.name.split('"').join('""')}"`, `"${item.address.split('"').join('""')}"`,
+        item.lat, item.lng, `"${item.route.split('"').join('""')}"`, getTruckName(item.cluster), item.isManual ? '管理員手動微調' : 'AI演算法最佳化'
       ];
       csvRows.push(row.join(','));
     });
@@ -1581,11 +1581,11 @@ const App = () => {
                       const header = ['查詢時間','輸入地址','系統定位','結果','最近點位','路線','距離(km)','往返(分)'];
                       const rows = filtered.map(l => [
                         new Date(l.ts).toLocaleString('zh-TW'),
-                        '"' + l.addr.replace(/"/g,'""') + '"',
-                        '"' + (l.resolved||'').replace(/"/g,'""') + '"',
+                        '"' + l.addr.split('"').join('""') + '"',
+                        '"' + (l.resolved||'').split('"').join('""') + '"',
                         l.ok ? '可配送' : '超出範圍',
-                        '"' + (l.nearestName||'').replace(/"/g,'""') + '"',
-                        '"' + (l.route||'').replace(/"/g,'""') + '"',
+                        '"' + (l.nearestName||'').split('"').join('""') + '"',
+                        '"' + (l.route||'').split('"').join('""') + '"',
                         l.distKm, l.roundTrip
                       ].join(','));
                       const blob = new Blob([BOM + [header.join(','), ...rows].join('\n')], { type: 'text/csv;charset=utf-8;' });
