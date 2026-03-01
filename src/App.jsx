@@ -1107,7 +1107,7 @@ const App = () => {
         {/* 標題 */}
         <div style={{textAlign:'center',marginBottom:60,position:'relative',zIndex:1}}>
           <div style={{fontSize:11,letterSpacing:8,color:'rgba(0,200,255,0.6)',marginBottom:16,textTransform:'uppercase'}}>
-            LOGISTICS · DISPATCH · SYSTEM
+            LOGISTICS / DISPATCH / SYSTEM
           </div>
           <h1 style={{
             fontSize: 'clamp(28px, 4vw, 42px)',
@@ -1152,7 +1152,7 @@ const App = () => {
             </div>
             <div style={{fontSize:11,color:'rgba(255,255,255,0.45)',lineHeight:1.7,marginBottom:20}}>
               K-Means++ 演算法自動分群<br/>
-              車輛指派 · 里程均衡 · 手動微調
+              車輛指派 / 里程均衡 / 手動微調
             </div>
             <div style={{
               display:'inline-flex',alignItems:'center',gap:6,
@@ -1191,7 +1191,7 @@ const App = () => {
             </div>
             <div style={{fontSize:11,color:'rgba(255,255,255,0.45)',lineHeight:1.7,marginBottom:20}}>
               輸入客戶地址即時查詢<br/>
-              可行性評估 · 最近點位 · 往返時間
+              可行性評估 / 最近點位 / 往返時間
             </div>
             <div style={{
               display:'inline-flex',alignItems:'center',gap:6,
@@ -1206,7 +1206,7 @@ const App = () => {
 
         {/* 底部版本標記 */}
         <div style={{position:'absolute',bottom:20,fontSize:10,color:'rgba(255,255,255,0.15)',letterSpacing:3}}>
-          v2.0 · KAOHSIUNG · {new Date().getFullYear()}
+          v2.0 / KAOHSIUNG / {new Date().getFullYear()}
         </div>
       </div>
     </div>
@@ -1321,7 +1321,7 @@ const App = () => {
             >← HOME</button>
           </div>
           <div className="text-[10px]" style={{color:'rgba(255,255,255,0.35)',letterSpacing:1}}>
-            {activeTab === 'lookup' ? '全區 625 筆 · 即時查詢' : `${REGION_LABELS[activeRegion] || '自訂'} · ${deliveryPoints.length} 筆`}
+            {activeTab === 'lookup' ? '全區 625 筆 | 即時查詢' : `${REGION_LABELS[activeRegion] || '自訂'} | ${deliveryPoints.length} 筆`}
           </div>
         </div>
 
@@ -1478,7 +1478,7 @@ const App = () => {
                                         <h3 className="font-bold text-gray-800 text-sm">{stat.name}</h3>
                                         <div className="text-[11px] text-gray-500 mt-1 flex flex-wrap gap-2 items-center">
                                             <span>單量: <span className="font-bold text-gray-700">{stat.count}</span></span>
-                                            <span>·</span>
+                                            <span>|</span>
                                             <span>里程: <span className="font-bold text-gray-700">{stat.estKm.toFixed(1)}</span> km</span>
                                         </div>
                                     </div>
