@@ -1418,7 +1418,7 @@ const App = () => {
 
                      <div className="space-y-2 max-h-[250px] overflow-y-auto pr-1">
                         {clusterStats[activeCluster]?.points.map((p) => (
-                            <div key={p.id} className={`bg-white p-2.5 rounded-lg border text-xs shadow-sm flex flex-col gap-1 ${p.isManual ? 'border-orange-300 bg-orange-50/30' : 'border-gray-200'}`}>
+                            <div key={p.id} className={`bg-white p-2.5 rounded-lg border text-xs shadow-sm flex flex-col gap-1 ${p.isManual ? 'border-orange-300 bg-orange-50 bg-opacity-30' : 'border-gray-200'}`}>
                                 <div className="flex justify-between items-start">
                                     <span className="font-bold text-gray-800">{p.name}</span>
                                     {p.isManual && <span className="text-[10px] bg-orange-100 text-orange-700 px-1.5 py-0.5 rounded font-bold">手動指定</span>}
@@ -1501,7 +1501,7 @@ const App = () => {
       <div className="flex-1 relative bg-gray-200 h-full">
          <div ref={(el) => { mapContainerRef.current = el; if (el && !mapContainerMounted) setMapContainerMounted(true); }} className="w-full h-full z-0" style={{minHeight: '400px'}} />
          <div className="absolute top-4 right-4 flex flex-col gap-2 z-[1000]">
-             <div className="bg-white/95 backdrop-blur-sm p-4 rounded-xl shadow-lg border border-gray-200 text-xs w-[280px]">
+             <div className="bg-white bg-opacity-95 backdrop-blur-sm p-4 rounded-xl shadow-lg border border-gray-200 text-xs w-[280px]">
                 <h4 className="font-bold mb-2 flex items-center gap-1.5 text-gray-800 border-b pb-1.5">
                     <IconNavigation className="w-4 h-4 text-blue-600" />系統操作提示
                 </h4>
@@ -1529,7 +1529,7 @@ const App = () => {
 
          </div>
          {!mapInitialized && (
-             <div className="absolute inset-0 flex items-center justify-center bg-gray-100/80 backdrop-blur z-50">
+             <div className="absolute inset-0 flex items-center justify-center bg-gray-100 bg-opacity-80 backdrop-blur z-50">
                 <div className="text-center p-6 bg-white rounded-2xl shadow-xl border border-gray-100">
                     <div className="animate-spin rounded-full h-10 w-10 border-b-4 border-blue-600 mx-auto mb-3"></div>
                     <p className="text-gray-600 font-bold text-sm">地圖引擎初始化中...</p>
@@ -1537,7 +1537,7 @@ const App = () => {
              </div>
          )}
       {showAddModal && (
-        <div className="fixed inset-0 bg-black/40 backdrop-blur-sm z-[9999] flex items-center justify-center p-4" onClick={() => setShowAddModal(false)}>
+        <div className="fixed inset-0 bg-black bg-opacity-40 backdrop-blur-sm z-[9999] flex items-center justify-center p-4" onClick={() => setShowAddModal(false)}>
           <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md p-6 space-y-4" onClick={e => e.stopPropagation()}>
             <h3 className="text-lg font-bold text-gray-800">新增配送點位</h3>
             <div className="space-y-3">
@@ -1562,7 +1562,7 @@ const App = () => {
         </div>
       )}
       {editingPointData && (
-        <div className="fixed inset-0 bg-black/40 backdrop-blur-sm z-[9999] flex items-center justify-center p-4" onClick={() => setEditingPointData(null)}>
+        <div className="fixed inset-0 bg-black bg-opacity-40 backdrop-blur-sm z-[9999] flex items-center justify-center p-4" onClick={() => setEditingPointData(null)}>
           <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md p-6 space-y-4" onClick={e => e.stopPropagation()}>
             <h3 className="text-lg font-bold text-gray-800">編輯點位資料</h3>
             <div className="space-y-3">
@@ -1589,7 +1589,7 @@ const App = () => {
         </div>
       )}
          {selectedPointForEdit && (
-            <div className="absolute inset-0 z-[2000] flex items-center justify-center bg-black/30 backdrop-blur-sm transition-opacity">
+            <div className="absolute inset-0 z-[2000] flex items-center justify-center bg-black bg-opacity-30 backdrop-blur-sm transition-opacity">
                <div className="bg-white rounded-xl shadow-2xl w-80 overflow-hidden border border-gray-200 animate-in fade-in zoom-in duration-200">
                   <div className="bg-slate-800 p-4 text-white flex justify-between items-center">
                      <div className="flex items-center gap-2 font-bold">
