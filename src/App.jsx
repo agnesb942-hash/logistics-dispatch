@@ -1250,7 +1250,7 @@ const App = () => {
             </div>
           )}
           <button onClick={() => { setPwInput(''); setPwError(false); setLookupOnly(false); setMapContainerMounted(false); mapInstanceRef.current = null; setMapInitialized(false); setAppMode('home'); }} style={{width:'100%',marginTop:10,padding:'8px 0',background:'transparent',border:'none',color:'rgba(255,255,255,0.25)',fontSize:10,letterSpacing:2,cursor:'pointer',fontFamily:'inherit'}}>
-            {'<-- 返回'}
+            返回
           </button>
         </div>
       </div>
@@ -1275,7 +1275,7 @@ const App = () => {
               style={{color:'rgba(0,200,255,0.5)',background:'none',border:'none',cursor:'pointer',letterSpacing:2}}
               onMouseEnter={e => e.currentTarget.style.color='rgba(0,200,255,0.9)'}
               onMouseLeave={e => e.currentTarget.style.color='rgba(0,200,255,0.5)'}
-            >&lt;-- HOME</button>
+            >HOME</button>
           </div>
           <div className="text-[10px]" style={{color:'rgba(255,255,255,0.35)',letterSpacing:1}}>
             {lookupOnly ? '全區 625 筆 | 即時查詢' : activeTab === 'lookup' ? '全區 625 筆 | 即時查詢' : `${REGION_LABELS[activeRegion] || '自訂'} | ${deliveryPoints.length} 筆`}
@@ -1765,7 +1765,7 @@ const App = () => {
                          <IconPin className="w-5 h-5 text-blue-400" />
                          站點手動指派
                      </div>
-                     <button onClick={() => setSelectedPointForEdit(null)} className="text-gray-400 hover:text-white transition-colors text-xl leading-none">&times;</button>
+                     <button onClick={() => setSelectedPointForEdit(null)} className="text-gray-400 hover:text-white transition-colors text-xl leading-none">X</button>
                   </div>
                   <div className="p-5">
                       <div className="mb-4">
