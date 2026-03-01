@@ -427,72 +427,26 @@ const App = () => {
     setDeliveryLookupLoading(true);
     setDeliveryLookupResult(null);
 
-    // 自動產生降階查詢候選清單：完整地址 → 去門牌 → 去號數 → 只到路名
-    const raw = deliveryLookupAddr.trim();
-    const buildCandidates = (addr) => {
-      const candidates = [];
-      candidates.push(addr); // 原始輸入
-      // 去除末尾數字門牌（例如 86號、86-2號）
-      const noNum = addr.replace(/\d+(-\d+)?號.*$/, '').trim();
-      if (noNum && noNum !== addr) candidates.push(noNum);
-      // 去除巷弄（保留到路/街/大道）
-      const noLane = addr.replace(/[0-9]+[巷弄].*$/, '').trim();
-      if (noLane && noLane !== addr && noLane !== noNum) candidates.push(noLane);
-      return [...new Set(candidates)];
-    };
-    const candidates = buildCandidates(raw);
-
-    const nominatimFetch = async (query) => {
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 10000);
-      try {
-        const res = await fetch(
-          `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(query + ' 台灣')}&format=json&countrycodes=tw&limit=1`,
-          { headers: { 'Accept': 'application/json', 'Accept-Language': 'zh-TW' }, signal: controller.signal }
-        );
-        clearTimeout(timeoutId);
-        if (!res.ok) throw new Error(`HTTP ${res.status}`);
-        const data = await res.json();
-        return data && data.length > 0 ? data[0] : null;
-      } catch (err) {
-        clearTimeout(timeoutId);
-        if (err.name === 'AbortError') throw new Error('TIMEOUT');
-        throw err;
-      }
-    };
-
     try {
-      let geoResult = null;
-      let usedQuery = raw;
-      let isFallback = false;
+      // 第一步：地址轉座標（Google Maps Geocoding API，台灣覆蓋率完整）
+      const raw = deliveryLookupAddr.trim();
+      const query = raw.includes('台灣') ? raw : raw + ' 台灣';
+      const geoRes = await fetch(
+        `https://maps.googleapis.com/maps/api/geocode/json?address=${encodeURIComponent(query)}&language=zh-TW&region=TW&key=${GOOGLE_MAPS_API_KEY}`
+      );
+      if (!geoRes.ok) throw new Error(`HTTP ${geoRes.status}`);
+      const geoData = await geoRes.json();
 
-      for (let i = 0; i < candidates.length; i++) {
-        try {
-          geoResult = await nominatimFetch(candidates[i]);
-          if (geoResult) {
-            usedQuery = candidates[i];
-            isFallback = i > 0;
-            break;
-          }
-        } catch (err) {
-          if (err.message === 'TIMEOUT') {
-            setDeliveryLookupResult({ ok: false, msg: '地址查詢逾時，請確認網路連線後重試。' });
-            setDeliveryLookupLoading(false);
-            return;
-          }
-          // 其他錯誤繼續嘗試下一個候選
-        }
-      }
-
-      if (!geoResult) {
-        setDeliveryLookupResult({ ok: false, msg: '無法辨識該地址，請嘗試簡化輸入（例如只填到路名，如「台南市安南區工業一路」）。' });
+      if (!geoData.results || geoData.results.length === 0) {
+        setDeliveryLookupResult({ ok: false, msg: '無法辨識該地址，請確認輸入是否正確（建議包含縣市區名稱，例如：台南市安南區工業一路86號）。' });
         setDeliveryLookupLoading(false);
         return;
       }
 
-      const targetLat = parseFloat(geoResult.lat);
-      const targetLng = parseFloat(geoResult.lon);
-      const resolvedName = geoResult.display_name || '';
+      const location = geoData.results[0].geometry.location;
+      const targetLat = location.lat;
+      const targetLng = location.lng;
+      const resolvedName = geoData.results[0].formatted_address || '';
 
       // 第二步：找最近建檔點位（直線距離）
       let bestPoint = null, bestDist = Infinity;
@@ -509,7 +463,6 @@ const App = () => {
       // 第三步：估算行駛時間（路網修正係數 1.3，平均時速 35 km/h）
       const roadDist = bestDist * 1.3;
       const roundTripMin = (roadDist * 2 / 35) * 60;
-      const fallbackNote = isFallback ? `（地址簡化為「${usedQuery}」後定位）` : '';
 
       if (roundTripMin <= 25) {
         setDeliveryLookupResult({
@@ -517,7 +470,7 @@ const App = () => {
           route: bestPoint.route, nearestName: bestPoint.name,
           distKm: roadDist.toFixed(1), roundTrip: roundTripMin.toFixed(1),
           resolved: resolvedName, lat: targetLat, lng: targetLng,
-          trafficNote: `（估算值）${fallbackNote}`
+          trafficNote: '（估算值）'
         });
       } else {
         setDeliveryLookupResult({
@@ -525,7 +478,7 @@ const App = () => {
           nearestName: bestPoint.name,
           distKm: roadDist.toFixed(1), roundTrip: roundTripMin.toFixed(1),
           resolved: resolvedName, lat: targetLat, lng: targetLng,
-          trafficNote: `（估算值）${fallbackNote}`
+          trafficNote: '（估算值）'
         });
       }
     } catch (err) {
@@ -1341,7 +1294,7 @@ const App = () => {
             <div className="bg-gray-50 p-3 rounded-lg border border-gray-100 space-y-2">
                 <h4 className="text-xs font-bold text-gray-600">計算說明</h4>
                 <div className="text-[10px] text-gray-400 leading-relaxed space-y-1">
-                    <div>• 地址轉座標：Nominatim（OpenStreetMap）免費服務</div>
+                    <div>• 地址轉座標：Google Maps Geocoding API（台灣完整覆蓋）</div>
                     <div>• 距離公式：Haversine 直線距離 × 1.3 路網修正係數</div>
                     <div>• 往返時間：路程距離 × 2 ÷ 平均車速 35 km/h</div>
                     <div>• 門檻設定：往返 ≤ 25 分鐘判定為可配送</div>
