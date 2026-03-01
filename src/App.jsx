@@ -977,7 +977,7 @@ const App = () => {
     const { lat, lng, nearestName, ok } = deliveryLookupResult;
 
     // 找到最近建檔點位的座標
-    const nearestPoint = deliveryPoints.find(p => p.name === nearestName);
+    const nearestPoint = ALL_POINTS.find(p => p.name === nearestName);
 
     // 查詢地址標記（大圖釘）
     const queryIcon = window.L.divIcon({
