@@ -383,7 +383,6 @@ const App = () => {
   const [mapInitialized, setMapInitialized] = useState(false);
   const mapContainerRef = useRef(null);
   const mapInstanceRef = useRef(null);
-  const [mapContainerMounted, setMapContainerMounted] = useState(false);
   const markersRef = useRef({});
   const polygonLayersRef = useRef([]); // Ref for storing polygon layers & stem lines
   const adminLayerRef = useRef(null);
@@ -825,21 +824,30 @@ const App = () => {
   // mapContainerRef.current is NOT a valid dep (ref doesn't trigger re-render)
   // Instead we poll until container is available after leaflet loads
   useEffect(() => {
-    if (!leafletReady || !mapContainerMounted || !mapContainerRef.current || !window.L) return;
+    if (!leafletReady) return;
     if (mapInstanceRef.current) {
       setTimeout(() => mapInstanceRef.current && mapInstanceRef.current.invalidateSize(), 100);
       return;
     }
-    const map = window.L.map(mapContainerRef.current, { preferCanvas: true }).setView([23.05, 120.22], 12);
-    window.L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-      attribution: '&copy; OpenStreetMap contributors', subdomains: 'abc', maxZoom: 19
-    }).addTo(map);
-    mapInstanceRef.current = map;
-    setMapInitialized(true);
-    setTimeout(() => map.invalidateSize(), 100);
-    const ro = new ResizeObserver(() => map.invalidateSize());
-    ro.observe(mapContainerRef.current);
-  }, [leafletReady, mapContainerMounted]);
+    let attempts = 0;
+    const tryInit = () => {
+      if (mapInstanceRef.current) return;
+      if (!mapContainerRef.current || !window.L) {
+        if (++attempts < 50) setTimeout(tryInit, 100);
+        return;
+      }
+      const map = window.L.map(mapContainerRef.current, { preferCanvas: true }).setView([23.05, 120.22], 12);
+      window.L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+        attribution: '&copy; OpenStreetMap contributors', subdomains: 'abc', maxZoom: 19
+      }).addTo(map);
+      mapInstanceRef.current = map;
+      setMapInitialized(true);
+      setTimeout(() => map.invalidateSize(), 100);
+      const resizeObserver = new ResizeObserver(() => map.invalidateSize());
+      resizeObserver.observe(mapContainerRef.current);
+    };
+    tryInit();
+  }, [leafletReady, appMode]);
 
   // Update Markers AND Polygons based on Final Data
   useEffect(() => {
@@ -1232,7 +1240,7 @@ const App = () => {
               </button>
             </div>
           )}
-          <button onClick={() => { setPwInput(''); setPwError(false); setLookupOnly(false); setMapContainerMounted(false); mapInstanceRef.current = null; setMapInitialized(false); setAppMode('home'); }} style={{width:'100%',marginTop:10,padding:'8px 0',background:'transparent',border:'none',color:'rgba(255,255,255,0.25)',fontSize:10,letterSpacing:2,cursor:'pointer',fontFamily:'inherit'}}>
+          <button onClick={() => { setPwInput(''); setPwError(false); setLookupOnly(false); setAppMode('home'); }} style={{width:'100%',marginTop:10,padding:'8px 0',background:'transparent',border:'none',color:'rgba(255,255,255,0.25)',fontSize:10,letterSpacing:2,cursor:'pointer',fontFamily:'inherit'}}>
             返回
           </button>
         </div>
@@ -1260,7 +1268,7 @@ const App = () => {
                 {activeTab === 'lookup' ? '指送地址查詢' : '配送區域劃分工具'}
               </h1>
             </div>
-            <button onClick={() => { setAppMode('home'); setLookupOnly(false); setMapContainerMounted(false); mapInstanceRef.current = null; setMapInitialized(false); }}
+            <button onClick={() => { setAppMode('home'); setLookupOnly(false); }}
               className="text-[10px] tracking-widest uppercase"
               style={{color:'rgba(0,200,255,0.5)',background:'none',border:'none',cursor:'pointer',letterSpacing:2}}
               onMouseEnter={e => e.currentTarget.style.color='rgba(0,200,255,0.9)'}
@@ -1496,7 +1504,7 @@ const App = () => {
         </div>}
       </div>
       <div className="flex-1 relative bg-gray-200 h-full">
-         <div ref={(el) => { mapContainerRef.current = el; if (el && !mapContainerMounted) setMapContainerMounted(true); }} className="w-full h-full z-0" style={{minHeight: '400px'}} />
+         <div ref={mapContainerRef} className="w-full h-full z-0" style={{minHeight: '400px'}} />
          <div className="absolute top-4 right-4 flex flex-col gap-2 z-[1000]">
              <div className="bg-white bg-opacity-95 backdrop-blur-sm p-4 rounded-xl shadow-lg border border-gray-200 text-xs w-[280px]">
                 <h4 className="font-bold mb-2 flex items-center gap-1.5 text-gray-800 border-b pb-1.5">
