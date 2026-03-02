@@ -1175,8 +1175,7 @@ const App = () => {
           if (!card) return;
           if (card.id === 'card-dispatch') setAppMode('dispatch_login');
           else { setLookupOnly(true); setActiveTab('lookup'); setAppMode('main'); }
-        }}
-      />
+        }} />
     );
   }
   // === 密碼輸入頁 ===
@@ -1201,8 +1200,7 @@ const App = () => {
             onKeyDown={e => e.key === 'Enter' && handleDispatchLogin()}
             placeholder={'輸入授權碼'}
             autoFocus
-            style={{width:'100%',padding:'10px 14px',background:'rgba(255,255,255,0.05)',border:'1px solid '+(pwError?'rgba(239,68,68,0.5)':'rgba(0,200,255,0.2)'),borderRadius:2,color:'#fff',fontSize:14,letterSpacing:3,outline:'none',boxSizing:'border-box',transition:'border-color 0.3s',fontFamily:'inherit'}}
-          />
+            style={{width:'100%',padding:'10px 14px',background:'rgba(255,255,255,0.05)',border:'1px solid '+(pwError?'rgba(239,68,68,0.5)':'rgba(0,200,255,0.2)'),borderRadius:2,color:'#fff',fontSize:14,letterSpacing:3,outline:'none',boxSizing:'border-box',transition:'border-color 0.3s',fontFamily:'inherit'}}/>
           {pwError && (
             <div style={{marginTop:8,fontSize:10,color:'#ef4444',letterSpacing:1}}>X {'授權碼錯誤，請重試'}</div>
           )}
@@ -1221,8 +1219,7 @@ const App = () => {
                   <input type="password"
                     value={idx===0?pwOld:idx===1?pwNew1:pwNew2}
                     onChange={e => idx===0?setPwOld(e.target.value):idx===1?setPwNew1(e.target.value):setPwNew2(e.target.value)}
-                    style={{width:'100%',padding:'7px 10px',background:'rgba(255,255,255,0.05)',border:'1px solid rgba(0,200,255,0.15)',borderRadius:2,color:'#fff',fontSize:12,outline:'none',boxSizing:'border-box',fontFamily:'inherit'}}
-                  />
+                    style={{width:'100%',padding:'7px 10px',background:'rgba(255,255,255,0.05)',border:'1px solid rgba(0,200,255,0.15)',borderRadius:2,color:'#fff',fontSize:12,outline:'none',boxSizing:'border-box',fontFamily:'inherit'}}/>
                 </div>
               ))}
               {pwChangeMsg && (
