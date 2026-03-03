@@ -500,31 +500,59 @@ const App = () => {
   // 指送地址查詢
   const GOOGLE_MAPS_API_KEY = "AIzaSyBW-7BqwddpcRaP5HK5LGwM4K9lryh81qM";
 
+  // 地址轉座標：先用 Nominatim（台灣 OSM，免費無限制）再用 Google 兜底
+  const geocodeTW = async (address) => {
+    const raw = address.trim();
+    // 補全縣市前綴提升準確度
+    const nominatimQ = raw.includes('台灣') || raw.includes('Taiwan') ? raw : raw;
+    
+    // 第一優先：Nominatim（OpenStreetMap 台灣，門牌精準度高）
+    try {
+      const nmRes = await fetch(
+        `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(nominatimQ)}&countrycodes=tw&format=json&limit=1&addressdetails=1`,
+        { headers: { 'Accept-Language': 'zh-TW,zh;q=0.9' } }
+      );
+      if (nmRes.ok) {
+        const nmData = await nmRes.json();
+        if (nmData && nmData.length > 0 && parseFloat(nmData[0].importance || 0) > 0.1) {
+          const r = nmData[0];
+          const lat = parseFloat(r.lat);
+          const lng = parseFloat(r.lon);
+          // 確認座標在台灣範圍內 (21~25.5°N, 119~122.5°E)
+          if (lat > 21 && lat < 25.5 && lng > 119 && lng < 122.5) {
+            return { lat, lng, resolved: r.display_name, source: 'OSM' };
+          }
+        }
+      }
+    } catch(e) { /* 繼續嘗試 Google */ }
+
+    // 第二優先：Google Maps Geocoding（兜底，加強台灣區域限制）
+    const googleQ = raw.includes('台灣') ? raw : raw + ' 台灣';
+    const geoRes = await fetch(
+      `https://maps.googleapis.com/maps/api/geocode/json?address=${encodeURIComponent(googleQ)}&language=zh-TW&region=TW&components=country:TW&key=${GOOGLE_MAPS_API_KEY}`
+    );
+    if (!geoRes.ok) throw new Error(`HTTP ${geoRes.status}`);
+    const geoData = await geoRes.json();
+    if (!geoData.results || geoData.results.length === 0) return null;
+    const loc = geoData.results[0].geometry.location;
+    return { lat: loc.lat, lng: loc.lng, resolved: geoData.results[0].formatted_address, source: 'Google' };
+  };
+
   const handleDeliveryLookup = async () => {
     if (!deliveryLookupAddr.trim()) return;
     setDeliveryLookupLoading(true);
     setDeliveryLookupResult(null);
 
     try {
-      // 第一步：地址轉座標（Google Maps Geocoding API，台灣覆蓋率完整）
-      const raw = deliveryLookupAddr.trim();
-      const query = raw.includes('台灣') ? raw : raw + ' 台灣';
-      const geoRes = await fetch(
-        `https://maps.googleapis.com/maps/api/geocode/json?address=${encodeURIComponent(query)}&language=zh-TW&region=TW&key=${GOOGLE_MAPS_API_KEY}`
-      );
-      if (!geoRes.ok) throw new Error(`HTTP ${geoRes.status}`);
-      const geoData = await geoRes.json();
+      const geo = await geocodeTW(deliveryLookupAddr);
 
-      if (!geoData.results || geoData.results.length === 0) {
-        setDeliveryLookupResult({ ok: false, msg: '無法辨識該地址，請確認輸入是否正確（建議包含縣市區名稱，例如：台南市安南區工業一路86號）。' });
+      if (!geo) {
+        setDeliveryLookupResult({ ok: false, msg: '無法辨識該地址，請確認輸入是否正確（建議格式：台南市安南區工業一路86號）。' });
         setDeliveryLookupLoading(false);
         return;
       }
 
-      const location = geoData.results[0].geometry.location;
-      const targetLat = location.lat;
-      const targetLng = location.lng;
-      const resolvedName = geoData.results[0].formatted_address || '';
+      const { lat: targetLat, lng: targetLng, resolved: resolvedName, source: geoSource } = geo;
 
       // 第二步：找最近兩個建檔點位（跨所有區域比對，依距離排序）
       const allWithDist = ALL_POINTS.map(p => ({
@@ -555,7 +583,7 @@ const App = () => {
           route: best.route, nearestName: best.name,
           distKm: best.roadDist, roundTrip: best.roundTripMin,
           resolved: resolvedName, lat: targetLat, lng: targetLng,
-          trafficNote: '（估算值）',
+          trafficNote: '（估算值）', geoSource,
           top2,
         });
       } else {
@@ -564,7 +592,7 @@ const App = () => {
           nearestName: best.name,
           distKm: best.roadDist, roundTrip: best.roundTripMin,
           resolved: resolvedName, lat: targetLat, lng: targetLng,
-          trafficNote: '（估算值）',
+          trafficNote: '（估算值）', geoSource,
           top2,
         });
       }
@@ -855,30 +883,46 @@ const App = () => {
   }, []);
 
   // Step 2: Initialize map - triggered by leafletReady OR appMode change (entering main)
-  // mapContainerRef.current is NOT a valid dep (ref doesn't trigger re-render)
-  // Instead we poll until container is available after leaflet loads
+  // Handles re-entry: if map container was re-mounted (new div), reinitialize the map
   useEffect(() => {
     if (!leafletReady) return;
+    if (appMode !== 'main') return;
     if (mapInstanceRef.current) {
-      setTimeout(() => mapInstanceRef.current && mapInstanceRef.current.invalidateSize(), 100);
-      return;
+      // Check if the existing map is still attached to the current DOM container
+      let containerStillValid = false;
+      try { containerStillValid = mapContainerRef.current && mapInstanceRef.current.getContainer() === mapContainerRef.current; } catch(e) {}
+      if (containerStillValid) {
+        setTimeout(() => { try { mapInstanceRef.current && mapInstanceRef.current.invalidateSize(); } catch(e){} }, 150);
+        return;
+      } else {
+        // Container was re-mounted (user navigated away and back) - destroy and reinit
+        try { mapInstanceRef.current.remove(); } catch(e){}
+        mapInstanceRef.current = null;
+        setMapInitialized(false);
+      }
     }
     let attempts = 0;
     const tryInit = () => {
       if (mapInstanceRef.current) return;
       if (!mapContainerRef.current || !window.L) {
-        if (++attempts < 50) setTimeout(tryInit, 100);
+        if (++attempts < 80) setTimeout(tryInit, 100);
         return;
       }
-      const map = window.L.map(mapContainerRef.current, { preferCanvas: true }).setView([23.05, 120.22], 12);
-      window.L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-        attribution: '&copy; OpenStreetMap contributors', subdomains: 'abc', maxZoom: 19
-      }).addTo(map);
-      mapInstanceRef.current = map;
-      setMapInitialized(true);
-      setTimeout(() => map.invalidateSize(), 100);
-      const resizeObserver = new ResizeObserver(() => map.invalidateSize());
-      resizeObserver.observe(mapContainerRef.current);
+      try {
+        const map = window.L.map(mapContainerRef.current, { preferCanvas: true }).setView([23.05, 120.22], 12);
+        window.L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+          attribution: '&copy; OpenStreetMap contributors', subdomains: 'abc', maxZoom: 19
+        }).addTo(map);
+        mapInstanceRef.current = map;
+        setMapInitialized(true);
+        setTimeout(() => { try { map.invalidateSize(); } catch(e){} }, 150);
+        const resizeObserver = new ResizeObserver(() => { try { map.invalidateSize(); } catch(e){} });
+        resizeObserver.observe(mapContainerRef.current);
+      } catch(e) {
+        // Init failed - retry
+        mapInstanceRef.current = null;
+        if (++attempts < 80) setTimeout(tryInit, 200);
+      }
     };
     tryInit();
   }, [leafletReady, appMode]);
@@ -1468,6 +1512,14 @@ const App = () => {
                         {deliveryLookupResult.route && (
                             <div className="text-green-800 font-bold text-base">建議由[<span className="text-green-600 bg-green-100 px-2 py-0.5 rounded">{deliveryLookupResult.route}</span>]承接配送</div>
                         )}
+                        {deliveryLookupResult.resolved && (
+                            <div className="text-[11px] text-gray-500 bg-white border border-gray-200 rounded-lg p-2 flex items-start gap-1.5">
+                                <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded flex-shrink-0 mt-0.5 ${deliveryLookupResult.geoSource === 'OSM' ? 'bg-blue-100 text-blue-700' : 'bg-orange-100 text-orange-700'}`}>
+                                    {deliveryLookupResult.geoSource === 'OSM' ? 'OSM' : 'Google'}
+                                </span>
+                                <span className="leading-relaxed">{deliveryLookupResult.resolved}</span>
+                            </div>
+                        )}
                         {deliveryLookupResult.top2 && (
                             <div className="text-gray-600 text-xs space-y-2 pt-2 border-t border-gray-200 mt-2">
                                 {deliveryLookupResult.top2.map((p, idx) => (
@@ -1484,7 +1536,6 @@ const App = () => {
                                         </div>
                                     </div>
                                 ))}
-                                {deliveryLookupResult.resolved && <div className="text-gray-400 text-[10px] mt-1 p-2 bg-gray-50 rounded">{'Map: '}{deliveryLookupResult.resolved}</div>}
                             </div>
                         )}
                     </div>
@@ -1493,7 +1544,7 @@ const App = () => {
             <div className="bg-gray-50 p-3 rounded-lg border border-gray-100 space-y-2">
                 <h4 className="text-xs font-bold text-gray-600">計算說明</h4>
                 <div className="text-[10px] text-gray-400 leading-relaxed space-y-1">
-                    <div>- 地址轉座標：Google Maps Geocoding API（台灣完整覆蓋）</div>
+                    <div>- 地址轉座標：OSM Nominatim（台灣門牌優先）+ Google Maps（兜底）</div>
                     <div>- 距離公式：Haversine 直線距離 x1.3 路網修正係數</div>
                     <div>- 往返時間：路程距離 x2 除以 平均車速 35 km per h</div>
                     <div>- 門檻設定：往返 25 分鐘內判定為可配送</div>
