@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useMemo } from 'react';
+import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 
 // ----------------------------------------------------------------------
 // 0. ICONS (Inline SVGs)
@@ -379,6 +379,10 @@ const App = () => {
   const [adminBoundsLoading, setAdminBoundsLoading] = useState(false);
   const [adminBoundsError, setAdminBoundsError] = useState(false);
   const [windowHeight, setWindowHeight] = useState(600);
+  const [leftPanelWidth, setLeftPanelWidth] = useState(400);
+  const isResizing = useRef(false);
+  const resizeStartX = useRef(0);
+  const resizeStartWidth = useRef(400);
   const [leafletReady, setLeafletReady] = useState(false);
   const [mapInitialized, setMapInitialized] = useState(false);
   const mapContainerRef = useRef(null);
@@ -399,6 +403,36 @@ const App = () => {
     updateHeight();
     window.addEventListener('resize', updateHeight);
     return () => window.removeEventListener('resize', updateHeight);
+  }, []);
+
+  // 左右面板拖曳調整
+  const onResizeMouseDown = useCallback((e) => {
+    isResizing.current = true;
+    resizeStartX.current = e.clientX;
+    resizeStartWidth.current = leftPanelWidth;
+    document.body.style.cursor = 'col-resize';
+    document.body.style.userSelect = 'none';
+  }, [leftPanelWidth]);
+
+  useEffect(() => {
+    const onMouseMove = (e) => {
+      if (!isResizing.current) return;
+      const delta = e.clientX - resizeStartX.current;
+      const newW = Math.min(700, Math.max(280, resizeStartWidth.current + delta));
+      setLeftPanelWidth(newW);
+    };
+    const onMouseUp = () => {
+      if (!isResizing.current) return;
+      isResizing.current = false;
+      document.body.style.cursor = '';
+      document.body.style.userSelect = '';
+    };
+    window.addEventListener('mousemove', onMouseMove);
+    window.addEventListener('mouseup', onMouseUp);
+    return () => {
+      window.removeEventListener('mousemove', onMouseMove);
+      window.removeEventListener('mouseup', onMouseUp);
+    };
   }, []);
 
   // Expanded Colors
@@ -1140,7 +1174,7 @@ const App = () => {
   if (appMode === 'home') {
     const yr = String(new Date().getFullYear());
     const cardStyle = (accent) => [
-      'width:280px;padding:32px 28px;border-radius:4px;cursor:pointer;position:relative;',
+      'width:340px;padding:40px 36px;border-radius:4px;cursor:pointer;position:relative;',
       'transition:all 0.2s;border:1px solid rgba(',accent,',0.25);',
       'background:rgba(',accent,',0.04)',
     ].join('');
@@ -1152,25 +1186,25 @@ const App = () => {
       + '<div style="position:absolute;top:24px;right:24px;width:60px;height:60px;border-top:2px solid rgba(0,200,255,0.4);border-right:2px solid rgba(0,200,255,0.4)"></div>'
       + '<div style="position:absolute;bottom:24px;left:24px;width:60px;height:60px;border-bottom:2px solid rgba(0,200,255,0.4);border-left:2px solid rgba(0,200,255,0.4)"></div>'
       + '<div style="position:absolute;bottom:24px;right:24px;width:60px;height:60px;border-bottom:2px solid rgba(0,200,255,0.4);border-right:2px solid rgba(0,200,255,0.4)"></div>'
-      + '<div style="text-align:center;margin-bottom:60px;position:relative;z-index:1">'
-        + '<div style="font-size:11px;letter-spacing:8px;color:rgba(0,200,255,0.6);margin-bottom:16px;text-transform:uppercase">LOGISTICS - DISPATCH - SYSTEM</div>'
-        + '<h1 style="font-size:clamp(28px,4vw,42px);font-weight:700;color:#fff;letter-spacing:2px;margin:0 0 8px;line-height:1.2">\u7269\u6d41\u914d\u9001\u7ba1\u7406\u5e73\u53f0</h1>'
-        + '<div style="width:80px;height:2px;background:linear-gradient(90deg,transparent,#00c8ff,transparent);margin:16px auto 0"></div>'
+      + '<div style="text-align:center;margin-bottom:72px;position:relative;z-index:1">'
+        + '<div style="font-size:12px;letter-spacing:8px;color:rgba(0,200,255,0.6);margin-bottom:20px;text-transform:uppercase">LOGISTICS - DISPATCH - SYSTEM</div>'
+        + '<h1 style="font-size:clamp(32px,5vw,52px);font-weight:700;color:#fff;letter-spacing:2px;margin:0 0 8px;line-height:1.2">\u7269\u6d41\u914d\u9001\u7ba1\u7406\u5e73\u53f0</h1>'
+        + '<div style="width:100px;height:2px;background:linear-gradient(90deg,transparent,#00c8ff,transparent);margin:20px auto 0"></div>'
       + '</div>'
-      + '<div style="display:flex;gap:32px;position:relative;z-index:1;flex-wrap:wrap;justify-content:center;padding:0 24px">'
+      + '<div style="display:flex;gap:40px;position:relative;z-index:1;flex-wrap:wrap;justify-content:center;padding:0 32px">'
         + '<div id="card-dispatch" style="' + cardStyle('0,200,255') + '">'
           + '<div style="position:absolute;top:-1px;left:20px;right:20px;height:2px;background:linear-gradient(90deg,transparent,#00c8ff,transparent)"></div>'
-          + '<div style="font-size:28px;margin-bottom:16px;color:#00c8ff">&#128666;</div>'
-          + '<div style="font-size:13px;font-weight:700;color:#00c8ff;letter-spacing:2px;margin-bottom:8px;text-transform:uppercase">\u914d\u9001\u5340\u57df\u5283\u5206\u5de5\u5177</div>'
-          + '<div style="font-size:11px;color:rgba(255,255,255,0.45);line-height:1.7;margin-bottom:20px">K-Means++ \u6f14\u7b97\u6cd5\u81ea\u52d5\u5206\u7fa4<br>\u8eca\u8f1b\u6307\u6d3e - \u91cc\u7a0b\u5747\u8861 - \u624b\u52d5\u5fae\u8abf</div>'
-          + '<div style="display:inline-flex;align-items:center;gap:6px;font-size:10px;color:rgba(0,200,255,0.7);border:1px solid rgba(0,200,255,0.3);padding:4px 10px;border-radius:2px;letter-spacing:1px">[LOCK] \u9700\u8981\u6388\u6b0a</div>'
+          + '<div style="font-size:36px;margin-bottom:20px;color:#00c8ff">&#128666;</div>'
+          + '<div style="font-size:14px;font-weight:700;color:#00c8ff;letter-spacing:2px;margin-bottom:10px;text-transform:uppercase">\u914d\u9001\u5340\u57df\u5283\u5206\u5de5\u5177</div>'
+          + '<div style="font-size:12px;color:rgba(255,255,255,0.45);line-height:1.8;margin-bottom:24px">K-Means++ \u6f14\u7b97\u6cd5\u81ea\u52d5\u5206\u7fa4<br>\u8eca\u8f1b\u6307\u6d3e - \u91cc\u7a0b\u5747\u8861 - \u624b\u52d5\u5fae\u8abf</div>'
+          + '<div style="display:inline-flex;align-items:center;gap:6px;font-size:11px;color:rgba(0,200,255,0.7);border:1px solid rgba(0,200,255,0.3);padding:6px 14px;border-radius:2px;letter-spacing:1px">[LOCK] \u9700\u8981\u6388\u6b0a</div>'
         + '</div>'
-        + '<div id="card-lookup" style="width:280px;padding:32px 28px;border-radius:4px;cursor:pointer;position:relative;transition:all 0.2s;border:1px solid rgba(251,191,36,0.2);background:rgba(251,191,36,0.04)">'
+        + '<div id="card-lookup" style="width:340px;padding:40px 36px;border-radius:4px;cursor:pointer;position:relative;transition:all 0.2s;border:1px solid rgba(251,191,36,0.2);background:rgba(251,191,36,0.04)">'
           + '<div style="position:absolute;top:-1px;left:20px;right:20px;height:2px;background:linear-gradient(90deg,transparent,#fbbf24,transparent)"></div>'
-          + '<div style="font-size:24px;margin-bottom:16px;color:#fbbf24">&#128506;</div>'
-          + '<div style="font-size:13px;font-weight:700;color:#fbbf24;letter-spacing:2px;margin-bottom:8px;text-transform:uppercase">\u6307\u9001\u5730\u5740\u67e5\u8a62</div>'
-          + '<div style="font-size:11px;color:rgba(255,255,255,0.45);line-height:1.7;margin-bottom:20px">\u8f38\u5165\u5ba2\u6236\u5730\u5740\u5373\u6642\u67e5\u8a62<br>\u53ef\u884c\u6027\u8a55\u4f30 - \u6700\u8fd1\u9ede\u4f4d - \u5f80\u8fd4\u6642\u9593</div>'
-          + '<div style="display:inline-flex;align-items:center;gap:6px;font-size:10px;color:rgba(251,191,36,0.7);border:1px solid rgba(251,191,36,0.3);padding:4px 10px;border-radius:2px;letter-spacing:1px">&gt; \u76f4\u63a5\u9032\u5165</div>'
+          + '<div style="font-size:32px;margin-bottom:20px;color:#fbbf24">&#128506;</div>'
+          + '<div style="font-size:14px;font-weight:700;color:#fbbf24;letter-spacing:2px;margin-bottom:10px;text-transform:uppercase">\u6307\u9001\u5730\u5740\u67e5\u8a62</div>'
+          + '<div style="font-size:12px;color:rgba(255,255,255,0.45);line-height:1.8;margin-bottom:24px">\u8f38\u5165\u5ba2\u6236\u5730\u5740\u5373\u6642\u67e5\u8a62<br>\u53ef\u884c\u6027\u8a55\u4f30 - \u6700\u8fd1\u9ede\u4f4d - \u5f80\u8fd4\u6642\u9593</div>'
+          + '<div style="display:inline-flex;align-items:center;gap:6px;font-size:11px;color:rgba(251,191,36,0.7);border:1px solid rgba(251,191,36,0.3);padding:6px 14px;border-radius:2px;letter-spacing:1px">&gt; \u76f4\u63a5\u9032\u5165</div>'
         + '</div>'
       + '</div>'
       + '<div style="position:absolute;bottom:20px;font-size:10px;color:rgba(255,255,255,0.15);letter-spacing:3px">v2.0 - KAOHSIUNG - ' + yr + '</div>';
@@ -1259,7 +1293,7 @@ const App = () => {
   return (
     <div className="flex w-full bg-gray-100 font-sans text-gray-900 overflow-hidden relative" style={{height: `${windowHeight}px`}}>
       
-      <div className="w-[400px] bg-white shadow-2xl flex flex-col z-20 h-full flex-shrink-0 border-r border-gray-200">
+      <div className="bg-white shadow-2xl flex flex-col z-20 h-full flex-shrink-0 border-r border-gray-200" style={{width: leftPanelWidth + 'px'}}>
         <div className="p-4 bg-slate-900 text-white flex-shrink-0 shadow-md z-10" style={{borderBottom:'1px solid rgba(0,200,255,0.2)'}}>
           <div className="flex items-center justify-between mb-1">
             <div className="flex items-center gap-2.5">
@@ -1279,29 +1313,6 @@ const App = () => {
             {lookupOnly ? '全區 625 筆 | 即時查詢' : activeTab === 'lookup' ? '全區 625 筆 | 即時查詢' : `${REGION_LABELS[activeRegion] || '自訂'} | ${deliveryPoints.length} 筆`}
           </div>
         </div>
-        {!lookupOnly && <div className="grid grid-cols-2 gap-3 p-4 bg-slate-50 border-b border-gray-200 flex-shrink-0">
-            <div className="text-center p-3 bg-white rounded-lg border border-gray-100 shadow-sm">
-                <div className="text-[10px] text-gray-500 font-bold mb-1">單量最大落差</div>
-                <div className={`text-xl font-black ${maxCount - minCount > 20 ? 'text-red-500' : 'text-green-600'}`}>
-                    {maxCount - minCount}
-                </div>
-            </div>
-            <div className="text-center p-3 bg-white rounded-lg border border-gray-100 shadow-sm">
-                <div className="text-[10px] text-gray-500 font-bold mb-1">區域標準差</div>
-                <div className="text-xl font-black text-slate-700">{stdDev}</div>
-            </div>
-            <div className="text-center p-3 bg-white rounded-lg border border-gray-100 shadow-sm">
-                <div className="text-[10px] text-gray-500 font-bold mb-1">里程最大落差</div>
-                <div className={`text-xl font-black ${parseFloat(kmGap) > 30 ? 'text-red-500' : 'text-green-600'}`}>
-                    {kmGap} <span className="text-xs font-bold text-gray-400">km</span>
-                </div>
-            </div>
-            <div className="text-center p-3 bg-white rounded-lg border border-gray-100 shadow-sm">
-                <div className="text-[10px] text-gray-500 font-bold mb-1">里程範圍</div>
-                <div className="text-sm font-black text-slate-700">{minKm}~{maxKm} <span className="text-xs font-bold text-gray-400">km</span></div>
-            </div>
-        </div>}
-
         <div className="flex-1 overflow-y-auto p-4 space-y-5 custom-scrollbar bg-white">
         {errorMessage && (
             <div className="bg-red-50 text-red-600 border border-red-200 p-3 rounded-md text-sm flex items-start gap-2 shadow-sm">
@@ -1502,6 +1513,17 @@ const App = () => {
                 <IconDownload className="w-4 h-4" />匯出報表
             </button>
         </div>}
+      </div>
+      {/* 拖曳調整分隔條 */}
+      <div
+        onMouseDown={onResizeMouseDown}
+        style={{width:'5px',cursor:'col-resize',background:'transparent',flexShrink:0,zIndex:30,position:'relative'}}
+        title="拖曳調整面板寬度"
+      >
+        <div style={{position:'absolute',top:0,bottom:0,left:'1px',width:'3px',background:'rgba(0,200,255,0.15)',transition:'background 0.2s'}}
+          onMouseEnter={e => e.currentTarget.style.background='rgba(0,200,255,0.5)'}
+          onMouseLeave={e => e.currentTarget.style.background='rgba(0,200,255,0.15)'}
+        />
       </div>
       <div className="flex-1 relative bg-gray-200 h-full">
          <div ref={mapContainerRef} className="w-full h-full z-0" style={{minHeight: '400px'}} />
