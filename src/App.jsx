@@ -1063,16 +1063,18 @@ const App = () => {
       }
       return '';
     };
-    const activeTowns = new Set(deliveryPoints.map(p => extractTown(p.address)).filter(Boolean));
+    // 固定使用全區 625 筆客戶（ALL_POINTS）計算有客戶的行政區，不隨目前選取的區域而改變
+    const activeTowns = new Set(ALL_POINTS.map(p => extractTown(p.address)).filter(Boolean));
 
     const renderAdminLayer = (geojson) => {
       if (!mapInstanceRef.current) return;
-      const targetCounties = REGION_ADMIN_COUNTIES[activeRegion] || ['臺南市','台南市','高雄市'];
+      // 全區覆蓋：涵蓋所有客戶可能所在縣市，不依目前選取的區域做篩選
+      const ALL_COUNTIES = ['臺南市','台南市','高雄市','嘉義市','嘉義縣','雲林縣','彰化縣'];
       const filtered = {
         ...geojson,
         features: geojson.features.filter(f => {
           const county = f.properties.COUNTYNAME || f.properties.COUNTY_NAM || f.properties.name || '';
-          return targetCounties.includes(county);
+          return ALL_COUNTIES.includes(county);
         })
       };
 
@@ -1160,7 +1162,7 @@ const App = () => {
     };
 
     tryFetch().finally(() => setAdminBoundsLoading(false));
-  }, [showAdminBounds, mapInitialized, activeRegion, deliveryPoints, adminRefreshKey]);
+  }, [showAdminBounds, mapInitialized, adminRefreshKey]);
 
   // 指送查詢結果地圖渲染
   useEffect(() => {
