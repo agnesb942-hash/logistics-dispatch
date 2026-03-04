@@ -1026,13 +1026,22 @@ const App = () => {
     const map = mapInstanceRef.current;
 
     // 清除現有圖層
-    if (adminLayerRef.current) { map.removeLayer(adminLayerRef.current); adminLayerRef.current = null; }
-    adminLabelsRef.current.forEach(l => map.removeLayer(l));
+    if (adminLayerRef.current) { try { map.removeLayer(adminLayerRef.current); } catch(e){} adminLayerRef.current = null; }
+    adminLabelsRef.current.forEach(l => { try { map.removeLayer(l); } catch(e){} });
     adminLabelsRef.current = [];
 
     if (!showAdminBounds) return;
 
+    // 從 deliveryPoints 地址中萃取現行客戶所在行政區（鄉鎮市區）
+    const extractTown = (addr) => {
+      // 台灣地址格式：縣市 + 鄉鎮市區 → 取縣市後第一個 "區|市|鄉|鎮"
+      const m = addr.match(/(?:縣|市)([^\d路街巷弄號之一二三四五六七八九十百]{2,6}(?:市|區|鄉|鎮))/);
+      return m ? m[1] : '';
+    };
+    const activeTowns = new Set(deliveryPoints.map(p => extractTown(p.address)).filter(Boolean));
+
     const renderAdminLayer = (geojson) => {
+      if (!mapInstanceRef.current) return;
       const targetCounties = REGION_ADMIN_COUNTIES[activeRegion] || ['臺南市','台南市','高雄市'];
       const filtered = {
         ...geojson,
@@ -1044,36 +1053,52 @@ const App = () => {
 
       if (filtered.features.length === 0) return;
 
-      const layer = window.L.geoJSON(filtered, {
-        style: {
-          color: '#1e293b',
-          weight: 2.5,
-          fillColor: '#94a3b8',
-          fillOpacity: 0.04,
-          dashArray: '4, 4'
-        },
-        interactive: false
-      }).addTo(map);
-      adminLayerRef.current = layer;
+      // 以 featureGroup 分兩批：有客戶的區 vs 無客戶的區
+      const activeLayers = [];
+      const inactiveLayers = [];
 
-      // 區名標籤
+      filtered.features.forEach(f => {
+        const townName = f.properties.TOWNNAME || f.properties.TOWN_NAME || '';
+        const hasCustomer = activeTowns.has(townName);
+        try {
+          const fl = window.L.geoJSON(f, {
+            style: hasCustomer
+              ? { color: '#1e293b', weight: 2, fillColor: '#94a3b8', fillOpacity: 0.04, dashArray: '4, 4' }
+              : { color: '#1e293b', weight: 1.5, fillColor: '#0f172a', fillOpacity: 0.38, dashArray: '4, 4' },
+            interactive: false
+          });
+          (hasCustomer ? activeLayers : inactiveLayers).push(fl);
+        } catch(e) {}
+      });
+
+      // 先加無客戶（底層），再加有客戶（上層）
+      const allLayers = [...inactiveLayers, ...activeLayers];
+      const group = window.L.featureGroup(allLayers).addTo(map);
+      adminLayerRef.current = group;
+
+      // 區名標籤（只有有客戶的區才顯示，且字色區分）
       filtered.features.forEach(f => {
         const townName = f.properties.TOWNNAME || f.properties.TOWN_NAME || '';
         if (!townName) return;
+        const hasCustomer = activeTowns.has(townName);
         try {
           const featureBounds = window.L.geoJSON(f).getBounds();
           const center = featureBounds.getCenter();
+          const color = hasCustomer ? '#1e3a5f' : 'rgba(255,255,255,0.55)';
+          const shadow = hasCustomer
+            ? '1px 1px 2px white,-1px -1px 2px white,1px -1px 2px white,-1px 1px 2px white'
+            : '0 0 3px rgba(0,0,0,0.8)';
           const label = window.L.marker(center, {
             icon: window.L.divIcon({
               className: 'admin-label-icon',
-              html: `<div style="font-size:10px;color:#475569;font-weight:600;text-shadow:1px 1px 2px white,-1px -1px 2px white,1px -1px 2px white,-1px 1px 2px white;white-space:nowrap;pointer-events:none;transform:translate(-50%,-50%);">${townName}</div>`,
+              html: `<div style="font-size:10px;color:${color};font-weight:700;text-shadow:${shadow};white-space:nowrap;pointer-events:none;transform:translate(-50%,-50%);">${townName}</div>`,
               iconSize: [0, 0],
               iconAnchor: [0, 0]
             }),
             interactive: false
           }).addTo(map);
           adminLabelsRef.current.push(label);
-        } catch (e) { /* 跳過無法計算中心的區域 */ }
+        } catch (e) {}
       });
     };
 
@@ -1083,18 +1108,19 @@ const App = () => {
       return;
     }
 
-    // 從外部載入鄉鎮市區 GeoJSON
+    // 從外部載入鄉鎮市區 GeoJSON（三個來源輪流嘗試）
     setAdminBoundsLoading(true);
     setAdminBoundsError(false);
     const geoJsonUrls = [
       'https://raw.githubusercontent.com/ronnywang/twgeojson/master/twTown2017.geo.json',
-      'https://raw.githubusercontent.com/g0v/twgeojson/master/json/twTown1982.geo.json'
+      'https://raw.githubusercontent.com/g0v/twgeojson/master/json/twTown1982.geo.json',
+      'https://cdn.jsdelivr.net/gh/ronnywang/twgeojson@master/twTown2017.geo.json'
     ];
 
     const tryFetch = async () => {
       for (const url of geoJsonUrls) {
         try {
-          const res = await fetch(url);
+          const res = await fetch(url, { signal: AbortSignal.timeout ? AbortSignal.timeout(8000) : undefined });
           if (!res.ok) continue;
           const data = await res.json();
           if (data && data.features && data.features.length > 0) {
@@ -1104,14 +1130,12 @@ const App = () => {
           }
         } catch (e) { continue; }
       }
-      // 所有來源皆失敗
       setAdminBoundsError(true);
-      setShowAdminBounds(false);
       console.warn('所有行政區界資料來源載入失敗');
     };
 
     tryFetch().finally(() => setAdminBoundsLoading(false));
-  }, [showAdminBounds, mapInitialized, activeRegion]);
+  }, [showAdminBounds, mapInitialized, activeRegion, deliveryPoints]);
 
   // 指送查詢結果地圖渲染
   useEffect(() => {
@@ -1171,10 +1195,10 @@ const App = () => {
         lookupLayersRef.current.push(ptMarker);
         allMapMarkers.push(ptMarker);
 
-        // 連線（第1近實線，第2近虛線）
+        // 連線（第1近與第2近皆為實線，第2近顏色較淡）
         const line = window.L.polyline(
           [[lat, lng], [p.lat, p.lng]],
-          { color: markerColors[idx], weight: idx === 0 ? 2.5 : 1.5, dashArray: idx === 0 ? null : '4, 6', opacity: idx === 0 ? 0.85 : 0.5 }
+          { color: markerColors[idx], weight: idx === 0 ? 2.5 : 2, dashArray: null, opacity: idx === 0 ? 0.9 : 0.65 }
         ).addTo(map);
         lookupLayersRef.current.push(line);
       });
@@ -1513,26 +1537,26 @@ const App = () => {
                             <div className="text-green-800 font-bold text-base">建議由[<span className="text-green-600 bg-green-100 px-2 py-0.5 rounded">{deliveryLookupResult.route}</span>]承接配送</div>
                         )}
                         {deliveryLookupResult.resolved && (
-                            <div className="text-[11px] text-gray-500 bg-white border border-gray-200 rounded-lg p-2 flex items-start gap-1.5">
-                                <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded flex-shrink-0 mt-0.5 ${deliveryLookupResult.geoSource === 'OSM' ? 'bg-blue-100 text-blue-700' : 'bg-orange-100 text-orange-700'}`}>
+                            <div className="text-xs text-gray-500 bg-white border border-gray-200 rounded-lg p-2.5 flex items-start gap-2">
+                                <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded flex-shrink-0 mt-0.5 ${deliveryLookupResult.geoSource === 'OSM' ? 'bg-blue-100 text-blue-700' : 'bg-orange-100 text-orange-700'}`}>
                                     {deliveryLookupResult.geoSource === 'OSM' ? 'OSM' : 'Google'}
                                 </span>
                                 <span className="leading-relaxed">{deliveryLookupResult.resolved}</span>
                             </div>
                         )}
                         {deliveryLookupResult.top2 && (
-                            <div className="text-gray-600 text-xs space-y-2 pt-2 border-t border-gray-200 mt-2">
+                            <div className="space-y-2 pt-2 border-t border-gray-200 mt-2">
                                 {deliveryLookupResult.top2.map((p, idx) => (
-                                    <div key={p.name} className={`p-2.5 rounded-lg border ${idx === 0 ? 'bg-white border-gray-200' : 'bg-gray-50 border-gray-100'}`}>
-                                        <div className="flex items-center gap-1.5 mb-1.5">
-                                            <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded ${idx === 0 ? 'bg-blue-100 text-blue-700' : 'bg-gray-200 text-gray-600'}`}>
+                                    <div key={p.name} className={`p-3 rounded-lg border ${idx === 0 ? 'bg-white border-gray-200' : 'bg-gray-50 border-gray-100'}`}>
+                                        <div className="flex items-center gap-2 mb-2">
+                                            <span className={`text-xs font-bold px-2 py-0.5 rounded ${idx === 0 ? 'bg-blue-100 text-blue-700' : 'bg-gray-200 text-gray-600'}`}>
                                                 第 {idx + 1} 近
                                             </span>
-                                            <span className="font-bold text-gray-800">{p.name}</span>
+                                            <span className="font-bold text-sm text-gray-800">{p.name}</span>
                                         </div>
-                                        <div className="flex justify-between text-[11px]">
-                                            <span className="text-gray-400">路線：{p.route}</span>
-                                            <span className="text-gray-500">{p.roadDist} km - {p.roundTripMin} 分（往返）</span>
+                                        <div className="flex justify-between text-xs text-gray-500">
+                                            <span>路線：<span className="font-medium text-gray-700">{p.route}</span></span>
+                                            <span className="font-medium">{p.roadDist} km・往返 {p.roundTripMin} 分</span>
                                         </div>
                                     </div>
                                 ))}
