@@ -52,10 +52,6 @@ const IconSearch = ({ className }) => (
   <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>
 );
 
-const IconWarehouse = ({ className }) => (
-  <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}><path d="M22 8.35V20a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V8.35A2 2 0 0 1 3.26 6.5l8-3.2a2 2 0 0 1 1.48 0l8 3.2A2 2 0 0 1 22 8.35Z"/><path d="M6 18h12"/><path d="M6 14h12"/><rect width="12" height="12" x="6" y="10"/></svg>
-);
-
 // ----------------------------------------------------------------------
 // 1. DATA PROCESSING
 // ----------------------------------------------------------------------
@@ -71,12 +67,6 @@ const REGION_MAP = { tainan: TAINAN_DEFAULT, chiayi: CHIAYI_DEFAULT, kaohsiung: 
 // 指送查詢用：預設點位清單（Firestore 不可用時的備援）
 const DEFAULT_ALL_POINTS = [...TAINAN_DEFAULT, ...CHIAYI_DEFAULT, ...KAOHSIUNG_DEFAULT, ...YIHUADONG_DEFAULT];
 const REGION_LABELS = { tainan: '台南區', chiayi: '嘉義區', kaohsiung: '高雄區', yihuadong: '宜花東區', all: '全區' };
-const REGION_ADMIN_COUNTIES = {
-  tainan: ['臺南市','台南市','高雄市'],
-  chiayi: ['嘉義市','嘉義縣','雲林縣','彰化縣','臺南市','台南市'],
-  kaohsiung: ['高雄市','屏東縣'],
-  yihuadong: ['宜蘭縣','花蓮縣','臺東縣','台東縣'],
-};
 
 const loadExcelLibrary = () => {
     return new Promise((resolve, reject) => {
@@ -405,17 +395,6 @@ const App = () => {
       const msg = e?.code || e?.message || '未知錯誤';
       setPointsSyncStatus('error:' + msg);
     }
-  };
-
-  // Firestore 刪除（還原預設用）
-  const clearFirestorePoints = async (regionKey) => {
-    const fb = await initFirebase();
-    if (!fb) return;
-    try {
-      const { db, doc } = fb;
-      const { deleteDoc } = await import('https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js');
-      await deleteDoc(doc(db, 'regions', regionKey));
-    } catch(e) { console.warn('[Firestore] 刪除區域點位失敗：', e); }
   };
 
   const handleDispatchLogin = () => {
@@ -1556,8 +1535,17 @@ const App = () => {
       '里港鄉','鹽埔鄉','高樹鄉','萬巒鄉','內埔鄉','竹田鄉','新埤鄉','枋寮鄉',
       '新園鄉','崁頂鄉','林邊鄉','南州鄉','佳冬鄉','琉球鄉','車城鄉','滿州鄉',
       '枋山鄉','三地門鄉','霧台鄉','瑪家鄉','泰武鄉','來義鄉','春日鄉','獅子鄉','牡丹鄉',
+      // 宜蘭縣
+      '宜蘭市','羅東鎮','蘇澳鎮','頭城鎮','礁溪鄉','壯圍鄉','員山鄉','冬山鄉',
+      '五結鄉','三星鄉','大同鄉','南澳鄉',
+      // 花蓮縣
+      '花蓮市','鳳林鎮','玉里鎮','新城鄉','吉安鄉','壽豐鄉','光復鄉','豐濱鄉',
+      '瑞穗鄉','富里鄉','秀林鄉','萬榮鄉','卓溪鄉',
+      // 臺東縣
+      '臺東市','台東市','成功鎮','關山鎮','卑南鄉','鹿野鄉','池上鄉','東河鄉',
+      '長濱鄉','太麻里鄉','大武鄉','綠島鄉','蘭嶼鄉','延平鄉','海端鄉','達仁鄉','金峰鄉',
     ];
-    const COUNTY_PREFIXES = ['臺南市','台南市','高雄市','嘉義市','嘉義縣','雲林縣','彰化縣','屏東縣'];
+    const COUNTY_PREFIXES = ['臺南市','台南市','高雄市','嘉義市','嘉義縣','雲林縣','彰化縣','屏東縣','宜蘭縣','花蓮縣','臺東縣','台東縣'];
     const extractTown = (addr) => {
       const clean = addr.replace(/^[（(]?指[送）)]?\s*[-\s]*/, '');
       for (const town of KNOWN_TOWNS) {
@@ -1573,7 +1561,7 @@ const App = () => {
     const renderAdminLayer = (geojson) => {
       if (!mapInstanceRef.current) return;
       // 全區覆蓋：涵蓋所有客戶可能所在縣市，不依目前選取的區域做篩選
-      const ALL_COUNTIES = ['臺南市','台南市','高雄市','嘉義市','嘉義縣','雲林縣','彰化縣','屏東縣'];
+      const ALL_COUNTIES = ['臺南市','台南市','高雄市','嘉義市','嘉義縣','雲林縣','彰化縣','屏東縣','宜蘭縣','花蓮縣','臺東縣','台東縣'];
       const filtered = {
         ...geojson,
         features: geojson.features.filter(f => {
