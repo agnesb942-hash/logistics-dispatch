@@ -908,6 +908,22 @@ const App = () => {
       }
       const best = allWithDist[0];
 
+      // 步驟 2.5：比對建檔客戶（距離 ≤ 100m 視為已建檔點位）
+      if (best.dist <= 0.1) {
+        setDeliveryLookupResult({
+          ok: false, type: 'existing_customer',
+          msg: '⚠️ 此地址為已建檔客戶',
+          existingName: best.name, existingRoute: best.route, existingAddress: best.address,
+          distM: Math.round(best.dist * 1000),
+          resolved: resolvedName, lat: targetLat, lng: targetLng,
+          geoSource, accuracy, accuracyNote, sources, distM, resolvedOSM,
+        });
+        // 仍寫入查詢記錄
+        logToFirestore(deliveryLookupAddr, resolvedName, false, best.route, '0', '0', geoSource);
+        setDeliveryLookupLoading(false);
+        return;
+      }
+
       // 步驟三：Distance Matrix API（即時交通）
       let roundTripMin = null;
       let realDistKm = null;
@@ -1991,25 +2007,6 @@ const App = () => {
               [格式] 匯入格式：客戶簡稱 | 配送路線說明 | 送貨地址 | 經緯度（緯度,經度）<br/>
               第一列為標題列（自動跳過），支援 .xlsx .csv .tsv .txt
             </div>
-            <button
-              onClick={() => {
-                if (!window.confirm(`確定要將「${REGION_LABELS[activeRegion]}」還原為預設的 ${REGION_MAP[activeRegion].length} 筆資料？\n\n此操作會清除您在此區域所有新增、編輯與匯入的變更（含雲端資料）。`)) return;
-                clearFirestorePoints(activeRegion);
-                skipNextSave.current = true;
-                const data = REGION_MAP[activeRegion] || [];
-                setDeliveryPoints(data.map((d, i) => ({ ...d, id: i, cluster: -1 })));
-                setManualOverrides({});
-                setSelectedPointForEdit(null);
-                setActiveCluster(null);
-                setSearchQuery('');
-                setErrorMessage('');
-                shouldFitBoundsRef.current = true;
-                setRecalcTrigger(prev => prev + 1);
-              }}
-              className="w-full py-1.5 text-[10px] font-bold text-gray-400 hover:text-red-500 hover:bg-red-50 border border-dashed border-gray-200 hover:border-red-300 rounded-lg transition-all"
-            >
-              還原預設資料（{REGION_LABELS[activeRegion]} {REGION_MAP[activeRegion].length} 筆）
-            </button>
 
             <div className="space-y-2">
                <div className="flex justify-between items-center text-sm">
@@ -2081,10 +2078,9 @@ const App = () => {
                       const color = extendedColors[safeCluster];
                       return (
                         <div key={p.id}
-                          onClick={() => zoomToPoint(p)}
-                          className="flex items-start gap-2.5 p-2.5 rounded-lg border border-gray-100 hover:border-blue-300 hover:bg-blue-50 cursor-pointer transition-all text-xs bg-white group">
-                          <div className="w-2.5 h-2.5 rounded-full mt-1 flex-shrink-0 shadow-sm" style={{ backgroundColor: color }}></div>
-                          <div className="flex-1 min-w-0">
+                          className="flex items-start gap-2.5 p-2.5 rounded-lg border border-gray-100 hover:border-blue-300 hover:bg-blue-50 transition-all text-xs bg-white group">
+                          <div className="w-2.5 h-2.5 rounded-full mt-1 flex-shrink-0 shadow-sm cursor-pointer" style={{ backgroundColor: color }} onClick={() => zoomToPoint(p)}></div>
+                          <div className="flex-1 min-w-0 cursor-pointer" onClick={() => zoomToPoint(p)}>
                             <div className="font-bold text-gray-800 truncate group-hover:text-blue-700">{p.name}</div>
                             <div className="text-gray-500 truncate">{p.address}</div>
                             <div className="flex items-center gap-2 mt-1 text-[10px] text-gray-400">
@@ -2092,6 +2088,17 @@ const App = () => {
                               <span>{getTruckName(safeCluster)}{p.isManual ? ' (手動)' : ''}</span>
                             </div>
                           </div>
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              if (!window.confirm(`確定要刪除「${p.name}」？\n地址：${p.address}`)) return;
+                              handleDeletePoint(p.id);
+                            }}
+                            className="opacity-0 group-hover:opacity-100 flex-shrink-0 mt-0.5 p-1 rounded hover:bg-red-100 text-gray-300 hover:text-red-500 transition-all"
+                            title="刪除此點位"
+                          >
+                            <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/></svg>
+                          </button>
                         </div>
                       );
                     })}
@@ -2199,15 +2206,42 @@ const App = () => {
                     const r = deliveryLookupResult;
                     // 依 type 決定配色
                     const styleMap = {
-                      ok:              { wrap: 'bg-green-50 border-green-200',  title: 'text-green-700' },
-                      out_of_range:    { wrap: 'bg-red-50 border-red-200',      title: 'text-red-700'   },
-                      invalid_address: { wrap: 'bg-amber-50 border-amber-300',  title: 'text-amber-700' },
-                      error:           { wrap: 'bg-gray-100 border-gray-300',   title: 'text-gray-600'  },
+                      ok:                { wrap: 'bg-green-50 border-green-200',   title: 'text-green-700' },
+                      out_of_range:      { wrap: 'bg-red-50 border-red-200',       title: 'text-red-700'   },
+                      existing_customer: { wrap: 'bg-orange-50 border-orange-300', title: 'text-orange-700' },
+                      invalid_address:   { wrap: 'bg-amber-50 border-amber-300',   title: 'text-amber-700' },
+                      error:             { wrap: 'bg-gray-100 border-gray-300',    title: 'text-gray-600'  },
                     };
                     const s = styleMap[r.type] || styleMap.out_of_range;
                     return (
                       <div className={`p-4 rounded-xl text-sm space-y-2 border ${s.wrap}`}>
                         <div className={`font-bold text-lg ${s.title}`}>{r.msg}</div>
+
+                        {/* 已建檔客戶提醒 */}
+                        {r.type === 'existing_customer' && (
+                          <div className="bg-orange-100 border border-orange-300 rounded-lg p-3 space-y-2">
+                            <div className="text-orange-800 font-bold text-sm leading-relaxed">
+                              此地址為建檔客戶，公司未支持店對店指送，請回報主管或洽詢相關業務同仁。
+                            </div>
+                            <div className="bg-white rounded-lg border border-orange-200 p-2.5 space-y-1 text-xs">
+                              <div className="flex items-center gap-2">
+                                <span className="text-orange-500 font-bold">客戶</span>
+                                <span className="font-bold text-gray-800">{r.existingName}</span>
+                              </div>
+                              <div className="flex items-center gap-2">
+                                <span className="text-orange-500 font-bold">路線</span>
+                                <span className="text-gray-600">{r.existingRoute}</span>
+                              </div>
+                              <div className="flex items-center gap-2">
+                                <span className="text-orange-500 font-bold">地址</span>
+                                <span className="text-gray-600">{r.existingAddress}</span>
+                              </div>
+                              {r.distM > 0 && (
+                                <div className="text-[10px] text-gray-400 pt-1">查詢地址與建檔座標偏差 {r.distM}m</div>
+                              )}
+                            </div>
+                          </div>
+                        )}
 
                         {/* 地址不完整 / 服務異常 → 顯示提示說明 */}
                         {r.hint && (
