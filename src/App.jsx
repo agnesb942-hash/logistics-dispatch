@@ -386,7 +386,7 @@ const App = () => {
   // Firestore 寫入（單一區域，含 debounce）
   const saveFirestorePoints = async (regionKey, points) => {
     const fb = await initFirebase();
-    if (!fb) { setPointsSyncStatus('error'); return; }
+    if (!fb) { setPointsSyncStatus('error:Firebase 初始化失敗'); return; }
     try {
       const { db, doc, setDoc } = fb;
       const slim = points.map(p => ({ id: p.id, name: p.name, route: p.route, address: p.address, lat: p.lat, lng: p.lng }));
@@ -398,8 +398,9 @@ const App = () => {
       setPointsSyncStatus('saved');
       setTimeout(() => setPointsSyncStatus(''), 2000);
     } catch(e) {
-      console.warn('[Firestore] 寫入區域點位失敗：', e);
-      setPointsSyncStatus('error');
+      console.error('[Firestore] 寫入區域點位失敗：', e);
+      const msg = e?.code || e?.message || '未知錯誤';
+      setPointsSyncStatus('error:' + msg);
     }
   };
 
@@ -1938,7 +1939,7 @@ const App = () => {
             {!lookupOnly && pointsLoading && <span style={{color:'rgba(0,200,255,0.6)'}}>⟳ 同步中…</span>}
             {!lookupOnly && pointsSyncStatus === 'saving' && <span style={{color:'rgba(251,191,36,0.7)'}}>● 儲存中</span>}
             {!lookupOnly && pointsSyncStatus === 'saved' && <span style={{color:'rgba(34,197,94,0.8)'}}>✓ 已同步</span>}
-            {!lookupOnly && pointsSyncStatus === 'error' && <span style={{color:'rgba(239,68,68,0.8)'}}>✗ 同步失敗</span>}
+            {!lookupOnly && pointsSyncStatus.startsWith('error') && <span style={{color:'rgba(239,68,68,0.8)'}}>✗ {pointsSyncStatus.includes(':') ? pointsSyncStatus.split(':').slice(1).join(':') : '同步失敗'}</span>}
           </div>
         </div>
         <div className="flex-1 overflow-y-auto p-4 space-y-5 custom-scrollbar bg-white">
