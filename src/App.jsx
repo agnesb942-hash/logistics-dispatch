@@ -476,6 +476,7 @@ const App = () => {
 
   // 搜尋狀態
   const [searchQuery, setSearchQuery] = useState('');
+  const [lookupSearchQuery, setLookupSearchQuery] = useState('');
 
   // ── 初始載入：從 Firestore 取得最新資料 ──────────────────────────────
   const isInitialMount = useRef(true);
@@ -1199,6 +1200,44 @@ const App = () => {
       setTimeout(() => { try { marker.openTooltip(); } catch(e){} }, 300);
     }
   };
+
+  // 指送查詢用：搜尋全區點位
+  const lookupSearchResults = useMemo(() => {
+    const q = lookupSearchQuery.trim().toLowerCase();
+    if (!q) return [];
+    return allPoints.filter(p =>
+      p.name.toLowerCase().includes(q) ||
+      (p.address || '').toLowerCase().includes(q) ||
+      (p.route || '').toLowerCase().includes(q)
+    );
+  }, [lookupSearchQuery, allPoints]);
+
+  // 指送查詢用：飛到點位並顯示臨時標記
+  const lookupSearchLayersRef = useRef([]);
+  const zoomToAllPoint = (point) => {
+    if (!mapInstanceRef.current) return;
+    const map = mapInstanceRef.current;
+    // 清除上一次搜尋標記
+    lookupSearchLayersRef.current.forEach(l => { try { map.removeLayer(l); } catch(e){} });
+    lookupSearchLayersRef.current = [];
+    // 飛到該點
+    map.setView([point.lat, point.lng], 16, { animate: true });
+    // 放置臨時標記
+    const icon = window.L.divIcon({
+      className: 'custom-div-icon',
+      html: `<div style="background:#3b82f6;width:16px;height:16px;border-radius:50%;border:3px solid white;box-shadow:0 0 0 3px rgba(59,130,246,0.4);"></div>`,
+      iconSize: [16, 16], iconAnchor: [8, 8]
+    });
+    const marker = window.L.marker([point.lat, point.lng], { icon })
+      .bindTooltip(`<div class="text-xs font-sans p-1"><strong>${point.name}</strong><br/><span class="text-gray-500">${point.route || '無路線'}</span><br/><span class="text-gray-400">${point.address}</span></div>`, { direction: 'top', offset: [0, -12], permanent: true })
+      .addTo(map);
+    lookupSearchLayersRef.current.push(marker);
+    // 5 秒後自動移除
+    setTimeout(() => {
+      lookupSearchLayersRef.current.forEach(l => { try { map.removeLayer(l); } catch(e){} });
+      lookupSearchLayersRef.current = [];
+    }, 5000);
+  };
   const maxCount = counts.length > 0 ? Math.max(...counts) : 0;
   const minCount = counts.length > 0 ? Math.min(...counts) : 0;
   const targetAvg = deliveryPoints.length / validK;
@@ -1623,6 +1662,9 @@ const App = () => {
     // 清除上一次查詢的圖層
     lookupLayersRef.current.forEach(layer => map.removeLayer(layer));
     lookupLayersRef.current = [];
+    // 清除搜尋標記
+    lookupSearchLayersRef.current.forEach(l => { try { map.removeLayer(l); } catch(e){} });
+    lookupSearchLayersRef.current = [];
 
     // 切換到派車設定分頁時，恢復叢集標記
     if (activeTab !== 'lookup' || !deliveryLookupResult || !deliveryLookupResult.lat) return;
@@ -2253,6 +2295,48 @@ const App = () => {
                       </div>
                     );
                 })()}
+            </div>
+            {/* ── 建檔點位搜尋（驗證資料同步） ── */}
+            <div className="bg-white p-3 rounded-xl border border-amber-100 shadow-sm">
+                <div className="flex items-center gap-2 mb-2">
+                    <IconSearch className="w-4 h-4 text-amber-400 flex-shrink-0" />
+                    <input
+                      value={lookupSearchQuery}
+                      onChange={e => setLookupSearchQuery(e.target.value)}
+                      placeholder="搜尋建檔點位：客戶名稱、地址、路線…"
+                      className="flex-1 text-sm border border-amber-200 rounded-lg px-3 py-2 focus:border-amber-400 focus:ring-1 focus:ring-amber-400 outline-none bg-amber-50"
+                    />
+                    {lookupSearchQuery && (
+                      <button onClick={() => setLookupSearchQuery('')}
+                        className="text-gray-400 hover:text-gray-600 text-lg leading-none px-1">×</button>
+                    )}
+                </div>
+                <div className="text-[10px] text-gray-400 mb-2">全區共 {allPoints.length} 筆建檔點位（Firestore 即時同步）</div>
+                {lookupSearchQuery.trim() && (
+                  <div className="space-y-1.5 max-h-[300px] overflow-y-auto">
+                    {lookupSearchResults.length === 0 && (
+                      <div className="text-xs text-gray-400 text-center py-4">找不到符合「{lookupSearchQuery.trim()}」的點位</div>
+                    )}
+                    {lookupSearchResults.map(p => (
+                      <div key={`${p.name}-${p.lat}-${p.lng}`}
+                        onClick={() => zoomToAllPoint(p)}
+                        className="flex items-start gap-2.5 p-2.5 rounded-lg border border-amber-100 hover:border-amber-300 hover:bg-amber-50 cursor-pointer transition-all text-xs bg-white group">
+                        <IconPin className="w-3.5 h-3.5 mt-0.5 flex-shrink-0 text-amber-400 group-hover:text-amber-600" />
+                        <div className="flex-1 min-w-0">
+                          <div className="font-bold text-gray-800 truncate group-hover:text-amber-700">{p.name}</div>
+                          <div className="text-gray-500 truncate">{p.address}</div>
+                          <div className="flex items-center gap-2 mt-1 text-[10px] text-gray-400">
+                            <span className="bg-amber-50 border border-amber-200 px-1.5 py-0.5 rounded">{p.route || '無'}</span>
+                            <span>{p.lat.toFixed(4)}, {p.lng.toFixed(4)}</span>
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                    {lookupSearchResults.length > 0 && (
+                      <div className="text-[10px] text-gray-400 text-center pt-1">共 {lookupSearchResults.length} 筆結果・點擊可定位至地圖（標記 5 秒後消失）</div>
+                    )}
+                  </div>
+                )}
             </div>
             <div className="bg-gray-50 p-3 rounded-lg border border-gray-100 space-y-2">
                 <h4 className="text-xs font-bold text-gray-600">計算說明</h4>
