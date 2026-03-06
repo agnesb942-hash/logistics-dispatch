@@ -1555,6 +1555,27 @@ const App = () => {
     document.body.removeChild(link);
   };
 
+  // 匯出原始點位清單（不含分群結果）
+  const handleExportPointList = () => {
+    const BOM = '\uFEFF';
+    const headers = ['ID', '客戶簡稱', '原配置路線', '送貨地址', '緯度', '經度'];
+    const csvRows = [headers.join(',')];
+    deliveryPoints.forEach(item => {
+      const row = [
+        item.id, `"${item.name.replace(/"/g, '""')}"`, `"${(item.route || '').replace(/"/g, '""')}"`,
+        `"${item.address.replace(/"/g, '""')}"`, item.lat, item.lng
+      ];
+      csvRows.push(row.join(','));
+    });
+    const blob = new Blob([BOM + csvRows.join('\n')], { type: 'text/csv;charset=utf-8;' });
+    const link = document.createElement('a');
+    link.setAttribute('href', URL.createObjectURL(blob));
+    link.setAttribute('download', `點位清單_${REGION_LABELS[activeRegion] || '自訂'}_${deliveryPoints.length}筆.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
   // === 入口首頁 ===
   // 首頁即預載 Leaflet，不等進入主介面才開始下載
   if (appMode === 'home' && !document.getElementById('leaflet-script') && !window.L) {
@@ -1721,6 +1742,19 @@ const App = () => {
             {lookupOnly ? '全區 625 筆 | 即時查詢' : activeTab === 'lookup' ? '全區 625 筆 | 即時查詢' : `${REGION_LABELS[activeRegion] || '自訂'} | ${deliveryPoints.length} 筆`}
           </div>
         </div>
+        {/* Tab 切換列（完整模式下可互切兩個工具） */}
+        {!lookupOnly && (
+          <div className="flex bg-slate-50 border-b border-gray-200 flex-shrink-0">
+            <button onClick={() => setActiveTab('settings')}
+              className={`flex-1 py-2 text-xs font-bold tracking-wide transition-all border-b-2 ${activeTab === 'settings' ? 'text-blue-600 border-blue-600 bg-white' : 'text-gray-400 border-transparent hover:text-gray-600 hover:bg-gray-50'}`}>
+              配送區域劃分
+            </button>
+            <button onClick={() => setActiveTab('lookup')}
+              className={`flex-1 py-2 text-xs font-bold tracking-wide transition-all border-b-2 ${activeTab === 'lookup' ? 'text-amber-600 border-amber-500 bg-white' : 'text-gray-400 border-transparent hover:text-gray-600 hover:bg-gray-50'}`}>
+              指送地址查詢
+            </button>
+          </div>
+        )}
         <div className="flex-1 overflow-y-auto p-4 space-y-5 custom-scrollbar bg-white">
         {errorMessage && (
             <div className="bg-red-50 text-red-600 border border-red-200 p-3 rounded-md text-sm flex items-start gap-2 shadow-sm">
@@ -1748,7 +1782,7 @@ const App = () => {
                   {Object.keys(REGION_MAP).map(rk => (
                     <button key={rk} onClick={() => switchRegion(rk)}
                       className={`py-2 px-3 rounded-lg text-sm font-bold transition-all border ${activeRegion === rk ? 'bg-blue-600 text-white border-blue-600 shadow-md' : 'bg-white text-gray-600 border-gray-300 hover:bg-gray-50'}`}>
-                      {REGION_LABELS[rk]} ({REGION_MAP[rk].length})
+                      {REGION_LABELS[rk]} ({rk === activeRegion ? deliveryPoints.length : REGION_MAP[rk].length})
                     </button>
                   ))}
                 </div>
@@ -2026,12 +2060,15 @@ const App = () => {
 
         </>}
         </div>
-        {!lookupOnly && <div className="p-4 border-t border-gray-200 bg-white flex-shrink-0 grid grid-cols-2 gap-2 shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.05)]">
+        {!lookupOnly && activeTab === 'settings' && <div className="p-4 border-t border-gray-200 bg-white flex-shrink-0 grid grid-cols-3 gap-2 shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.05)]">
             <button 
                 onClick={handleRecalc} 
                 className="flex items-center justify-center gap-1.5 bg-gray-100 border border-gray-300 text-gray-700 py-2.5 rounded-lg hover:bg-gray-200 transition-all text-xs font-bold shadow-sm"
             >
                 <IconRefresh className="w-4 h-4" />重新運算
+            </button>
+            <button onClick={handleExportPointList} className="flex items-center justify-center gap-1.5 bg-emerald-50 border border-emerald-300 text-emerald-700 py-2.5 rounded-lg hover:bg-emerald-100 transition-all text-xs font-bold shadow-sm">
+                <IconExcel className="w-4 h-4" />匯出點位
             </button>
             <button onClick={handleExport} className="flex items-center justify-center gap-1.5 bg-blue-600 border border-transparent text-white py-2.5 rounded-lg hover:bg-blue-700 transition-all text-xs font-bold shadow-sm">
                 <IconDownload className="w-4 h-4" />匯出報表
