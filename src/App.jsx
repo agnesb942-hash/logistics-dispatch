@@ -66,8 +66,8 @@ const CHIAYI_DEFAULT = JSON.parse('[{"n":"大立電料(斗六)","r":"山線一",
 // 高雄區：尚無客戶資料，保留結構供日後擴充
 const KAOHSIUNG_DEFAULT = [];
 const REGION_MAP = { tainan: TAINAN_DEFAULT, chiayi: CHIAYI_DEFAULT, kaohsiung: KAOHSIUNG_DEFAULT };
-// 指送查詢用：涵蓋所有區域的完整點位清單（不受目前選取區域限制）
-const ALL_POINTS = [...TAINAN_DEFAULT, ...CHIAYI_DEFAULT, ...KAOHSIUNG_DEFAULT];
+// 指送查詢用：預設點位清單（Firestore 不可用時的備援）
+const DEFAULT_ALL_POINTS = [...TAINAN_DEFAULT, ...CHIAYI_DEFAULT, ...KAOHSIUNG_DEFAULT];
 const REGION_LABELS = { tainan: '台南區', chiayi: '嘉義區', kaohsiung: '高雄區' };
 const REGION_ADMIN_COUNTIES = {
   tainan: ['臺南市','台南市','高雄市'],
@@ -324,6 +324,96 @@ const App = () => {
     try { localStorage.setItem('dispatch_pw', pw); } catch(e) {}
   };
 
+  // Firebase 設定（提前宣告，供持久化函式使用）
+  const FIREBASE_CONFIG = {
+    apiKey: "AIzaSyAe5gxLBHN9CQ6zVhKF6zQGbvgMXCbqoF4",
+    authDomain: "jc-logi-map.firebaseapp.com",
+    projectId: "jc-logi-map",
+    storageBucket: "jc-logi-map.firebasestorage.app",
+    messagingSenderId: "98258062805",
+    appId: "1:98258062805:web:d004b291c639e126e7c15c"
+  };
+  const firebaseRef = useRef(null);
+  const initFirebase = async () => {
+    if (firebaseRef.current) return firebaseRef.current;
+    try {
+      const [fbApp] = await Promise.all([
+        import('https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js'),
+      ]);
+      const { getFirestore, doc, getDoc, setDoc, addDoc, collection, increment, updateDoc } =
+        await import('https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js');
+      const existingApps = fbApp.getApps();
+      const app = existingApps.length > 0 ? existingApps[0] : fbApp.initializeApp(FIREBASE_CONFIG);
+      const db = getFirestore(app);
+      firebaseRef.current = { db, doc, getDoc, setDoc, addDoc, collection, increment, updateDoc };
+      return firebaseRef.current;
+    } catch (e) {
+      console.warn('[Firebase] 初始化失敗：', e);
+      return null;
+    }
+  };
+
+  // ── 點位資料持久化（Firestore 雲端同步）──────────────────────────────
+  const saveDebounceRef = useRef(null);
+  const [pointsLoading, setPointsLoading] = useState(false);
+  const [pointsSyncStatus, setPointsSyncStatus] = useState(''); // '' | 'saving' | 'saved' | 'error'
+
+  // Firestore 讀取（單一區域）
+  const loadFirestorePoints = async (regionKey) => {
+    const fb = await initFirebase();
+    if (!fb) return null;
+    try {
+      const { db, doc, getDoc } = fb;
+      const snap = await getDoc(doc(db, 'regions', regionKey));
+      if (snap.exists()) {
+        const data = snap.data();
+        if (Array.isArray(data.points) && data.points.length > 0) return data.points;
+      }
+    } catch(e) { console.warn('[Firestore] 讀取區域點位失敗：', e); }
+    return null;
+  };
+
+  // Firestore 讀取（全部區域，供指送查詢使用）
+  const loadAllFirestorePoints = async () => {
+    const regionKeys = Object.keys(REGION_MAP);
+    const results = await Promise.all(regionKeys.map(async (rk) => {
+      const data = await loadFirestorePoints(rk);
+      return data || REGION_MAP[rk]; // 該區無 Firestore 資料 → 用預設
+    }));
+    return results.flat();
+  };
+
+  // Firestore 寫入（單一區域，含 debounce）
+  const saveFirestorePoints = async (regionKey, points) => {
+    const fb = await initFirebase();
+    if (!fb) { setPointsSyncStatus('error'); return; }
+    try {
+      const { db, doc, setDoc } = fb;
+      const slim = points.map(p => ({ id: p.id, name: p.name, route: p.route, address: p.address, lat: p.lat, lng: p.lng }));
+      await setDoc(doc(db, 'regions', regionKey), {
+        points: slim,
+        updatedAt: new Date().toISOString(),
+        count: slim.length,
+      });
+      setPointsSyncStatus('saved');
+      setTimeout(() => setPointsSyncStatus(''), 2000);
+    } catch(e) {
+      console.warn('[Firestore] 寫入區域點位失敗：', e);
+      setPointsSyncStatus('error');
+    }
+  };
+
+  // Firestore 刪除（還原預設用）
+  const clearFirestorePoints = async (regionKey) => {
+    const fb = await initFirebase();
+    if (!fb) return;
+    try {
+      const { db, doc } = fb;
+      const { deleteDoc } = await import('https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js');
+      await deleteDoc(doc(db, 'regions', regionKey));
+    } catch(e) { console.warn('[Firestore] 刪除區域點位失敗：', e); }
+  };
+
   const handleDispatchLogin = () => {
     if (pwInput === getStoredPw()) {
       setAppMode('main');
@@ -354,6 +444,9 @@ const App = () => {
   const [activeRegion, setActiveRegion] = useState('tainan');
   const [activeTab, setActiveTab] = useState('settings');
   const [deliveryPoints, setDeliveryPoints] = useState(TAINAN_DEFAULT);
+
+  // 動態全區點位（指送查詢 + 行政區界共用，從 Firestore 載入）
+  const [allPoints, setAllPoints] = useState(DEFAULT_ALL_POINTS);
   
   const [vehicleCount, setVehicleCount] = useState(5);
   const [balanceWeight, setBalanceWeight] = useState(0.8);
@@ -383,6 +476,49 @@ const App = () => {
 
   // 搜尋狀態
   const [searchQuery, setSearchQuery] = useState('');
+
+  // ── 初始載入：從 Firestore 取得最新資料 ──────────────────────────────
+  const isInitialMount = useRef(true);
+  const skipNextSave = useRef(false);
+  useEffect(() => {
+    let cancelled = false;
+    setPointsLoading(true);
+    loadFirestorePoints('tainan').then(data => {
+      if (cancelled) return;
+      if (data) {
+        skipNextSave.current = true;
+        setDeliveryPoints(data.map(p => ({ ...p, cluster: -1 })));
+        setRecalcTrigger(prev => prev + 1);
+      }
+      setPointsLoading(false);
+    });
+    // 同時載入全區點位（供指送查詢使用）
+    loadAllFirestorePoints().then(data => {
+      if (!cancelled && data.length > 0) setAllPoints(data);
+    });
+    return () => { cancelled = true; };
+  }, []);
+
+  // ── 自動儲存：deliveryPoints 變動時寫入 Firestore ─────────────────────
+  useEffect(() => {
+    if (isInitialMount.current) { isInitialMount.current = false; return; }
+    if (skipNextSave.current) { skipNextSave.current = false; return; }
+    if (deliveryPoints.length === 0) return;
+
+    // Firestore debounce 1.5 秒
+    if (saveDebounceRef.current) clearTimeout(saveDebounceRef.current);
+    setPointsSyncStatus('saving');
+    saveDebounceRef.current = setTimeout(() => {
+      saveFirestorePoints(activeRegion, deliveryPoints).then(() => {
+        // 儲存成功後更新全區點位（指送查詢同步）
+        loadAllFirestorePoints().then(data => {
+          if (data.length > 0) setAllPoints(data);
+        });
+      });
+    }, 1500);
+
+    return () => { if (saveDebounceRef.current) clearTimeout(saveDebounceRef.current); };
+  }, [deliveryPoints]);
 
   // UI States
   const [recalcTrigger, setRecalcTrigger] = useState(0); 
@@ -459,17 +595,30 @@ const App = () => {
   const getTruckName = (index) => `車輛 ${String.fromCharCode(65 + index)}`;
 
   // 切換區域
-  const switchRegion = (regionKey) => {
+  const switchRegion = async (regionKey) => {
     setActiveRegion(regionKey);
-    const data = REGION_MAP[regionKey] || [];
-    setDeliveryPoints(data.map((d, i) => ({ ...d, id: i, cluster: -1 })));
     setManualOverrides({});
     setSelectedPointForEdit(null);
     setActiveCluster(null);
     setSearchQuery('');
     setErrorMessage('');
     shouldFitBoundsRef.current = true;
+
+    // 先用預設資料即時渲染，避免等待
+    const fallback = REGION_MAP[regionKey] || [];
+    skipNextSave.current = true;
+    setDeliveryPoints(fallback.map((d, i) => ({ ...d, id: d.id ?? i, cluster: -1 })));
     setRecalcTrigger(prev => prev + 1);
+
+    // 非同步從 Firestore 取得最新版本
+    setPointsLoading(true);
+    const firestoreData = await loadFirestorePoints(regionKey);
+    if (firestoreData) {
+      skipNextSave.current = true;
+      setDeliveryPoints(firestoreData.map((d, i) => ({ ...d, id: d.id ?? i, cluster: -1 })));
+      setRecalcTrigger(prev => prev + 1);
+    }
+    setPointsLoading(false);
   };
 
   // CRUD 操作
@@ -515,17 +664,6 @@ const App = () => {
 
   // 指送地址查詢
   const GOOGLE_MAPS_API_KEY = "AIzaSyBW-7BqwddpcRaP5HK5LGwM4K9lryh81qM";
-
-  // Firebase 設定
-  const FIREBASE_CONFIG = {
-    apiKey: "AIzaSyAe5gxLBHN9CQ6zVhKF6zQGbvgMXCbqoF4",
-    authDomain: "jc-logi-map.firebaseapp.com",
-    projectId: "jc-logi-map",
-    storageBucket: "jc-logi-map.firebasestorage.app",
-    messagingSenderId: "98258062805",
-    appId: "1:98258062805:web:d004b291c639e126e7c15c"
-  };
-  const firebaseRef = useRef(null); // 儲存 Firebase 實例（db + 函式）
 
   // 取得台灣時區當日日期字串（YYYY-MM-DD），用於判斷「當日」重置
   const getTaiwanDateStr = () => {
@@ -681,26 +819,6 @@ const App = () => {
     return null; // 兩源都失敗
   };
 
-  // ── Firebase 初始化（動態載入 SDK）────────────────────────────────────
-  const initFirebase = async () => {
-    if (firebaseRef.current) return firebaseRef.current;
-    try {
-      const [fbApp] = await Promise.all([
-        import('https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js'),
-      ]);
-      const { getFirestore, doc, getDoc, setDoc, addDoc, collection, increment, updateDoc } =
-        await import('https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js');
-      const existingApps = fbApp.getApps();
-      const app = existingApps.length > 0 ? existingApps[0] : fbApp.initializeApp(FIREBASE_CONFIG);
-      const db = getFirestore(app);
-      firebaseRef.current = { db, doc, getDoc, setDoc, addDoc, collection, increment, updateDoc };
-      return firebaseRef.current;
-    } catch (e) {
-      console.warn('[Firebase] 初始化失敗：', e);
-      return null;
-    }
-  };
-
   // ── 從 Firestore 讀取計次 ─────────────────────────────────────────────
   const loadLookupCounts = async () => {
     setLookupCountLoading(true);
@@ -778,7 +896,7 @@ const App = () => {
       const { lat: targetLat, lng: targetLng, resolved: resolvedName, resolvedOSM, source: geoSource, locationType, accuracy, accuracyNote, sources, distM } = geo;
 
       // 步驟二：Haversine 找最近建檔點位（識別路線歸屬）
-      const allWithDist = ALL_POINTS.map(p => ({
+      const allWithDist = allPoints.map(p => ({
         ...p, dist: haversineKm(targetLat, targetLng, p.lat, p.lng)
       })).sort((a, b) => a.dist - b.dist);
       if (allWithDist.length === 0) {
@@ -1292,7 +1410,13 @@ const App = () => {
 
   // ── 進入 lookup 分頁時載入 Firebase 計次 ─────────────────────────────
   useEffect(() => {
-    if (activeTab === 'lookup') loadLookupCounts();
+    if (activeTab === 'lookup') {
+      loadLookupCounts();
+      // 進入查詢分頁時，從 Firestore 刷新全區點位（確保包含配送工具新增的點位）
+      loadAllFirestorePoints().then(data => {
+        if (data.length > 0) setAllPoints(data);
+      });
+    }
   }, [activeTab]);
 
 
@@ -1348,8 +1472,8 @@ const App = () => {
       }
       return '';
     };
-    // 固定使用全區 625 筆客戶（ALL_POINTS）計算有客戶的行政區，不隨目前選取的區域而改變
-    const activeTowns = new Set(ALL_POINTS.map(p => extractTown(p.address)).filter(Boolean));
+    // 使用動態全區點位計算有客戶的行政區（含 Firestore 新增點位）
+    const activeTowns = new Set(allPoints.map(p => extractTown(p.address)).filter(Boolean));
 
     const renderAdminLayer = (geojson) => {
       if (!mapInstanceRef.current) return;
@@ -1489,7 +1613,7 @@ const App = () => {
     };
 
     tryFetch().finally(() => setAdminBoundsLoading(false));
-  }, [showAdminBounds, mapInitialized, adminRefreshKey]);
+  }, [showAdminBounds, mapInitialized, adminRefreshKey, allPoints]);
 
   // 指送查詢結果地圖渲染
   useEffect(() => {
@@ -1767,8 +1891,12 @@ const App = () => {
               onMouseLeave={e => e.currentTarget.style.color='rgba(0,200,255,0.5)'}
             >HOME</button>
           </div>
-          <div className="text-[10px]" style={{color:'rgba(255,255,255,0.35)',letterSpacing:1}}>
-            {lookupOnly ? '全區 625 筆 | 即時查詢' : `${REGION_LABELS[activeRegion] || '自訂'} | ${deliveryPoints.length} 筆`}
+          <div className="text-[10px] flex items-center gap-2" style={{color:'rgba(255,255,255,0.35)',letterSpacing:1}}>
+            <span>{lookupOnly ? `全區 ${allPoints.length} 筆 | 即時查詢` : `${REGION_LABELS[activeRegion] || '自訂'} | ${deliveryPoints.length} 筆`}</span>
+            {!lookupOnly && pointsLoading && <span style={{color:'rgba(0,200,255,0.6)'}}>⟳ 同步中…</span>}
+            {!lookupOnly && pointsSyncStatus === 'saving' && <span style={{color:'rgba(251,191,36,0.7)'}}>● 儲存中</span>}
+            {!lookupOnly && pointsSyncStatus === 'saved' && <span style={{color:'rgba(34,197,94,0.8)'}}>✓ 已同步</span>}
+            {!lookupOnly && pointsSyncStatus === 'error' && <span style={{color:'rgba(239,68,68,0.8)'}}>✗ 同步失敗</span>}
           </div>
         </div>
         <div className="flex-1 overflow-y-auto p-4 space-y-5 custom-scrollbar bg-white">
@@ -1820,6 +1948,25 @@ const App = () => {
               [格式] 匯入格式：客戶簡稱 | 配送路線說明 | 送貨地址 | 經緯度（緯度,經度）<br/>
               第一列為標題列（自動跳過），支援 .xlsx .csv .tsv .txt
             </div>
+            <button
+              onClick={() => {
+                if (!window.confirm(`確定要將「${REGION_LABELS[activeRegion]}」還原為預設的 ${REGION_MAP[activeRegion].length} 筆資料？\n\n此操作會清除您在此區域所有新增、編輯與匯入的變更（含雲端資料）。`)) return;
+                clearFirestorePoints(activeRegion);
+                skipNextSave.current = true;
+                const data = REGION_MAP[activeRegion] || [];
+                setDeliveryPoints(data.map((d, i) => ({ ...d, id: i, cluster: -1 })));
+                setManualOverrides({});
+                setSelectedPointForEdit(null);
+                setActiveCluster(null);
+                setSearchQuery('');
+                setErrorMessage('');
+                shouldFitBoundsRef.current = true;
+                setRecalcTrigger(prev => prev + 1);
+              }}
+              className="w-full py-1.5 text-[10px] font-bold text-gray-400 hover:text-red-500 hover:bg-red-50 border border-dashed border-gray-200 hover:border-red-300 rounded-lg transition-all"
+            >
+              還原預設資料（{REGION_LABELS[activeRegion]} {REGION_MAP[activeRegion].length} 筆）
+            </button>
 
             <div className="space-y-2">
                <div className="flex justify-between items-center text-sm">
