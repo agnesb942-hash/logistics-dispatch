@@ -525,41 +525,152 @@ const App = () => {
   };
 
   // 地址轉座標：先用 Nominatim（台灣 OSM，免費無限制）再用 Google 兜底
+  // ── 交叉路口輸入偵測與格式轉換 ───────────────────────────────────────
+  // 支援格式：「公園路口中山路」「公園路&中山路」「公園路x中山路」「公園路和中山路口」「公園路與中山路」
+  const parseIntersection = (raw) => {
+    // 比對常見分隔詞：路口、&、＆、x、X、×、和...路口、與...路口
+    const patterns = [
+      // 「A路口B路」或「A路 路口 B路」—— 路口作分隔
+      /^(.+?(?:路|街|道|大道|大路))\s*路口\s*(.+?(?:路|街|道|大道|大路).*)$/,
+      // 「A路&B路」「A路＆B路」
+      /^(.+?(?:路|街|道|大道|大路))\s*[&＆]\s*(.+?(?:路|街|道|大道|大路).*)$/,
+      // 「A路xB路」「A路XB路」「A路×B路」
+      /^(.+?(?:路|街|道|大道|大路))\s*[xX×]\s*(.+?(?:路|街|道|大道|大路).*)$/,
+      // 「A路和B路口」「A路與B路口」
+      /^(.+?(?:路|街|道|大道|大路))\s*(?:和|與)\s*(.+?(?:路|街|道|大道|大路).*)$/,
+    ];
+    for (const re of patterns) {
+      const m = raw.match(re);
+      if (m) return { road1: m[1].trim(), road2: m[2].trim() };
+    }
+    return null;
+  };
+
+  // ── 從輸入字串中抽取前綴縣市區（如有） ───────────────────────────────
+  const extractPrefix = (raw) => {
+    const m = raw.match(/^([\u4e00-\u9fa5]{2,6}[市縣](?:[\u4e00-\u9fa5]{2,4}[區鄉鎮市])?)/);
+    return m ? m[1] : '';
+  };
+
+  // ── 雙源準確率計算（根據兩引擎座標偏差距離換算） ─────────────────────
+  // 距離越近 → 兩引擎互相印證 → 準確率越高
+  const calcGeoAccuracy = (distMeters) => {
+    if (distMeters <=  30)  return 99;
+    if (distMeters <= 100)  return 93;
+    if (distMeters <= 300)  return 80;
+    if (distMeters <= 600)  return 65;
+    if (distMeters <= 1500) return 45;
+    return 25; // 偏差 > 1.5 km，可能辨識到不同地點
+  };
+
+  // ── 主地址轉座標（雙源並行 + 交叉比對準確率） ────────────────────────
   const geocodeTW = async (address) => {
     const raw = address.trim();
-    // 補全縣市前綴提升準確度
-    const nominatimQ = raw.includes('台灣') || raw.includes('Taiwan') ? raw : raw;
-    
-    // 第一優先：Nominatim（OpenStreetMap 台灣，門牌精準度高）
-    try {
-      const nmRes = await fetch(
-        `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(nominatimQ)}&countrycodes=tw&format=json&limit=1&addressdetails=1`,
-        { headers: { 'Accept-Language': 'zh-TW,zh;q=0.9' } }
-      );
-      if (nmRes.ok) {
-        const nmData = await nmRes.json();
-        if (nmData && nmData.length > 0 && parseFloat(nmData[0].importance || 0) > 0.1) {
-          const r = nmData[0];
-          const lat = parseFloat(r.lat);
-          const lng = parseFloat(r.lon);
-          // 確認座標在台灣範圍內 (21~25.5°N, 119~122.5°E)
-          if (lat > 21 && lat < 25.5 && lng > 119 && lng < 122.5) {
-            return { lat, lng, resolved: r.display_name, source: 'OSM' };
+
+    // ── 交叉路口模式：僅 Google 支援，單源輸出 ──────────────────────
+    const intersection = parseIntersection(raw);
+    if (intersection) {
+      const prefix = extractPrefix(raw);
+      const googleQ = `${intersection.road1} and ${intersection.road2}${prefix ? ', ' + prefix : ''}, 台灣`;
+      try {
+        const geoRes = await fetch(
+          `https://maps.googleapis.com/maps/api/geocode/json?address=${encodeURIComponent(googleQ)}&language=zh-TW&region=TW&components=country:TW&key=${GOOGLE_MAPS_API_KEY}`
+        );
+        if (geoRes.ok) {
+          const geoData = await geoRes.json();
+          if (geoData.results?.length > 0) {
+            const loc = geoData.results[0].geometry.location;
+            if (loc.lat > 21 && loc.lat < 25.5 && loc.lng > 119 && loc.lng < 122.5) {
+              return {
+                lat: loc.lat, lng: loc.lng,
+                resolved: geoData.results[0].formatted_address,
+                source: 'Google', locationType: 'intersection',
+                accuracy: 70,           // 路口為估算中心點，固定 70%
+                accuracyNote: '路口單源', // 說明標籤
+                sources: { osm: false, google: true },
+              };
+            }
           }
         }
-      }
-    } catch(e) { /* 繼續嘗試 Google */ }
+      } catch(e) {}
+      return null;
+    }
 
-    // 第二優先：Google Maps Geocoding（兜底，加強台灣區域限制）
-    const googleQ = raw.includes('台灣') ? raw : raw + ' 台灣';
-    const geoRes = await fetch(
-      `https://maps.googleapis.com/maps/api/geocode/json?address=${encodeURIComponent(googleQ)}&language=zh-TW&region=TW&components=country:TW&key=${GOOGLE_MAPS_API_KEY}`
-    );
-    if (!geoRes.ok) throw new Error(`HTTP ${geoRes.status}`);
-    const geoData = await geoRes.json();
-    if (!geoData.results || geoData.results.length === 0) return null;
-    const loc = geoData.results[0].geometry.location;
-    return { lat: loc.lat, lng: loc.lng, resolved: geoData.results[0].formatted_address, source: 'Google' };
+    // ── 一般地址：OSM 與 Google 並行查詢 ───────────────────────────
+    const nominatimQ = raw;
+    const googleQ    = raw.includes('台灣') ? raw : raw + ' 台灣';
+
+    const [osmResult, googleResult] = await Promise.allSettled([
+      // OSM Nominatim
+      fetch(
+        `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(nominatimQ)}&countrycodes=tw&format=json&limit=1&addressdetails=1`,
+        { headers: { 'Accept-Language': 'zh-TW,zh;q=0.9' } }
+      ).then(async r => {
+        if (!r.ok) return null;
+        const data = await r.json();
+        if (!data?.length || parseFloat(data[0].importance || 0) <= 0.1) return null;
+        const lat = parseFloat(data[0].lat), lng = parseFloat(data[0].lon);
+        if (lat < 21 || lat > 25.5 || lng < 119 || lng > 122.5) return null;
+        return { lat, lng, resolved: data[0].display_name };
+      }).catch(() => null),
+
+      // Google Geocoding
+      fetch(
+        `https://maps.googleapis.com/maps/api/geocode/json?address=${encodeURIComponent(googleQ)}&language=zh-TW&region=TW&components=country:TW&key=${GOOGLE_MAPS_API_KEY}`
+      ).then(async r => {
+        if (!r.ok) return null;
+        const data = await r.json();
+        if (!data?.results?.length) return null;
+        const loc = data.results[0].geometry.location;
+        return { lat: loc.lat, lng: loc.lng, resolved: data.results[0].formatted_address };
+      }).catch(() => null),
+    ]);
+
+    const osm    = osmResult.status    === 'fulfilled' ? osmResult.value    : null;
+    const google = googleResult.status === 'fulfilled' ? googleResult.value : null;
+
+    // ── 雙源都有結果 → 計算偏差距離 → 換算準確率 ──────────────────
+    if (osm && google) {
+      const distM = haversineKm(osm.lat, osm.lng, google.lat, google.lng) * 1000;
+      const accuracy = calcGeoAccuracy(distM);
+      // 主座標以 OSM 為準（台灣門牌資料精準），resolved 取 Google（中文格式較整齊）
+      return {
+        lat: osm.lat, lng: osm.lng,
+        resolved: google.resolved,
+        resolvedOSM: osm.resolved,
+        source: 'OSM+Google', locationType: 'address',
+        accuracy,
+        accuracyNote: `雙源比對 偏差 ${distM < 1000 ? Math.round(distM) + 'm' : (distM/1000).toFixed(1) + 'km'}`,
+        sources: { osm: true, google: true },
+        distM: Math.round(distM),
+      };
+    }
+
+    // ── 單源：僅 OSM ───────────────────────────────────────────────
+    if (osm) {
+      return {
+        lat: osm.lat, lng: osm.lng,
+        resolved: osm.resolved,
+        source: 'OSM', locationType: 'address',
+        accuracy: 70,
+        accuracyNote: '單源 OSM',
+        sources: { osm: true, google: false },
+      };
+    }
+
+    // ── 單源：僅 Google ────────────────────────────────────────────
+    if (google) {
+      return {
+        lat: google.lat, lng: google.lng,
+        resolved: google.resolved,
+        source: 'Google', locationType: 'address',
+        accuracy: 65,
+        accuracyNote: '單源 Google',
+        sources: { osm: false, google: true },
+      };
+    }
+
+    return null; // 兩源都失敗
   };
 
   // ── Firebase 初始化（動態載入 SDK）────────────────────────────────────
@@ -652,18 +763,18 @@ const App = () => {
       // 步驟一：地址轉座標
       const geo = await geocodeTW(deliveryLookupAddr);
       if (!geo) {
-        setDeliveryLookupResult({ ok: false, msg: '無法辨識該地址，請確認輸入是否正確（建議格式：台南市安南區工業一路86號）。' });
+        setDeliveryLookupResult({ ok: false, type: 'invalid_address', msg: '⚠️ 地址無法辨識', hint: '請確認地址是否完整，建議格式：台南市安南區工業一路86號（需包含縣市、區里、路名、門牌）。' });
         setDeliveryLookupLoading(false);
         return;
       }
-      const { lat: targetLat, lng: targetLng, resolved: resolvedName, source: geoSource } = geo;
+      const { lat: targetLat, lng: targetLng, resolved: resolvedName, resolvedOSM, source: geoSource, locationType, accuracy, accuracyNote, sources, distM } = geo;
 
       // 步驟二：Haversine 找最近建檔點位（識別路線歸屬）
       const allWithDist = ALL_POINTS.map(p => ({
         ...p, dist: haversineKm(targetLat, targetLng, p.lat, p.lng)
       })).sort((a, b) => a.dist - b.dist);
       if (allWithDist.length === 0) {
-        setDeliveryLookupResult({ ok: false, msg: '系統尚無建檔點位資料可供比對。' });
+        setDeliveryLookupResult({ ok: false, type: 'error', msg: '❌ 系統尚無建檔點位資料可供比對。' });
         setDeliveryLookupLoading(false);
         return;
       }
@@ -709,18 +820,19 @@ const App = () => {
 
       const ok = parseFloat(roundTripMin) <= 25;
       setDeliveryLookupResult({
-        ok, msg: ok ? '✅ 可配送' : '❌ 超出配送範圍',
+        ok, type: ok ? 'ok' : 'out_of_range',
+        msg: ok ? '✅ 可配送' : '❌ 超出配送範圍',
         route: ok ? best.route : undefined,
         nearestName: best.name, distKm: realDistKm, roundTrip: roundTripMin,
         resolved: resolvedName, lat: targetLat, lng: targetLng,
-        trafficNote, geoSource, top2,
+        trafficNote, geoSource, locationType, accuracy, accuracyNote, sources, distM, resolvedOSM, top2,
       });
 
       // 步驟四：非同步寫入 Firebase（不阻塞 UI）
       logToFirestore(deliveryLookupAddr, resolvedName, ok, ok ? best.route : '', realDistKm, roundTripMin, geoSource);
 
     } catch (err) {
-      setDeliveryLookupResult({ ok: false, msg: '地址查詢服務暫時無法使用，請稍後再試。' });
+      setDeliveryLookupResult({ ok: false, type: 'error', msg: '❌ 查詢服務暫時無法使用', hint: '請稍後再試，或確認網路連線是否正常。' });
     }
     setDeliveryLookupLoading(false);
   };
@@ -1791,52 +1903,121 @@ const App = () => {
                 <div className="flex gap-2">
                     <input value={deliveryLookupAddr} onChange={e => setDeliveryLookupAddr(e.target.value)}
                         onKeyDown={e => e.key === 'Enter' && handleDeliveryLookup()}
-                        placeholder="例：臺南市善化區中正路100號"
+                        placeholder="門牌：臺南市善化區中正路100號　路口：台南市北區公園路口中山路"
                         className="flex-1 border border-gray-300 rounded-lg p-2.5 text-sm focus:border-amber-500 focus:ring-1 focus:ring-amber-500 outline-none" />
                     <button onClick={handleDeliveryLookup} disabled={deliveryLookupLoading || !deliveryLookupAddr.trim()}
                         className="px-4 py-2.5 rounded-lg bg-amber-500 text-white font-bold text-sm hover:bg-amber-600 disabled:opacity-50 transition-all flex-shrink-0">
                         {deliveryLookupLoading ? <div className="animate-spin h-4 w-4 border-b-2 border-white rounded-full"></div> : '查詢'}
                     </button>
                 </div>
-                {deliveryLookupResult && (
-                    <div className={`p-4 rounded-xl text-sm space-y-2 ${deliveryLookupResult.ok ? 'bg-green-50 border border-green-200' : 'bg-red-50 border border-red-200'}`}>
-                        <div className={`font-bold text-lg ${deliveryLookupResult.ok ? 'text-green-700' : 'text-red-700'}`}>{deliveryLookupResult.msg}</div>
-                        {deliveryLookupResult.route && (
-                            <div className="text-green-800 font-bold text-base">建議由[<span className="text-green-600 bg-green-100 px-2 py-0.5 rounded">{deliveryLookupResult.route}</span>]承接配送</div>
+                {deliveryLookupResult && (() => {
+                    const r = deliveryLookupResult;
+                    // 依 type 決定配色
+                    const styleMap = {
+                      ok:              { wrap: 'bg-green-50 border-green-200',  title: 'text-green-700' },
+                      out_of_range:    { wrap: 'bg-red-50 border-red-200',      title: 'text-red-700'   },
+                      invalid_address: { wrap: 'bg-amber-50 border-amber-300',  title: 'text-amber-700' },
+                      error:           { wrap: 'bg-gray-100 border-gray-300',   title: 'text-gray-600'  },
+                    };
+                    const s = styleMap[r.type] || styleMap.out_of_range;
+                    return (
+                      <div className={`p-4 rounded-xl text-sm space-y-2 border ${s.wrap}`}>
+                        <div className={`font-bold text-lg ${s.title}`}>{r.msg}</div>
+
+                        {/* 地址不完整 / 服務異常 → 顯示提示說明 */}
+                        {r.hint && (
+                          <div className="text-xs text-gray-600 bg-white border border-gray-200 rounded-lg p-2.5 leading-relaxed">
+                            {r.hint}
+                          </div>
                         )}
-                        {deliveryLookupResult.resolved && (
-                            <div className="text-xs text-gray-500 bg-white border border-gray-200 rounded-lg p-2.5 flex items-start gap-2">
-                                <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded flex-shrink-0 mt-0.5 ${deliveryLookupResult.geoSource === 'OSM' ? 'bg-blue-100 text-blue-700' : 'bg-orange-100 text-orange-700'}`}>
-                                    {deliveryLookupResult.geoSource === 'OSM' ? 'OSM' : 'Google'}
-                                </span>
-                                <span className="leading-relaxed">{deliveryLookupResult.resolved}</span>
-                            </div>
+
+                        {/* 可配送 → 顯示建議路線 */}
+                        {r.route && (
+                          <div className="text-green-800 font-bold text-base">建議由[<span className="text-green-600 bg-green-100 px-2 py-0.5 rounded">{r.route}</span>]承接配送</div>
                         )}
-                        {deliveryLookupResult.top2 && (
-                            <div className="space-y-2 pt-2 border-t border-gray-200 mt-2">
-                                {deliveryLookupResult.top2.map((p, idx) => (
-                                    <div key={p.name} className={`p-3 rounded-lg border ${idx === 0 ? 'bg-white border-gray-200' : 'bg-gray-50 border-gray-100'}`}>
-                                        <div className="flex items-center gap-2 mb-2">
-                                            <span className={`text-xs font-bold px-2 py-0.5 rounded ${idx === 0 ? 'bg-blue-100 text-blue-700' : 'bg-gray-200 text-gray-600'}`}>
-                                                第 {idx + 1} 近
-                                            </span>
-                                            <span className="font-bold text-sm text-gray-800">{p.name}</span>
-                                        </div>
-                                        <div className="flex justify-between text-xs text-gray-500">
-                                            <span>路線：<span className="font-medium text-gray-700">{p.route}</span></span>
-                                            <span className="font-medium">{p.roadDist} km・往返 {p.roundTripMin} 分</span>
-                                        </div>
+
+                        {/* ── 地址辨識結果 + 準確率 ── */}
+                        {r.resolved && (() => {
+                          const acc = r.accuracy ?? 0;
+                          const accColor = acc >= 90 ? { bar: 'bg-green-500',  text: 'text-green-700',  bg: 'bg-green-50  border-green-200'  }
+                                         : acc >= 70 ? { bar: 'bg-yellow-400', text: 'text-yellow-700', bg: 'bg-yellow-50 border-yellow-200' }
+                                         :             { bar: 'bg-red-400',    text: 'text-red-700',    bg: 'bg-red-50    border-red-200'    };
+                          // 兩源偏差 > 300m 且都有結果 → 並列顯示
+                          const showBoth = r.sources?.osm && r.sources?.google && r.resolvedOSM && (r.distM ?? 0) > 300;
+                          return (
+                            <div className={`text-xs rounded-lg border p-2.5 space-y-2 ${accColor.bg}`}>
+                              {/* 標題列：來源標籤 + 準確率 */}
+                              <div className="flex items-center gap-1.5 flex-wrap">
+                                {r.sources?.osm    && <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-blue-100 text-blue-700">OSM ✓</span>}
+                                {r.sources?.google && <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-orange-100 text-orange-700">Google ✓</span>}
+                                {r.locationType === 'intersection' && (
+                                  <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-purple-100 text-purple-700">路口中心點 ±50m</span>
+                                )}
+                                <span className={`ml-auto text-sm font-bold ${accColor.text}`}>{acc}%</span>
+                              </div>
+                              {/* 準確率進度條 */}
+                              <div className="w-full bg-gray-200 rounded-full h-1.5">
+                                <div className={`h-1.5 rounded-full transition-all ${accColor.bar}`} style={{ width: `${acc}%` }}></div>
+                              </div>
+                              {/* 比對說明 */}
+                              <div className="text-[10px] text-gray-500">{r.accuracyNote}</div>
+                              {/* ── 兩源一致 → 單一結果 ── */}
+                              {!showBoth && (
+                                <div className="text-gray-700 leading-relaxed border-t border-gray-200 pt-1.5">{r.resolved}</div>
+                              )}
+                              {/* ── 兩源不一致 → 並列顯示 ── */}
+                              {showBoth && (
+                                <div className="border-t border-gray-200 pt-2 space-y-1.5">
+                                  <div className="text-[10px] font-bold text-amber-600">⚠️ 兩個圖資辨識結果不同，偏差 {r.distM}m，請確認哪一個正確</div>
+                                  <div className="bg-white border border-blue-200 rounded-lg p-2">
+                                    <div className="flex items-center gap-1.5 mb-1">
+                                      <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-blue-100 text-blue-700">OSM</span>
+                                      <span className="text-[10px] text-gray-400">（系統採用此座標計算）</span>
                                     </div>
-                                ))}
+                                    <div className="text-gray-700 leading-relaxed text-[11px]">{r.resolvedOSM}</div>
+                                  </div>
+                                  <div className="bg-white border border-orange-200 rounded-lg p-2">
+                                    <div className="flex items-center gap-1.5 mb-1">
+                                      <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-orange-100 text-orange-700">Google</span>
+                                      <span className="text-[10px] text-gray-400">（供參考）</span>
+                                    </div>
+                                    <div className="text-gray-700 leading-relaxed text-[11px]">{r.resolved}</div>
+                                  </div>
+                                </div>
+                              )}
                             </div>
+                          );
+                        })()}
+
+                        {/* 超出範圍 → 仍顯示最近點資訊供參考 */}
+                        {r.top2 && (
+                          <div className="space-y-2 pt-2 border-t border-gray-200 mt-2">
+                            {r.top2.map((p, idx) => (
+                              <div key={p.name} className={`p-3 rounded-lg border ${idx === 0 ? 'bg-white border-gray-200' : 'bg-gray-50 border-gray-100'}`}>
+                                <div className="flex items-center gap-2 mb-2">
+                                  <span className={`text-xs font-bold px-2 py-0.5 rounded ${idx === 0 ? 'bg-blue-100 text-blue-700' : 'bg-gray-200 text-gray-600'}`}>
+                                    第 {idx + 1} 近
+                                  </span>
+                                  <span className="font-bold text-sm text-gray-800">{p.name}</span>
+                                </div>
+                                <div className="flex justify-between text-xs text-gray-500">
+                                  <span>路線：<span className="font-medium text-gray-700">{p.route}</span></span>
+                                  <span className="font-medium">{p.roadDist} km・往返 {p.roundTripMin} 分</span>
+                                </div>
+                              </div>
+                            ))}
+                          </div>
                         )}
-                    </div>
-                )}
+                      </div>
+                    );
+                })()}
             </div>
             <div className="bg-gray-50 p-3 rounded-lg border border-gray-100 space-y-2">
                 <h4 className="text-xs font-bold text-gray-600">計算說明</h4>
                 <div className="text-[10px] text-gray-400 leading-relaxed space-y-1">
-                    <div>- 地址轉座標：OSM Nominatim（台灣門牌優先）+ Google Maps（兜底）</div>
+                    <div>- 地址辨識：OSM Nominatim 與 Google Maps 雙源並行查詢，比對座標偏差換算準確率</div>
+                    <div>- 準確率：雙源偏差 ≤30m→99%、≤100m→93%、≤300m→80%、≤600m→65%；單源固定 65-70%</div>
+                    <div>- 交叉路口：自動偵測「路口」「&」「x」「和/與」等格式，由 Google 查詢路口中心點（準確率固定 70%）</div>
                     <div>- 距離與時間：Google Distance Matrix API（含即時交通，失敗時改用 Haversine × 1.3 靜態估算）</div>
                     <div>- 判斷依據：最近建檔點往返查詢地址 25 分鐘以內為可配送</div>
                     <div>- 查詢記錄：每次查詢自動同步至 Firebase（當日計次台灣時區 00:00 重置）</div>
