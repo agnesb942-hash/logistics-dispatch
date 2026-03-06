@@ -462,6 +462,11 @@ const App = () => {
   const [editingPointData, setEditingPointData] = useState(null); // for edit modal
   const [addForm, setAddForm] = useState({ name: '', route: '', address: '', lat: '', lng: '' });
 
+  // 刪除點位 Modal
+  const [showDeleteModal, setShowDeleteModal] = useState(false);
+  const [deleteSearchQuery, setDeleteSearchQuery] = useState('');
+  const [deleteConfirmPoint, setDeleteConfirmPoint] = useState(null); // 選中待刪除的點位
+
   // 指送查詢狀態
   const [deliveryLookupAddr, setDeliveryLookupAddr] = useState('');
   const [deliveryLookupResult, setDeliveryLookupResult] = useState(null);
@@ -611,18 +616,21 @@ const App = () => {
     shouldFitBoundsRef.current = true;
 
     if (regionKey === 'all') {
-      // 全區模式：合併所有區域（先用預設，再從 Firestore 更新）
+      // 全區模式：直接使用已同步的 allPoints（含 Firestore 最新資料）
       skipNextSave.current = true;
-      setDeliveryPoints(DEFAULT_ALL_POINTS.map((d, i) => ({ ...d, id: d.id ?? i, cluster: -1 })));
+      setDeliveryPoints(allPoints.map((d, i) => ({ ...d, id: d.id ?? i, cluster: -1 })));
       setRecalcTrigger(prev => prev + 1);
+      // 背景再刷新一次確保最新
       setPointsLoading(true);
-      const firestoreData = await loadAllFirestorePoints();
-      if (firestoreData && firestoreData.length > 0) {
-        skipNextSave.current = true;
-        setDeliveryPoints(firestoreData.map((d, i) => ({ ...d, id: d.id ?? i, cluster: -1 })));
-        setRecalcTrigger(prev => prev + 1);
-      }
-      setPointsLoading(false);
+      loadAllFirestorePoints().then(data => {
+        if (data && data.length > 0) {
+          setAllPoints(data);
+          skipNextSave.current = true;
+          setDeliveryPoints(data.map((d, i) => ({ ...d, id: d.id ?? i, cluster: -1 })));
+          setRecalcTrigger(prev => prev + 1);
+        }
+        setPointsLoading(false);
+      });
       return;
     }
 
@@ -1227,6 +1235,17 @@ const App = () => {
       (p.route || '').toLowerCase().includes(q)
     );
   }, [searchQuery, finalClusteredData]);
+
+  // 刪除搜尋過濾
+  const deleteSearchResults = useMemo(() => {
+    const q = deleteSearchQuery.trim().toLowerCase();
+    if (!q) return [];
+    return deliveryPoints.filter(p =>
+      p.name.toLowerCase().includes(q) ||
+      p.address.toLowerCase().includes(q) ||
+      (p.route || '').toLowerCase().includes(q)
+    );
+  }, [deleteSearchQuery, deliveryPoints]);
 
   // 搜尋結果定位：飛到該點並開啟 tooltip
   const zoomToPoint = (point) => {
@@ -2016,15 +2035,19 @@ const App = () => {
                 )}
             </div>
             {activeRegion !== 'all' && <>
-            <div className="flex gap-2">
+            <div className="grid grid-cols-3 gap-2">
                 <button onClick={() => { setAddForm({ name: '', route: '', address: '', lat: '', lng: '' }); setShowAddModal(true); }}
-                  className="flex-1 flex items-center justify-center gap-1.5 py-2 rounded-lg text-sm font-bold bg-emerald-50 text-emerald-700 border border-emerald-200 hover:bg-emerald-100 transition-all">
-                  <span className="text-lg leading-none">+</span> 新增點位
+                  className="flex items-center justify-center gap-1 py-2 rounded-lg text-xs font-bold bg-emerald-50 text-emerald-700 border border-emerald-200 hover:bg-emerald-100 transition-all">
+                  <span className="text-base leading-none">+</span> 新增點位
                 </button>
-                <div className="flex-1">
+                <button onClick={() => { setDeleteSearchQuery(''); setDeleteConfirmPoint(null); setShowDeleteModal(true); }}
+                  className="flex items-center justify-center gap-1 py-2 rounded-lg text-xs font-bold bg-red-50 text-red-600 border border-red-200 hover:bg-red-100 transition-all">
+                  <span className="text-base leading-none">−</span> 刪除點位
+                </button>
+                <div>
                   <input type="file" accept=".csv, .txt, .tsv, .xlsx, .xls" onChange={handleFileUpload} className="hidden" id="data-upload" />
-                  <label htmlFor="data-upload" className={`w-full h-full flex items-center justify-center gap-1.5 border py-2 rounded-lg transition-all text-sm font-bold cursor-pointer ${isLoadingFile ? 'bg-slate-800 border-slate-600 text-slate-400' : 'bg-white border-gray-300 text-gray-700 hover:bg-gray-100 shadow-sm'}`}>
-                    {isLoadingFile ? <div className="animate-spin h-4 w-4 border-b-2 border-current rounded-full"></div> : <IconExcel className="w-4 h-4 text-green-600" />}
+                  <label htmlFor="data-upload" className={`w-full h-full flex items-center justify-center gap-1 border py-2 rounded-lg transition-all text-xs font-bold cursor-pointer ${isLoadingFile ? 'bg-slate-800 border-slate-600 text-slate-400' : 'bg-white border-gray-300 text-gray-700 hover:bg-gray-100 shadow-sm'}`}>
+                    {isLoadingFile ? <div className="animate-spin h-4 w-4 border-b-2 border-current rounded-full"></div> : <IconExcel className="w-3.5 h-3.5 text-green-600" />}
                     匯入檔案
                   </label>
                 </div>
@@ -2507,6 +2530,84 @@ const App = () => {
             <div className="flex gap-3 pt-2">
               <button onClick={() => setShowAddModal(false)} className="flex-1 py-2.5 rounded-lg border border-gray-300 text-gray-600 font-bold text-sm hover:bg-gray-50">取消</button>
               <button onClick={handleAddPoint} className="flex-1 py-2.5 rounded-lg bg-blue-600 text-white font-bold text-sm hover:bg-blue-700 shadow-md">確認新增</button>
+            </div>
+          </div>
+        </div>
+      )}
+      {/* ── 刪除點位 Modal ── */}
+      {showDeleteModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-40 backdrop-blur-sm z-[9999] flex items-center justify-center p-4" onClick={() => setShowDeleteModal(false)}>
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md overflow-hidden" onClick={e => e.stopPropagation()}>
+            <div className="bg-red-600 p-4 text-white">
+              <h3 className="text-base font-bold flex items-center gap-2">
+                <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/></svg>
+                {deleteConfirmPoint ? '確認刪除' : '刪除配送點位'}
+              </h3>
+              <div className="text-red-200 text-xs mt-1">
+                {deleteConfirmPoint ? '請再次確認，此操作無法復原' : '輸入客戶名稱搜尋要刪除的點位'}
+              </div>
+            </div>
+            <div className="p-5 space-y-4">
+              {!deleteConfirmPoint ? (
+                <>
+                  <input
+                    value={deleteSearchQuery}
+                    onChange={e => setDeleteSearchQuery(e.target.value)}
+                    placeholder="輸入客戶名稱、地址或路線…"
+                    autoFocus
+                    className="w-full border border-gray-300 rounded-lg p-2.5 text-sm focus:border-red-400 focus:ring-1 focus:ring-red-400 outline-none"
+                  />
+                  <div className="space-y-1.5 max-h-[280px] overflow-y-auto">
+                    {deleteSearchQuery.trim() && deleteSearchResults.length === 0 && (
+                      <div className="text-xs text-gray-400 text-center py-6">找不到符合「{deleteSearchQuery.trim()}」的點位</div>
+                    )}
+                    {deleteSearchResults.map(p => (
+                      <div key={p.id}
+                        onClick={() => setDeleteConfirmPoint(p)}
+                        className="flex items-start gap-2.5 p-3 rounded-lg border border-gray-100 hover:border-red-300 hover:bg-red-50 cursor-pointer transition-all text-xs group">
+                        <IconPin className="w-3.5 h-3.5 mt-0.5 flex-shrink-0 text-gray-300 group-hover:text-red-500" />
+                        <div className="flex-1 min-w-0">
+                          <div className="font-bold text-gray-800 group-hover:text-red-700">{p.name}</div>
+                          <div className="text-gray-500 truncate">{p.address}</div>
+                          <div className="text-[10px] text-gray-400 mt-1">{p.route || '無路線'} | {p.lat.toFixed(4)}, {p.lng.toFixed(4)}</div>
+                        </div>
+                      </div>
+                    ))}
+                    {!deleteSearchQuery.trim() && (
+                      <div className="text-xs text-gray-400 text-center py-6">請輸入關鍵字搜尋</div>
+                    )}
+                  </div>
+                </>
+              ) : (
+                <>
+                  <div className="bg-red-50 border border-red-200 rounded-xl p-4 space-y-2">
+                    <div className="text-sm font-bold text-red-800">{deleteConfirmPoint.name}</div>
+                    <div className="text-xs text-gray-600">{deleteConfirmPoint.address}</div>
+                    <div className="text-xs text-gray-500">路線：{deleteConfirmPoint.route || '無'}</div>
+                    <div className="text-[10px] text-gray-400">座標：{deleteConfirmPoint.lat}, {deleteConfirmPoint.lng}</div>
+                  </div>
+                  <div className="bg-amber-50 border border-amber-300 rounded-lg p-3 text-xs text-amber-800 font-bold leading-relaxed">
+                    ⚠️ 刪除後無法復原！此點位將從 {REGION_LABELS[activeRegion]} 永久移除，並同步至雲端資料庫。
+                  </div>
+                </>
+              )}
+            </div>
+            <div className="p-4 bg-gray-50 border-t border-gray-200 flex gap-3">
+              {!deleteConfirmPoint ? (
+                <button onClick={() => setShowDeleteModal(false)} className="flex-1 py-2.5 rounded-lg border border-gray-300 text-gray-600 font-bold text-sm hover:bg-gray-100">關閉</button>
+              ) : (
+                <>
+                  <button onClick={() => setDeleteConfirmPoint(null)} className="flex-1 py-2.5 rounded-lg border border-gray-300 text-gray-600 font-bold text-sm hover:bg-gray-100">返回搜尋</button>
+                  <button onClick={() => {
+                    handleDeletePoint(deleteConfirmPoint.id);
+                    setDeleteConfirmPoint(null);
+                    setDeleteSearchQuery('');
+                    setShowDeleteModal(false);
+                  }} className="flex-1 py-2.5 rounded-lg bg-red-600 text-white font-bold text-sm hover:bg-red-700 shadow-md">
+                    確認永久刪除
+                  </button>
+                </>
+              )}
             </div>
           </div>
         </div>
