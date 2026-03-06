@@ -48,6 +48,10 @@ const IconMap = ({ className }) => (
   <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}><polygon points="3 6 9 3 15 6 21 3 21 18 15 21 9 18 3 21"/><line x1="9" x2="9" y1="3" y2="18"/><line x1="15" x2="15" y1="6" y2="21"/></svg>
 );
 
+const IconSearch = ({ className }) => (
+  <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>
+);
+
 const IconWarehouse = ({ className }) => (
   <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}><path d="M22 8.35V20a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V8.35A2 2 0 0 1 3.26 6.5l8-3.2a2 2 0 0 1 1.48 0l8 3.2A2 2 0 0 1 22 8.35Z"/><path d="M6 18h12"/><path d="M6 14h12"/><rect width="12" height="12" x="6" y="10"/></svg>
 );
@@ -377,6 +381,9 @@ const App = () => {
   const [activeCluster, setActiveCluster] = useState(null); 
   const [selectedPointForEdit, setSelectedPointForEdit] = useState(null);
 
+  // 搜尋狀態
+  const [searchQuery, setSearchQuery] = useState('');
+
   // UI States
   const [recalcTrigger, setRecalcTrigger] = useState(0); 
   const [errorMessage, setErrorMessage] = useState("");
@@ -459,6 +466,7 @@ const App = () => {
     setManualOverrides({});
     setSelectedPointForEdit(null);
     setActiveCluster(null);
+    setSearchQuery('');
     setErrorMessage('');
     shouldFitBoundsRef.current = true;
     setRecalcTrigger(prev => prev + 1);
@@ -1052,6 +1060,27 @@ const App = () => {
   }, [finalClusteredData, validK]);
 
   const counts = clusterStats.map(c => c.count);
+
+  // 搜尋過濾結果
+  const searchResults = useMemo(() => {
+    const q = searchQuery.trim().toLowerCase();
+    if (!q) return [];
+    return finalClusteredData.filter(p =>
+      p.name.toLowerCase().includes(q) ||
+      p.address.toLowerCase().includes(q) ||
+      (p.route || '').toLowerCase().includes(q)
+    );
+  }, [searchQuery, finalClusteredData]);
+
+  // 搜尋結果定位：飛到該點並開啟 tooltip
+  const zoomToPoint = (point) => {
+    if (!mapInstanceRef.current) return;
+    mapInstanceRef.current.setView([point.lat, point.lng], 16, { animate: true });
+    const marker = markersRef.current[point.id];
+    if (marker) {
+      setTimeout(() => { try { marker.openTooltip(); } catch(e){} }, 300);
+    }
+  };
   const maxCount = counts.length > 0 ? Math.max(...counts) : 0;
   const minCount = counts.length > 0 ? Math.min(...counts) : 0;
   const targetAvg = deliveryPoints.length / validK;
@@ -1836,6 +1865,51 @@ const App = () => {
                       系統自動執行多輪分群運算，從中挑選群集最緊密的結果
                    </div>
                 </div>
+            </div>
+            {/* ── 搜尋點位 ── */}
+            <div className="bg-white p-3 rounded-xl border border-gray-200 shadow-sm">
+                <div className="flex items-center gap-2 mb-2">
+                    <IconSearch className="w-4 h-4 text-gray-400 flex-shrink-0" />
+                    <input
+                      value={searchQuery}
+                      onChange={e => setSearchQuery(e.target.value)}
+                      placeholder="搜尋客戶名稱、地址、路線…"
+                      className="flex-1 text-sm border border-gray-200 rounded-lg px-3 py-2 focus:border-blue-400 focus:ring-1 focus:ring-blue-400 outline-none bg-gray-50"
+                    />
+                    {searchQuery && (
+                      <button onClick={() => setSearchQuery('')}
+                        className="text-gray-400 hover:text-gray-600 text-lg leading-none px-1">×</button>
+                    )}
+                </div>
+                {searchQuery.trim() && (
+                  <div className="space-y-1.5 max-h-[300px] overflow-y-auto">
+                    {searchResults.length === 0 && (
+                      <div className="text-xs text-gray-400 text-center py-4">找不到符合「{searchQuery.trim()}」的點位</div>
+                    )}
+                    {searchResults.map(p => {
+                      const safeCluster = Math.max(0, Math.min(p.cluster, extendedColors.length - 1));
+                      const color = extendedColors[safeCluster];
+                      return (
+                        <div key={p.id}
+                          onClick={() => zoomToPoint(p)}
+                          className="flex items-start gap-2.5 p-2.5 rounded-lg border border-gray-100 hover:border-blue-300 hover:bg-blue-50 cursor-pointer transition-all text-xs bg-white group">
+                          <div className="w-2.5 h-2.5 rounded-full mt-1 flex-shrink-0 shadow-sm" style={{ backgroundColor: color }}></div>
+                          <div className="flex-1 min-w-0">
+                            <div className="font-bold text-gray-800 truncate group-hover:text-blue-700">{p.name}</div>
+                            <div className="text-gray-500 truncate">{p.address}</div>
+                            <div className="flex items-center gap-2 mt-1 text-[10px] text-gray-400">
+                              <span className="bg-gray-100 px-1.5 py-0.5 rounded">{p.route || '無'}</span>
+                              <span>{getTruckName(safeCluster)}{p.isManual ? ' (手動)' : ''}</span>
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    })}
+                    {searchResults.length > 0 && (
+                      <div className="text-[10px] text-gray-400 text-center pt-1">共 {searchResults.length} 筆結果・點擊可定位至地圖</div>
+                    )}
+                  </div>
+                )}
             </div>
             <div>
                 <div className="flex items-center justify-between mb-3 border-b pb-2">
