@@ -365,6 +365,10 @@ const App = () => {
   const [deliveryLookupAddr, setDeliveryLookupAddr] = useState('');
   const [deliveryLookupResult, setDeliveryLookupResult] = useState(null);
   const [deliveryLookupLoading, setDeliveryLookupLoading] = useState(false);
+  // 查詢計次（Firebase 同步）
+  const [lookupTodayCount, setLookupTodayCount] = useState(null); // null = 載入中
+  const [lookupTotalCount, setLookupTotalCount] = useState(null);
+  const [lookupCountLoading, setLookupCountLoading] = useState(true);
 
 
   // Algorithmic Data vs Final Data (Overrides applied)
@@ -504,6 +508,22 @@ const App = () => {
   // 指送地址查詢
   const GOOGLE_MAPS_API_KEY = "AIzaSyBW-7BqwddpcRaP5HK5LGwM4K9lryh81qM";
 
+  // Firebase 設定
+  const FIREBASE_CONFIG = {
+    apiKey: "AIzaSyAe5gxLBHN9CQ6zVhKF6zQGbvgMXCbqoF4",
+    authDomain: "jc-logi-map.firebaseapp.com",
+    projectId: "jc-logi-map",
+    storageBucket: "jc-logi-map.firebasestorage.app",
+    messagingSenderId: "98258062805",
+    appId: "1:98258062805:web:d004b291c639e126e7c15c"
+  };
+  const firebaseRef = useRef(null); // 儲存 Firebase 實例（db + 函式）
+
+  // 取得台灣時區當日日期字串（YYYY-MM-DD），用於判斷「當日」重置
+  const getTaiwanDateStr = () => {
+    return new Date().toLocaleDateString('sv-SE', { timeZone: 'Asia/Taipei' }); // sv-SE 格式恰好是 YYYY-MM-DD
+  };
+
   // 地址轉座標：先用 Nominatim（台灣 OSM，免費無限制）再用 Google 兜底
   const geocodeTW = async (address) => {
     const raw = address.trim();
@@ -542,64 +562,163 @@ const App = () => {
     return { lat: loc.lat, lng: loc.lng, resolved: geoData.results[0].formatted_address, source: 'Google' };
   };
 
+  // ── Firebase 初始化（動態載入 SDK）────────────────────────────────────
+  const initFirebase = async () => {
+    if (firebaseRef.current) return firebaseRef.current;
+    try {
+      const [fbApp] = await Promise.all([
+        import('https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js'),
+      ]);
+      const { getFirestore, doc, getDoc, setDoc, addDoc, collection, increment, updateDoc } =
+        await import('https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js');
+      const existingApps = fbApp.getApps();
+      const app = existingApps.length > 0 ? existingApps[0] : fbApp.initializeApp(FIREBASE_CONFIG);
+      const db = getFirestore(app);
+      firebaseRef.current = { db, doc, getDoc, setDoc, addDoc, collection, increment, updateDoc };
+      return firebaseRef.current;
+    } catch (e) {
+      console.warn('[Firebase] 初始化失敗：', e);
+      return null;
+    }
+  };
+
+  // ── 從 Firestore 讀取計次 ─────────────────────────────────────────────
+  const loadLookupCounts = async () => {
+    setLookupCountLoading(true);
+    const fb = await initFirebase();
+    if (!fb) { setLookupTodayCount(0); setLookupTotalCount(0); setLookupCountLoading(false); return; }
+    try {
+      const { db, doc, getDoc } = fb;
+      const snap = await getDoc(doc(db, 'counters', 'stats'));
+      const todayStr = getTaiwanDateStr();
+      if (snap.exists()) {
+        const data = snap.data();
+        setLookupTodayCount(data.todayDate === todayStr ? (data.todayCount || 0) : 0);
+        setLookupTotalCount(data.totalCount || 0);
+      } else {
+        setLookupTodayCount(0); setLookupTotalCount(0);
+      }
+    } catch (e) {
+      console.warn('[Firebase] 讀取計次失敗：', e);
+      setLookupTodayCount(0); setLookupTotalCount(0);
+    }
+    setLookupCountLoading(false);
+  };
+
+  // ── 寫入查詢記錄 + 更新計次 ───────────────────────────────────────────
+  const logToFirestore = async (address, resolved, ok, route, distKm, roundTripMin, geoSource) => {
+    const fb = await initFirebase();
+    if (!fb) return;
+    const { db, doc, getDoc, setDoc, addDoc, collection, increment, updateDoc } = fb;
+    const todayStr = getTaiwanDateStr();
+    try {
+      await addDoc(collection(db, 'lookup_logs'), {
+        timestamp: new Date().toISOString(),
+        taiwanDate: todayStr,
+        address: address.trim(),
+        resolvedAddress: resolved || '',
+        result: ok ? '可配送' : '不可配送',
+        route: route || '',
+        distanceKm: distKm || '',
+        roundTripMin: roundTripMin || '',
+        geoSource: geoSource || '',
+      });
+      const statsRef = doc(db, 'counters', 'stats');
+      const snap = await getDoc(statsRef);
+      const isSameDay = snap.exists() && snap.data().todayDate === todayStr;
+      if (isSameDay) {
+        await updateDoc(statsRef, { totalCount: increment(1), todayCount: increment(1) });
+      } else {
+        await setDoc(statsRef, { totalCount: increment(1), todayCount: 1, todayDate: todayStr }, { merge: true });
+      }
+      const newSnap = await getDoc(statsRef);
+      if (newSnap.exists()) {
+        const d = newSnap.data();
+        setLookupTodayCount(d.todayDate === todayStr ? (d.todayCount || 0) : 1);
+        setLookupTotalCount(d.totalCount || 1);
+      }
+    } catch (e) {
+      console.warn('[Firebase] 寫入記錄失敗：', e);
+    }
+  };
+
+  // ── 主查詢函式（Distance Matrix API + Firebase 記錄）────────────────
   const handleDeliveryLookup = async () => {
     if (!deliveryLookupAddr.trim()) return;
     setDeliveryLookupLoading(true);
     setDeliveryLookupResult(null);
 
     try {
+      // 步驟一：地址轉座標
       const geo = await geocodeTW(deliveryLookupAddr);
-
       if (!geo) {
         setDeliveryLookupResult({ ok: false, msg: '無法辨識該地址，請確認輸入是否正確（建議格式：台南市安南區工業一路86號）。' });
         setDeliveryLookupLoading(false);
         return;
       }
-
       const { lat: targetLat, lng: targetLng, resolved: resolvedName, source: geoSource } = geo;
 
-      // 第二步：找最近兩個建檔點位（跨所有區域比對，依距離排序）
+      // 步驟二：Haversine 找最近建檔點位（識別路線歸屬）
       const allWithDist = ALL_POINTS.map(p => ({
-        ...p,
-        dist: haversineKm(targetLat, targetLng, p.lat, p.lng)
+        ...p, dist: haversineKm(targetLat, targetLng, p.lat, p.lng)
       })).sort((a, b) => a.dist - b.dist);
-
       if (allWithDist.length === 0) {
         setDeliveryLookupResult({ ok: false, msg: '系統尚無建檔點位資料可供比對。' });
         setDeliveryLookupLoading(false);
         return;
       }
+      const best = allWithDist[0];
 
-      // 取最近兩筆
-      const top2 = allWithDist.slice(0, 2).map(p => {
-        const roadDist = p.dist * 1.3;
-        const roundTripMin = (roadDist * 2 / 35) * 60;
-        return { ...p, roadDist: roadDist.toFixed(1), roundTripMin: roundTripMin.toFixed(1) };
+      // 步驟三：Distance Matrix API（即時交通）
+      let roundTripMin = null;
+      let realDistKm = null;
+      let trafficNote = '（即時路況）';
+      try {
+        const depTs = Math.floor(Date.now() / 1000);
+        const dmRes = await fetch(
+          `https://maps.googleapis.com/maps/api/distancematrix/json` +
+          `?origins=${best.lat},${best.lng}` +
+          `&destinations=${targetLat},${targetLng}` +
+          `&mode=driving&departure_time=${depTs}&traffic_model=best_guess` +
+          `&language=zh-TW&key=${GOOGLE_MAPS_API_KEY}`
+        );
+        const dmData = await dmRes.json();
+        const el = dmData?.rows?.[0]?.elements?.[0];
+        if (el?.status === 'OK') {
+          const oneWaySec = el.duration_in_traffic?.value ?? el.duration?.value ?? 0;
+          roundTripMin = ((oneWaySec * 2) / 60).toFixed(1);
+          realDistKm = ((el.distance?.value ?? 0) / 1000).toFixed(1);
+        }
+      } catch (dmErr) {
+        console.warn('[DistanceMatrix] 失敗，改用靜態估算：', dmErr);
+      }
+      // 若 API 失敗，退回靜態估算
+      if (roundTripMin === null) {
+        const rd = best.dist * 1.3;
+        roundTripMin = ((rd * 2 / 35) * 60).toFixed(1);
+        realDistKm = rd.toFixed(1);
+        trafficNote = '（靜態估算）';
+      }
+
+      // top2 組裝（第一筆用 API 真實值，第二筆仍用靜態）
+      const top2 = allWithDist.slice(0, 2).map((p, idx) => {
+        if (idx === 0) return { ...p, roadDist: realDistKm, roundTripMin };
+        const rd = (p.dist * 1.3).toFixed(1);
+        return { ...p, roadDist: rd, roundTripMin: ((p.dist * 1.3 * 2 / 35) * 60).toFixed(1) };
       });
 
-      const best = top2[0];
-      const roundTripMin = parseFloat(best.roundTripMin);
+      const ok = parseFloat(roundTripMin) <= 25;
+      setDeliveryLookupResult({
+        ok, msg: ok ? '✅ 可配送' : '❌ 超出配送範圍',
+        route: ok ? best.route : undefined,
+        nearestName: best.name, distKm: realDistKm, roundTrip: roundTripMin,
+        resolved: resolvedName, lat: targetLat, lng: targetLng,
+        trafficNote, geoSource, top2,
+      });
 
-      const ts = new Date().toISOString();
-      if (roundTripMin <= 25) {
-        setDeliveryLookupResult({
-          ok: true, msg: '✅ 可配送',
-          route: best.route, nearestName: best.name,
-          distKm: best.roadDist, roundTrip: best.roundTripMin,
-          resolved: resolvedName, lat: targetLat, lng: targetLng,
-          trafficNote: '（估算值）', geoSource,
-          top2,
-        });
-      } else {
-        setDeliveryLookupResult({
-          ok: false, msg: '❌ 超出配送範圍',
-          nearestName: best.name,
-          distKm: best.roadDist, roundTrip: best.roundTripMin,
-          resolved: resolvedName, lat: targetLat, lng: targetLng,
-          trafficNote: '（估算值）', geoSource,
-          top2,
-        });
-      }
+      // 步驟四：非同步寫入 Firebase（不阻塞 UI）
+      logToFirestore(deliveryLookupAddr, resolvedName, ok, ok ? best.route : '', realDistKm, roundTripMin, geoSource);
+
     } catch (err) {
       setDeliveryLookupResult({ ok: false, msg: '地址查詢服務暫時無法使用，請稍後再試。' });
     }
@@ -862,6 +981,14 @@ const App = () => {
         link.href = 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css';
         document.head.appendChild(link);
       }
+      // 載入 topojson-client（供 NLSC TopoJSON 圖資轉換用）
+      if (!document.getElementById('topojson-script')) {
+        const tjs = document.createElement('script');
+        tjs.id = 'topojson-script';
+        tjs.src = 'https://cdn.jsdelivr.net/npm/topojson-client@3/dist/topojson-client.min.js';
+        tjs.async = true;
+        document.body.appendChild(tjs);
+      }
       if (document.getElementById('leaflet-script')) {
         // Script tag exists but onload may have already fired before we listened
         // Poll until window.L is available
@@ -1022,9 +1149,12 @@ const App = () => {
     }
   }, [activeCluster, mapInitialized, finalClusteredData, showPolygons, activeTab]);
 
-  // ==========================================
-  // 行政區界圖層
-  // ==========================================
+  // ── 進入 lookup 分頁時載入 Firebase 計次 ─────────────────────────────
+  useEffect(() => {
+    if (activeTab === 'lookup') loadLookupCounts();
+  }, [activeTab]);
+
+
   useEffect(() => {
     if (!mapInitialized || !mapInstanceRef.current) return;
     const map = mapInstanceRef.current;
@@ -1149,30 +1279,72 @@ const App = () => {
       return;
     }
 
-    // 從外部載入鄉鎮市區 GeoJSON（三個來源輪流嘗試）
+    // 從外部載入鄉鎮市區 GeoJSON
+    // 來源優先順序：
+    //   1. dkaoster/taiwan-atlas (TopoJSON) ← NLSC 官方 SHP 直接轉換，每日更新，99%+ 精準度
+    //   2~4. ronnywang/twgeojson (GeoJSON)  ← NLSC 舊版備援
     setAdminBoundsLoading(true);
     setAdminBoundsError(false);
-    const geoJsonUrls = [
-      'https://raw.githubusercontent.com/ronnywang/twgeojson/master/twTown2017.geo.json',
-      'https://raw.githubusercontent.com/g0v/twgeojson/master/json/twTown1982.geo.json',
-      'https://cdn.jsdelivr.net/gh/ronnywang/twgeojson@master/twTown2017.geo.json'
-    ];
+
+    // 等待 topojson-client 載入（最多 5 秒）
+    const waitForTopojson = () => new Promise((resolve) => {
+      if (window.topojson) { resolve(true); return; }
+      let count = 0;
+      const t = setInterval(() => {
+        count++;
+        if (window.topojson) { clearInterval(t); resolve(true); }
+        else if (count > 50) { clearInterval(t); resolve(false); }
+      }, 100);
+    });
 
     const tryFetch = async () => {
-      for (const url of geoJsonUrls) {
+      // ── 優先嘗試：NLSC 官方來源（TopoJSON 格式）──────────────────────────
+      const nlscTopoUrls = [
+        'https://cdn.jsdelivr.net/npm/@dkaoster/taiwan-atlas@1/data/towns.json',
+        'https://unpkg.com/@dkaoster/taiwan-atlas@1/data/towns.json'
+      ];
+      const topoReady = await waitForTopojson();
+      if (topoReady) {
+        for (const url of nlscTopoUrls) {
+          try {
+            const res = await fetch(url, { signal: AbortSignal.timeout ? AbortSignal.timeout(10000) : undefined });
+            if (!res.ok) continue;
+            const topo = await res.json();
+            // TopoJSON → GeoJSON 轉換
+            // dkaoster/taiwan-atlas 的 towns 物件鍵名為 'towns'
+            const objKey = Object.keys(topo.objects)[0];
+            const geojson = window.topojson.feature(topo, topo.objects[objKey]);
+            if (geojson && geojson.features && geojson.features.length > 0) {
+              // 欄位標準化：taiwan-atlas 使用 COUNTYNAME / TOWNNAME（與現有程式碼相容）
+              adminGeoJsonCache.current = geojson;
+              console.info('[行政區界] 已載入 NLSC 官方來源（taiwan-atlas）, 共', geojson.features.length, '個鄉鎮市區');
+              renderAdminLayer(geojson);
+              return;
+            }
+          } catch (e) { console.warn('[行政區界] NLSC TopoJSON 來源失敗:', url, e.message); continue; }
+        }
+      }
+      // ── 備援：ronnywang/twgeojson（NLSC 舊版轉換）────────────────────────
+      const fallbackUrls = [
+        'https://cdn.jsdelivr.net/gh/ronnywang/twgeojson@master/twTown2017.geo.json',
+        'https://raw.githubusercontent.com/ronnywang/twgeojson/master/twTown2017.geo.json',
+        'https://raw.githubusercontent.com/g0v/twgeojson/master/json/twTown1982.geo.json'
+      ];
+      for (const url of fallbackUrls) {
         try {
           const res = await fetch(url, { signal: AbortSignal.timeout ? AbortSignal.timeout(8000) : undefined });
           if (!res.ok) continue;
           const data = await res.json();
           if (data && data.features && data.features.length > 0) {
             adminGeoJsonCache.current = data;
+            console.info('[行政區界] 已載入備援來源（ronnywang/twgeojson）');
             renderAdminLayer(data);
             return;
           }
         } catch (e) { continue; }
       }
       setAdminBoundsError(true);
-      console.warn('所有行政區界資料來源載入失敗');
+      console.warn('[行政區界] 所有來源均載入失敗');
     };
 
     tryFetch().finally(() => setAdminBoundsLoading(false));
@@ -1587,15 +1759,33 @@ const App = () => {
             <div className="bg-white p-4 rounded-xl border border-amber-200 shadow-sm space-y-4">
                 <div className="flex items-center justify-between border-b border-amber-100 pb-2">
                   <h3 className="text-sm font-bold text-amber-700 flex items-center gap-1.5">[pkg] 指送地址可行性查詢</h3>
-                  <button
-                    title="重新整理地圖行政區界線"
-                    onClick={() => { setAdminBoundsError(false); adminGeoJsonCache.current = null; setAdminRefreshKey(k => k+1); }}
-                    disabled={adminBoundsLoading}
-                    className="flex items-center gap-1 px-2 py-1 rounded-lg border border-slate-200 bg-slate-50 text-[10px] font-bold text-slate-500 hover:bg-slate-100 hover:text-slate-700 transition-colors disabled:opacity-40"
-                  >
-                    <IconRefresh className={`w-3 h-3 ${adminBoundsLoading ? 'animate-spin' : ''}`} />
-                    重整區界
-                  </button>
+                  <div className="flex items-center gap-2">
+                    {/* 查詢計次 */}
+                    <div className="flex items-center gap-1.5 bg-amber-50 border border-amber-200 rounded-lg px-2.5 py-1">
+                      <div className="text-center">
+                        <div className="text-[9px] text-amber-500 font-medium leading-none mb-0.5">當日</div>
+                        <div className="text-sm font-bold text-amber-700 leading-none">
+                          {lookupCountLoading ? '…' : (lookupTodayCount ?? 0)}
+                        </div>
+                      </div>
+                      <div className="w-px h-6 bg-amber-200"></div>
+                      <div className="text-center">
+                        <div className="text-[9px] text-amber-500 font-medium leading-none mb-0.5">總計</div>
+                        <div className="text-sm font-bold text-amber-700 leading-none">
+                          {lookupCountLoading ? '…' : (lookupTotalCount ?? 0)}
+                        </div>
+                      </div>
+                    </div>
+                    <button
+                      title="重新整理地圖行政區界線"
+                      onClick={() => { setAdminBoundsError(false); adminGeoJsonCache.current = null; setAdminRefreshKey(k => k+1); }}
+                      disabled={adminBoundsLoading}
+                      className="flex items-center gap-1 px-2 py-1 rounded-lg border border-slate-200 bg-slate-50 text-[10px] font-bold text-slate-500 hover:bg-slate-100 hover:text-slate-700 transition-colors disabled:opacity-40"
+                    >
+                      <IconRefresh className={`w-3 h-3 ${adminBoundsLoading ? 'animate-spin' : ''}`} />
+                      重整區界
+                    </button>
+                  </div>
                 </div>
                 <p className="text-xs text-gray-500 leading-relaxed">輸入客戶詢問的配送地址，系統自動比對最近建檔點位，判斷是否在配送範圍內（往返 25 分鐘以內）。</p>
                 <div className="flex gap-2">
@@ -1647,9 +1837,9 @@ const App = () => {
                 <h4 className="text-xs font-bold text-gray-600">計算說明</h4>
                 <div className="text-[10px] text-gray-400 leading-relaxed space-y-1">
                     <div>- 地址轉座標：OSM Nominatim（台灣門牌優先）+ Google Maps（兜底）</div>
-                    <div>- 距離公式：Haversine 直線距離 x1.3 路網修正係數</div>
-                    <div>- 往返時間：路程距離 x2 除以 平均車速 35 km per h</div>
-                    <div>- 門檻設定：往返 25 分鐘內判定為可配送</div>
+                    <div>- 距離與時間：Google Distance Matrix API（含即時交通，失敗時改用 Haversine × 1.3 靜態估算）</div>
+                    <div>- 判斷依據：最近建檔點往返查詢地址 25 分鐘以內為可配送</div>
+                    <div>- 查詢記錄：每次查詢自動同步至 Firebase（當日計次台灣時區 00:00 重置）</div>
                 </div>
             </div>
 
