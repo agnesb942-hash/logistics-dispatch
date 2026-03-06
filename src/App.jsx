@@ -1728,7 +1728,7 @@ const App = () => {
             <div className="flex items-center gap-2.5">
               <IconTruck className="w-5 h-5" style={{color:'#00c8ff'}} />
               <h1 className="text-sm font-bold tracking-widest uppercase" style={{letterSpacing:3}}>
-                {activeTab === 'lookup' ? '指送地址查詢' : '配送區域劃分工具'}
+                {lookupOnly ? '指送地址查詢' : '配送區域劃分工具'}
               </h1>
             </div>
             <button onClick={() => { setAppMode('home'); setLookupOnly(false); }}
@@ -1739,22 +1739,9 @@ const App = () => {
             >HOME</button>
           </div>
           <div className="text-[10px]" style={{color:'rgba(255,255,255,0.35)',letterSpacing:1}}>
-            {lookupOnly ? '全區 625 筆 | 即時查詢' : activeTab === 'lookup' ? '全區 625 筆 | 即時查詢' : `${REGION_LABELS[activeRegion] || '自訂'} | ${deliveryPoints.length} 筆`}
+            {lookupOnly ? '全區 625 筆 | 即時查詢' : `${REGION_LABELS[activeRegion] || '自訂'} | ${deliveryPoints.length} 筆`}
           </div>
         </div>
-        {/* Tab 切換列（完整模式下可互切兩個工具） */}
-        {!lookupOnly && (
-          <div className="flex bg-slate-50 border-b border-gray-200 flex-shrink-0">
-            <button onClick={() => setActiveTab('settings')}
-              className={`flex-1 py-2 text-xs font-bold tracking-wide transition-all border-b-2 ${activeTab === 'settings' ? 'text-blue-600 border-blue-600 bg-white' : 'text-gray-400 border-transparent hover:text-gray-600 hover:bg-gray-50'}`}>
-              配送區域劃分
-            </button>
-            <button onClick={() => setActiveTab('lookup')}
-              className={`flex-1 py-2 text-xs font-bold tracking-wide transition-all border-b-2 ${activeTab === 'lookup' ? 'text-amber-600 border-amber-500 bg-white' : 'text-gray-400 border-transparent hover:text-gray-600 hover:bg-gray-50'}`}>
-              指送地址查詢
-            </button>
-          </div>
-        )}
         <div className="flex-1 overflow-y-auto p-4 space-y-5 custom-scrollbar bg-white">
         {errorMessage && (
             <div className="bg-red-50 text-red-600 border border-red-200 p-3 rounded-md text-sm flex items-start gap-2 shadow-sm">
@@ -2060,7 +2047,7 @@ const App = () => {
 
         </>}
         </div>
-        {!lookupOnly && activeTab === 'settings' && <div className="p-4 border-t border-gray-200 bg-white flex-shrink-0 grid grid-cols-3 gap-2 shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.05)]">
+        {!lookupOnly && <div className="p-4 border-t border-gray-200 bg-white flex-shrink-0 grid grid-cols-3 gap-2 shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.05)]">
             <button 
                 onClick={handleRecalc} 
                 className="flex items-center justify-center gap-1.5 bg-gray-100 border border-gray-300 text-gray-700 py-2.5 rounded-lg hover:bg-gray-200 transition-all text-xs font-bold shadow-sm"
