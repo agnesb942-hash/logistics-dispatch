@@ -172,6 +172,7 @@ const MileageTool = ({ onBack, windowHeight }) => {
   const [reportReading, setReportReading] = useState('');
   const [reportNotes, setReportNotes] = useState('');
   const [reportPeriod, setReportPeriod] = useState(getTaiwanPeriod());
+  const [reportProxy, setReportProxy] = useState(''); // 代填：實際回報人 ID
   // Adhoc form
   const [adhocVehicle, setAdhocVehicle] = useState('');
   const [adhocDate, setAdhocDate] = useState(new Date().toISOString().slice(0, 10));
@@ -179,6 +180,7 @@ const MileageTool = ({ onBack, windowHeight }) => {
   const [adhocEnd, setAdhocEnd] = useState('');
   const [adhocPurpose, setAdhocPurpose] = useState('');
   const [adhocNotes, setAdhocNotes] = useState('');
+  const [adhocProxy, setAdhocProxy] = useState(''); // 代填：實際使用人 ID
 
   // ── Firestore CRUD ──────────────────────────────────────────────
   const saveCollection = async (collName, data) => {
@@ -290,13 +292,16 @@ const MileageTool = ({ onBack, windowHeight }) => {
     }
 
     // Check if already reported
+    const actualPerson = reportProxy ? personnel.find(p => p.id === reportProxy) : currentUser;
     const existingIdx = monthlyRecords.findIndex(r => r.vehiclePlate === veh.plate && r.period === reportPeriod);
     const record = {
       id: existingIdx >= 0 ? monthlyRecords[existingIdx].id : `mr_${Date.now()}`,
       vehicleId: veh.id,
       vehiclePlate: veh.plate,
-      reporterId: currentUser.id,
-      reporterName: currentUser.name,
+      reporterId: actualPerson?.id || currentUser.id,
+      reporterName: actualPerson?.name || currentUser.name,
+      proxyById: reportProxy ? currentUser.id : '',
+      proxyByName: reportProxy ? currentUser.name : '',
       period: reportPeriod,
       odometerReading: reading,
       previousReading: prevReading,
@@ -317,6 +322,7 @@ const MileageTool = ({ onBack, windowHeight }) => {
     setReportVehicle('');
     setReportReading('');
     setReportNotes('');
+    setReportProxy('');
     setShowModal(null);
   };
 
@@ -337,12 +343,15 @@ const MileageTool = ({ onBack, windowHeight }) => {
       alert(`錯誤：起始里程 ${fmtNum(start)} 小於該車最近已知里程 ${fmtNum(lastKnown)}，里程表不可能倒退，請重新確認。`);
       return;
     }
+    const actualUser = adhocProxy ? personnel.find(p => p.id === adhocProxy) : currentUser;
     const record = {
       id: `ar_${Date.now()}`,
       vehicleId: veh.id,
       vehiclePlate: veh.plate,
-      userId: currentUser.id,
-      userName: currentUser.name,
+      userId: actualUser?.id || currentUser.id,
+      userName: actualUser?.name || currentUser.name,
+      proxyById: adhocProxy ? currentUser.id : '',
+      proxyByName: adhocProxy ? currentUser.name : '',
       date: adhocDate,
       startMileage: start,
       endMileage: end,
@@ -359,6 +368,7 @@ const MileageTool = ({ onBack, windowHeight }) => {
     setAdhocEnd('');
     setAdhocPurpose('');
     setAdhocNotes('');
+    setAdhocProxy('');
     setShowModal(null);
   };
 
@@ -397,13 +407,13 @@ const MileageTool = ({ onBack, windowHeight }) => {
     const BOM = '\uFEFF';
     let headers, rows;
     if (type === 'monthly') {
-      headers = ['期別','車牌','累計里程','上期里程','本月里程','回報人','狀態','備註','回報時間'];
+      headers = ['期別','車牌','累計里程','上期里程','本月里程','回報人','代填人','狀態','備註','回報時間'];
       rows = monthlyRecords.filter(r => filterDept === 'all' || vehicles.find(v => v.plate === r.vehiclePlate)?.deptId === filterDept)
         .sort((a, b) => a.period.localeCompare(b.period) || a.vehiclePlate.localeCompare(b.vehiclePlate))
-        .map(r => [r.period, r.vehiclePlate, r.odometerReading, r.previousReading ?? '', r.monthlyMileage ?? '', r.reporterName, r.status === 'approved' ? '已審核' : r.status === 'rejected' ? '退回' : '待審', r.notes || '', r.submittedAt || '']);
+        .map(r => [r.period, r.vehiclePlate, r.odometerReading, r.previousReading ?? '', r.monthlyMileage ?? '', r.reporterName, r.proxyByName || '', r.status === 'approved' ? '已審核' : r.status === 'rejected' ? '退回' : '待審', r.notes || '', r.submittedAt || '']);
     } else {
-      headers = ['日期','車牌','使用人','起始里程','結束里程','區間里程','事由','狀態','備註'];
-      rows = adhocRecords.map(r => [r.date, r.vehiclePlate, r.userName, r.startMileage, r.endMileage, r.tripMileage, r.purpose, r.status === 'approved' ? '已審核' : '待審', r.notes || '']);
+      headers = ['日期','車牌','使用人','代填人','起始里程','結束里程','區間里程','事由','狀態','備註'];
+      rows = adhocRecords.map(r => [r.date, r.vehiclePlate, r.userName, r.proxyByName || '', r.startMileage, r.endMileage, r.tripMileage, r.purpose, r.status === 'approved' ? '已審核' : '待審', r.notes || '']);
     }
     const csv = [headers.join(','), ...rows.map(r => r.map(c => `"${String(c).replace(/"/g, '""')}"`).join(','))].join('\n');
     const blob = new Blob([BOM + csv], { type: 'text/csv;charset=utf-8;' });
@@ -444,7 +454,7 @@ const MileageTool = ({ onBack, windowHeight }) => {
   // ═════════════════════════════════════════════════════════════════
   if (!currentUser) {
     return (
-      <div style={{ height: windowHeight + 'px' }} className="bg-gradient-to-br from-slate-900 via-slate-800 to-emerald-900 flex items-center justify-center font-sans">
+      <div style={{ minHeight: windowHeight + 'px' }} className="bg-gradient-to-br from-slate-900 via-slate-800 to-emerald-900 flex items-start justify-center font-sans overflow-y-auto py-10">
         <div className="w-full max-w-md mx-4">
           <div className="text-center mb-8">
             <div className="text-5xl mb-4">📊</div>
@@ -470,7 +480,7 @@ const MileageTool = ({ onBack, windowHeight }) => {
                 <div className="text-xs text-emerald-300 font-bold tracking-wider">{departments.find(d=>d.id===loginDept)?.name} — 請選擇姓名</div>
                 <button onClick={() => setLoginDept('')} className="text-[10px] text-white text-opacity-40 hover:text-opacity-80 transition-all">← 返回</button>
               </div>
-              <div className="grid grid-cols-3 gap-1.5">
+              <div className="grid grid-cols-2 sm:grid-cols-3 gap-1.5">
                 {personnelByDept[loginDept === 'dept_logi' ? 'logi' : 'sale'].map(p => (
                   <button key={p.id} onClick={() => { setCurrentUser(p); setActiveSection('dashboard'); setLoginDept(''); }}
                     className="py-2.5 px-2 bg-white bg-opacity-5 border border-white border-opacity-10 rounded-lg text-white text-xs font-bold hover:bg-emerald-500 hover:bg-opacity-30 hover:border-emerald-400 transition-all">
@@ -538,9 +548,29 @@ const MileageTool = ({ onBack, windowHeight }) => {
   const getDeptName = (deptId) => departments.find(d => d.id === deptId)?.name || deptId;
 
   return (
-    <div className="flex font-sans text-gray-900 overflow-hidden" style={{ height: windowHeight + 'px' }}>
-      {/* ── Sidebar ── */}
-      <div className="w-56 bg-slate-900 flex flex-col flex-shrink-0">
+    <div className="flex flex-col lg:flex-row font-sans text-gray-900 overflow-hidden" style={{ height: windowHeight + 'px' }}>
+      {/* ── Mobile Top Nav ── */}
+      <div className="flex lg:hidden bg-slate-900 border-b border-slate-700 px-3 py-2 flex-shrink-0">
+        <div className="flex items-center gap-2 mr-3 flex-shrink-0">
+          <span className="text-sm">📊</span>
+          <div className="text-white text-[10px] font-bold">{currentUser.name}</div>
+        </div>
+        <div className="flex-1 overflow-x-auto flex gap-1">
+          {menuItems.map(item => (
+            <button key={item.key} onClick={() => setActiveSection(item.key)}
+              className={`flex-shrink-0 px-3 py-1.5 rounded-lg text-[10px] font-bold transition-all
+                ${activeSection === item.key ? 'bg-emerald-500 bg-opacity-30 text-emerald-400' : 'text-slate-400'}`}>
+              {item.icon} {item.label}
+            </button>
+          ))}
+        </div>
+        <div className="flex gap-1 ml-2 flex-shrink-0">
+          <button onClick={() => { setCurrentUser(null); setIsAdmin(false); }} className="text-[10px] text-slate-500 px-2">切換</button>
+          <button onClick={onBack} className="text-[10px] text-slate-500 px-2">首頁</button>
+        </div>
+      </div>
+      {/* ── Desktop Sidebar ── */}
+      <div className="hidden lg:flex w-56 bg-slate-900 flex-col flex-shrink-0">
         <div className="p-4 border-b border-slate-700">
           <div className="flex items-center gap-2">
             <span className="text-lg">📊</span>
@@ -580,7 +610,7 @@ const MileageTool = ({ onBack, windowHeight }) => {
 
       {/* ── Main Content ── */}
       <div className="flex-1 bg-gray-50 overflow-y-auto">
-        <div className="p-6 max-w-6xl mx-auto space-y-6">
+        <div className="p-3 lg:p-6 max-w-6xl mx-auto space-y-4 lg:space-y-6">
 
           {/* ═══ DASHBOARD ═══ */}
           {activeSection === 'dashboard' && <>
@@ -598,7 +628,7 @@ const MileageTool = ({ onBack, windowHeight }) => {
             </div>
 
             {/* Stats Cards */}
-            <div className="grid grid-cols-4 gap-4">
+            <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 lg:gap-4">
               <div className="bg-white rounded-xl p-4 border border-gray-200 shadow-sm">
                 <div className="text-xs text-gray-500 mb-1">回報進度</div>
                 <div className="text-2xl font-bold text-blue-600">{reportProgress.reported}/{reportProgress.total}</div>
@@ -728,7 +758,7 @@ const MileageTool = ({ onBack, windowHeight }) => {
                             <td className="px-4 py-3 text-right font-mono">{fmtNum(rec.odometerReading)}</td>
                             <td className="px-4 py-3 text-right font-mono text-gray-400">{fmtNum(rec.previousReading)}</td>
                             <td className="px-4 py-3 text-right font-mono font-bold text-blue-600">{fmtNum(rec.monthlyMileage)}</td>
-                            <td className="px-4 py-3">{rec.reporterName}</td>
+                            <td className="px-4 py-3 text-xs">{rec.reporterName}{rec.proxyByName ? <span className="text-gray-400 ml-1">（{rec.proxyByName} 代填）</span> : ''}</td>
                             <td className="px-4 py-3 text-center">
                               <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${statusMap[rec.status]?.color || 'bg-gray-100'}`}>
                                 {statusMap[rec.status]?.label || rec.status}
@@ -788,7 +818,7 @@ const MileageTool = ({ onBack, windowHeight }) => {
                     <tr key={r.id} className="border-b border-gray-100 hover:bg-gray-50">
                       <td className="px-4 py-3">{r.date}</td>
                       <td className="px-4 py-3 font-bold">{r.vehiclePlate}</td>
-                      <td className="px-4 py-3">{r.userName}</td>
+                      <td className="px-4 py-3 text-xs">{r.userName}{r.proxyByName ? <span className="text-gray-400 ml-1">（{r.proxyByName} 代填）</span> : ''}</td>
                       <td className="px-4 py-3 text-right font-mono">{fmtNum(r.startMileage)}</td>
                       <td className="px-4 py-3 text-right font-mono">{fmtNum(r.endMileage)}</td>
                       <td className="px-4 py-3 text-right font-mono font-bold text-purple-600">{fmtNum(r.tripMileage)}</td>
@@ -947,7 +977,7 @@ const MileageTool = ({ onBack, windowHeight }) => {
       {/* ═══ MODALS ═══ */}
       {showModal === 'monthly' && (
         <div className="fixed inset-0 bg-black bg-opacity-40 backdrop-blur-sm z-[9999] flex items-center justify-center p-4" onClick={() => setShowModal(null)}>
-          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md p-6 space-y-4" onClick={e => e.stopPropagation()}>
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md p-4 lg:p-6 space-y-3 lg:space-y-4 max-h-[90vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
             <h3 className="text-base font-bold text-gray-800">📋 回報月里程</h3>
             <div className="space-y-3">
               <div>
@@ -995,6 +1025,16 @@ const MileageTool = ({ onBack, windowHeight }) => {
                 );
               })()}
               <div>
+                <label className="text-xs font-bold text-gray-500 block mb-1">代填（選填，幫他人填寫時選擇）</label>
+                <select value={reportProxy} onChange={e => setReportProxy(e.target.value)}
+                  className="w-full border border-gray-300 rounded-lg p-2 text-sm outline-none">
+                  <option value="">我自己填寫</option>
+                  {personnel.filter(p => p.status === 'active' && p.id !== currentUser?.id).map(p => (
+                    <option key={p.id} value={p.id}>代 {p.name} 填寫</option>
+                  ))}
+                </select>
+              </div>
+              <div>
                 <label className="text-xs font-bold text-gray-500 block mb-1">備註</label>
                 <input value={reportNotes} onChange={e => setReportNotes(e.target.value)}
                   placeholder="選填"
@@ -1012,7 +1052,7 @@ const MileageTool = ({ onBack, windowHeight }) => {
 
       {showModal === 'adhoc' && (
         <div className="fixed inset-0 bg-black bg-opacity-40 backdrop-blur-sm z-[9999] flex items-center justify-center p-4" onClick={() => setShowModal(null)}>
-          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md p-6 space-y-4" onClick={e => e.stopPropagation()}>
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md p-4 lg:p-6 space-y-3 lg:space-y-4 max-h-[90vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
             <h3 className="text-base font-bold text-gray-800">🚗 回報用車紀錄</h3>
             <div className="space-y-3">
               <div>
@@ -1069,6 +1109,16 @@ const MileageTool = ({ onBack, windowHeight }) => {
                 </select>
               </div>
               <div>
+                <label className="text-xs font-bold text-gray-500 block mb-1">代填（選填，幫他人填寫時選擇）</label>
+                <select value={adhocProxy} onChange={e => setAdhocProxy(e.target.value)}
+                  className="w-full border border-gray-300 rounded-lg p-2 text-sm outline-none">
+                  <option value="">我自己填寫</option>
+                  {personnel.filter(p => p.status === 'active' && p.id !== currentUser?.id).map(p => (
+                    <option key={p.id} value={p.id}>代 {p.name} 填寫</option>
+                  ))}
+                </select>
+              </div>
+              <div>
                 <label className="text-xs font-bold text-gray-500 block mb-1">備註</label>
                 <input value={adhocNotes} onChange={e => setAdhocNotes(e.target.value)} placeholder="選填"
                   className="w-full border border-gray-300 rounded-lg p-2 text-sm outline-none" />
@@ -1085,7 +1135,7 @@ const MileageTool = ({ onBack, windowHeight }) => {
 
       {showModal === 'vehicle' && editItem && (
         <div className="fixed inset-0 bg-black bg-opacity-40 backdrop-blur-sm z-[9999] flex items-center justify-center p-4" onClick={() => { setShowModal(null); setEditItem(null); }}>
-          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md p-6 space-y-4" onClick={e => e.stopPropagation()}>
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md p-4 lg:p-6 space-y-3 lg:space-y-4 max-h-[90vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
             <h3 className="text-base font-bold text-gray-800">{editItem.id ? '編輯車輛' : '新增車輛'}</h3>
             <div className="space-y-3">
               <div><label className="text-xs font-bold text-gray-500 block mb-1">車牌 *</label>
@@ -1132,7 +1182,7 @@ const MileageTool = ({ onBack, windowHeight }) => {
 
       {showModal === 'person' && editItem && (
         <div className="fixed inset-0 bg-black bg-opacity-40 backdrop-blur-sm z-[9999] flex items-center justify-center p-4" onClick={() => { setShowModal(null); setEditItem(null); }}>
-          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md p-6 space-y-4" onClick={e => e.stopPropagation()}>
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md p-4 lg:p-6 space-y-3 lg:space-y-4 max-h-[90vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
             <h3 className="text-base font-bold text-gray-800">{editItem.id ? '編輯人員' : '新增人員'}</h3>
             <div className="space-y-3">
               <div><label className="text-xs font-bold text-gray-500 block mb-1">姓名 *</label>
