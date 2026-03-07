@@ -1833,7 +1833,7 @@ const App = () => {
   if (appMode === 'home') {
     const yr = String(new Date().getFullYear());
     const cardStyle = (accent) => [
-      'flex:1;min-width:280px;max-width:380px;min-height:300px;padding:40px 36px;border-radius:4px;cursor:pointer;position:relative;box-sizing:border-box;',
+      'flex:none;width:340px;min-height:300px;padding:40px 36px;border-radius:4px;cursor:pointer;position:relative;box-sizing:border-box;',
       'transition:all 0.25s;border:1px solid rgba(',accent,',0.25);',
       'background:rgba(',accent,',0.05)',
     ].join('');
@@ -1885,7 +1885,7 @@ const App = () => {
           + '<div style="font-size:42px;margin-bottom:22px">&#128202;</div>'
           + '<div style="font-size:15px;font-weight:700;color:#34d399;letter-spacing:3px;margin-bottom:12px;text-transform:uppercase">\u8eca\u8f1b\u91cc\u7a0b\u7ba1\u7406</div>'
           + '<div style="font-size:12px;color:rgba(255,255,255,0.5);line-height:2;margin-bottom:28px">'
-            + '\u6bcf\u6708\u91cc\u7a0b\u56de\u5831 &nbsp;·&nbsp; \u81e8\u6642\u4f7f\u7528\u8a18\u9304<br>'
+            + '\u6bcf\u6708\u91cc\u7a0b\u56de\u5831 &nbsp;·&nbsp; \u7528\u8eca\u7d00\u9304<br>'
             + '\u5be9\u6838\u7ba1\u7406 &nbsp;·&nbsp; \u6578\u64da\u5206\u6790<br>'
             + '\u5831\u8868\u532f\u51fa &nbsp;·&nbsp; \u8eca\u8f1b\u4eba\u54e1\u7ba1\u7406'
           + '</div>'
