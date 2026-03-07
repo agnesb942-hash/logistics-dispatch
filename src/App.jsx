@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
+import MileageTool from './MileageTool';
 
 // ----------------------------------------------------------------------
 // 0. ICONS (Inline SVGs)
@@ -1815,6 +1816,11 @@ const App = () => {
     document.body.removeChild(link);
   };
 
+  // === 車輛里程管理工具 ===
+  if (appMode === 'mileage') {
+    return <MileageTool onBack={() => setAppMode('home')} windowHeight={windowHeight} />;
+  }
+
   // === 入口首頁 ===
   // 首頁即預載 Leaflet，不等進入主介面才開始下載
   if (appMode === 'home' && !document.getElementById('leaflet-script') && !window.L) {
@@ -1827,7 +1833,7 @@ const App = () => {
   if (appMode === 'home') {
     const yr = String(new Date().getFullYear());
     const cardStyle = (accent) => [
-      'flex:1;min-width:320px;max-width:560px;min-height:300px;padding:48px 44px;border-radius:4px;cursor:pointer;position:relative;box-sizing:border-box;',
+      'flex:1;min-width:280px;max-width:380px;min-height:300px;padding:40px 36px;border-radius:4px;cursor:pointer;position:relative;box-sizing:border-box;',
       'transition:all 0.25s;border:1px solid rgba(',accent,',0.25);',
       'background:rgba(',accent,',0.05)',
     ].join('');
@@ -1845,7 +1851,7 @@ const App = () => {
         + '<div style="width:100%;height:1px;background:linear-gradient(90deg,transparent,rgba(0,200,255,0.3),transparent);margin:0 auto 20px"></div>'
         + '<div style="font-size:11px;letter-spacing:6px;color:rgba(0,200,255,0.5);text-transform:uppercase">Logistics · Dispatch · System</div>'
       + '</div>'
-      + '<div style="display:flex;gap:28px;position:relative;z-index:1;flex-wrap:nowrap;justify-content:center;width:90vw;max-width:1160px;box-sizing:border-box">'
+      + '<div style="display:flex;gap:24px;position:relative;z-index:1;flex-wrap:wrap;justify-content:center;width:95vw;max-width:1280px;box-sizing:border-box">'
         + '<div id="card-dispatch" style="' + cardStyle('0,200,255') + '">'
           + '<div style="position:absolute;top:-1px;left:20px;right:20px;height:2px;background:linear-gradient(90deg,transparent,#00c8ff,transparent)"></div>'
           + '<div style="font-size:42px;margin-bottom:22px">&#128666;</div>'
@@ -1874,16 +1880,31 @@ const App = () => {
             + '<span>&#9658;</span> \u76f4\u63a5\u9032\u5165'
           + '</div>'
         + '</div>'
+        + '<div id="card-mileage" style="' + cardStyle('52,211,153') + '">'
+          + '<div style="position:absolute;top:-1px;left:20px;right:20px;height:2px;background:linear-gradient(90deg,transparent,#34d399,transparent)"></div>'
+          + '<div style="font-size:42px;margin-bottom:22px">&#128202;</div>'
+          + '<div style="font-size:15px;font-weight:700;color:#34d399;letter-spacing:3px;margin-bottom:12px;text-transform:uppercase">\u8eca\u8f1b\u91cc\u7a0b\u7ba1\u7406</div>'
+          + '<div style="font-size:12px;color:rgba(255,255,255,0.5);line-height:2;margin-bottom:28px">'
+            + '\u6bcf\u6708\u91cc\u7a0b\u56de\u5831 &nbsp;·&nbsp; \u81e8\u6642\u4f7f\u7528\u8a18\u9304<br>'
+            + '\u5be9\u6838\u7ba1\u7406 &nbsp;·&nbsp; \u6578\u64da\u5206\u6790<br>'
+            + '\u5831\u8868\u532f\u51fa &nbsp;·&nbsp; \u8eca\u8f1b\u4eba\u54e1\u7ba1\u7406'
+          + '</div>'
+          + '<div style="width:100%;height:1px;background:rgba(52,211,153,0.15);margin-bottom:20px"></div>'
+          + '<div style="display:inline-flex;align-items:center;gap:8px;font-size:11px;color:rgba(52,211,153,0.8);border:1px solid rgba(52,211,153,0.35);padding:8px 18px;border-radius:2px;letter-spacing:2px">'
+            + '<span style="font-size:14px">&#128274;</span> \u9700\u8981\u767b\u5165'
+          + '</div>'
+        + '</div>'
       + '</div>'
-      + '<div style="position:absolute;bottom:20px;font-size:10px;color:rgba(255,255,255,0.12);letter-spacing:3px">v2.0 · KAOHSIUNG · ' + yr + '</div>';
+      + '<div style="position:absolute;bottom:20px;font-size:10px;color:rgba(255,255,255,0.12);letter-spacing:3px">v2.1 · KAOHSIUNG · ' + yr + '</div>';
     return (
       <div
         style={{height:windowHeight+'px',background:'#080c14',fontFamily:"monospace",display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',position:'relative',overflow:'hidden'}}
         dangerouslySetInnerHTML={{__html:html}}
         onClick={(e) => {
-          const card = e.target.closest && e.target.closest('#card-dispatch,#card-lookup');
+          const card = e.target.closest && e.target.closest('#card-dispatch,#card-lookup,#card-mileage');
           if (!card) return;
           if (card.id === 'card-dispatch') setAppMode('dispatch_login');
+          else if (card.id === 'card-mileage') setAppMode('mileage');
           else { setLookupOnly(true); setActiveTab('lookup'); setAppMode('main'); }
         }} />
     );
