@@ -1,1109 +1,1092 @@
-import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
+// ─────────────────────────────────────────────────────────────────
+//  FLEETOPS 里程管理模組  v4.1.0
+//  ✦ 資料來源: Firebase Firestore (logi-tool)
+//  ✦ Collections: drivers/{id}, vehicles/{id}, logs/{id}, settings/main
+//  ✦ Props: onBack (function) — 返回首頁
+// ─────────────────────────────────────────────────────────────────
+import { useState, useEffect, useMemo, useRef } from 'react';
+import {
+  Truck, Home, BarChart3, Users, FileText, Plus, Trash2,
+  Download, Upload, LogOut, ChevronRight, ChevronLeft, Check, X,
+  AlertTriangle, CheckCircle, Loader, ArrowRight, Lock, Cpu,
+  Activity, Navigation, Menu, MapPin, Sparkles, LayoutGrid, ArrowLeft,
+} from 'lucide-react';
+import {
+  collection, doc, getDocs, getDoc, setDoc, addDoc, deleteDoc,
+  updateDoc, onSnapshot, serverTimestamp, query, orderBy, limit,
+} from 'firebase/firestore';
+import { db } from '../firebase';
 
-// ═══════════════════════════════════════════════════════════════════════
-// 車輛里程管理系統 — Phase 1 MVP
-// ═══════════════════════════════════════════════════════════════════════
-
-// ── 預設資料 ──────────────────────────────────────────────────────────
-const DEFAULT_DEPARTMENTS = [
-  { id: 'dept_logi', name: '物流部', code: 'LOGI' },
-  { id: 'dept_sale', name: '業務部', code: 'SALE' },
-];
-
-const DEFAULT_VEHICLES = [
-  { id:'v01',plate:'BMQ-6180',name:'BMQ-6180',deptId:'dept_logi',assignedTo:'',status:'active' },
-  { id:'v02',plate:'BMT-6092',name:'BMT-6092',deptId:'dept_logi',assignedTo:'',status:'active' },
-  { id:'v03',plate:'BSQ-7353',name:'BSQ-7353',deptId:'dept_logi',assignedTo:'',status:'active' },
-  { id:'v04',plate:'BUB-0572',name:'BUB-0572',deptId:'dept_logi',assignedTo:'',status:'active' },
-  { id:'v05',plate:'BUB-1036',name:'BUB-1036',deptId:'dept_logi',assignedTo:'',status:'active' },
-  { id:'v06',plate:'BUB-1332',name:'BUB-1332',deptId:'dept_logi',assignedTo:'',status:'active' },
-  { id:'v07',plate:'BUB-1562',name:'BUB-1562',deptId:'dept_logi',assignedTo:'',status:'active' },
-  { id:'v08',plate:'BZH-7903',name:'BZH-7903',deptId:'dept_logi',assignedTo:'',status:'active' },
-  { id:'v09',plate:'BZH-8131',name:'BZH-8131',deptId:'dept_logi',assignedTo:'',status:'active' },
-  { id:'v10',plate:'BZH-8393',name:'BZH-8393',deptId:'dept_logi',assignedTo:'',status:'active' },
-  { id:'v11',plate:'BUF-7506',name:'BUF-7506',deptId:'dept_logi',assignedTo:'',status:'active' },
-  { id:'v12',plate:'BUF-7507',name:'BUF-7507',deptId:'dept_logi',assignedTo:'',status:'active' },
-  { id:'v13',plate:'BVY-0363',name:'BVY-0363',deptId:'dept_logi',assignedTo:'',status:'active' },
-  { id:'v14',plate:'BYV-2830',name:'BYV-2830',deptId:'dept_logi',assignedTo:'',status:'active' },
-  { id:'v15',plate:'BYV-2831',name:'BYV-2831',deptId:'dept_logi',assignedTo:'',status:'active' },
-  { id:'v16',plate:'BZH-9217',name:'BZH-9217',deptId:'dept_logi',assignedTo:'',status:'active' },
-  { id:'v17',plate:'BZH-9223',name:'BZH-9223',deptId:'dept_logi',assignedTo:'',status:'active' },
-  { id:'v18',plate:'BKE-7387',name:'BKE-7387',deptId:'dept_sale',assignedTo:'',status:'active' },
-  { id:'v19',plate:'BMP-1612',name:'BMP-1612',deptId:'dept_sale',assignedTo:'',status:'active' },
-  { id:'v20',plate:'BQC-3793',name:'BQC-3793',deptId:'dept_sale',assignedTo:'',status:'active' },
-  { id:'v21',plate:'BQC-7176',name:'BQC-7176',deptId:'dept_sale',assignedTo:'',status:'active' },
-  { id:'v22',plate:'BUA-3107',name:'BUA-3107',deptId:'dept_sale',assignedTo:'',status:'active' },
-  { id:'v23',plate:'BUA-3265',name:'BUA-3265',deptId:'dept_sale',assignedTo:'',status:'active' },
-  { id:'v24',plate:'BUA-3721',name:'BUA-3721',deptId:'dept_sale',assignedTo:'',status:'active' },
-  { id:'v25',plate:'BUC-6837',name:'BUC-6837',deptId:'dept_sale',assignedTo:'',status:'active' },
-  { id:'v26',plate:'BUC-6933',name:'BUC-6933',deptId:'dept_sale',assignedTo:'',status:'active' },
-  { id:'v27',plate:'BUC-7100',name:'BUC-7100',deptId:'dept_sale',assignedTo:'',status:'active' },
-  { id:'v28',plate:'BVY-3570',name:'BVY-3570',deptId:'dept_sale',assignedTo:'',status:'active' },
-  { id:'v29',plate:'BZH-3897',name:'BZH-3897',deptId:'dept_sale',assignedTo:'',status:'active' },
-  { id:'v30',plate:'BZH-3896',name:'BZH-3896',deptId:'dept_sale',assignedTo:'',status:'active' },
-  { id:'v31',plate:'BZH-3895',name:'BZH-3895',deptId:'dept_sale',assignedTo:'',status:'active' },
-  { id:'v32',plate:'BZH-7913',name:'BZH-7913',deptId:'dept_sale',assignedTo:'',status:'active' },
-  { id:'v33',plate:'BMT-5733',name:'BMT-5733',deptId:'dept_sale',assignedTo:'',status:'active' },
-  { id:'v34',plate:'BMT-5803',name:'BMT-5803',deptId:'dept_sale',assignedTo:'',status:'active' },
-  { id:'v35',plate:'BQC-3661',name:'BQC-3661',deptId:'dept_sale',assignedTo:'',status:'active' },
-  { id:'v36',plate:'BQC-3973',name:'BQC-3973',deptId:'dept_sale',assignedTo:'',status:'active' },
-];
-
-// 2月份初始里程（作為 seed data）
-const FEB_MILEAGE = {
-  'BMQ-6180':321243,'BMT-6092':291555,'BSQ-7353':198144,'BUB-0572':273964,
-  'BUB-1036':355468,'BUB-1332':359884,'BUB-1562':310872,'BZH-7903':195169,
-  'BZH-8131':157607,'BZH-8393':122864,'BUF-7506':82482,'BUF-7507':102753,
-  'BVY-0363':71616,'BYV-2830':86531,'BYV-2831':51688,'BZH-9217':38779,
-  'BZH-9223':33715,'BKE-7387':327615,'BMP-1612':336583,'BQC-3793':103949,
-  'BQC-7176':186551,'BUA-3107':202919,'BUA-3265':257677,'BUA-3721':288001,
-  'BUC-6837':54956,'BUC-6933':264241,'BUC-7100':178060,'BVY-3570':103128,
-  'BZH-3897':72524,'BZH-3896':113016,'BZH-3895':80826,'BZH-7913':67859,
-  'BMT-5733':146226,'BMT-5803':137606,'BQC-3661':191364,'BQC-3973':115342,
+// ── DESIGN TOKENS ──────────────────────────────────────────────
+const C = {
+  bg0: '#04060a', bg1: '#070b11', bg2: '#0c1119', bg3: '#111821', bg4: '#171f2c',
+  bd: '#1c2a3a', bdL: '#243447',
+  cy: '#22d3ee', cyD: 'rgba(34,211,238,.1)', cyG: 'rgba(34,211,238,.04)',
+  am: '#fbbf24', amD: 'rgba(251,191,36,.1)',
+  gn: '#34d399', gnD: 'rgba(52,211,153,.1)',
+  rd: '#f87171', rdD: 'rgba(248,113,113,.1)',
+  t1: '#e2e8f0', t2: '#8fa3b8', t3: '#3d5268',
 };
 
-const DEFAULT_PERSONNEL = [
-  // 物流部
-  { id:'p01',name:'陳承業',role:'driver',deptId:'dept_logi',status:'active' },
-  { id:'p02',name:'馬一帆',role:'driver',deptId:'dept_logi',status:'active' },
-  { id:'p15',name:'蕭頎俊',role:'driver',deptId:'dept_logi',status:'active' },
-  { id:'p16',name:'吳泓諭',role:'driver',deptId:'dept_logi',status:'active' },
-  { id:'p17',name:'林凱鴻',role:'driver',deptId:'dept_logi',status:'active' },
-  { id:'p03',name:'石宗民',role:'driver',deptId:'dept_logi',status:'active' },
-  { id:'p04',name:'林信宏',role:'driver',deptId:'dept_logi',status:'active' },
-  { id:'p05',name:'顏瑋慶',role:'driver',deptId:'dept_logi',status:'active' },
-  { id:'p06',name:'楊展儀',role:'driver',deptId:'dept_logi',status:'active' },
-  { id:'p07',name:'陳崇倫',role:'driver',deptId:'dept_logi',status:'active' },
-  { id:'p08',name:'鄭松岩',role:'driver',deptId:'dept_logi',status:'active' },
-  { id:'p09',name:'鄭宇婷',role:'driver',deptId:'dept_logi',status:'active' },
-  { id:'p10',name:'許展綸',role:'driver',deptId:'dept_logi',status:'active' },
-  { id:'p11',name:'林秉裕',role:'driver',deptId:'dept_logi',status:'active' },
-  { id:'p12',name:'郭軒齊',role:'driver',deptId:'dept_logi',status:'active' },
-  { id:'p13',name:'梁鈞為',role:'driver',deptId:'dept_logi',status:'active' },
-  { id:'p14',name:'吳冠霖',role:'driver',deptId:'dept_logi',status:'active' },
-  // 業務部
-  { id:'p18',name:'韋羽泰',role:'driver',deptId:'dept_sale',status:'active' },
-  { id:'p19',name:'陳柏宏',role:'driver',deptId:'dept_sale',status:'active' },
-  { id:'p20',name:'洪彬元',role:'driver',deptId:'dept_sale',status:'active' },
-  { id:'p21',name:'羅惠銘',role:'driver',deptId:'dept_sale',status:'active' },
-  { id:'p22',name:'張瀧澄',role:'driver',deptId:'dept_sale',status:'active' },
-  { id:'p23',name:'邱睿達',role:'driver',deptId:'dept_sale',status:'active' },
-  { id:'p24',name:'張秉哲',role:'driver',deptId:'dept_sale',status:'active' },
-  { id:'p25',name:'林錩毅',role:'driver',deptId:'dept_sale',status:'active' },
-  { id:'p26',name:'謝柏瑋',role:'driver',deptId:'dept_sale',status:'active' },
-  { id:'p27',name:'張書懷',role:'driver',deptId:'dept_sale',status:'active' },
-  { id:'p28',name:'蔡孟學',role:'driver',deptId:'dept_sale',status:'active' },
-  { id:'p29',name:'黃致為',role:'driver',deptId:'dept_sale',status:'active' },
-  { id:'p30',name:'顏羽宏',role:'driver',deptId:'dept_sale',status:'active' },
-  { id:'p31',name:'吳誌文',role:'driver',deptId:'dept_sale',status:'active' },
-];
-
-// ── Firebase 共用 ─────────────────────────────────────────────────────
-const FIREBASE_CONFIG = {
-  apiKey: "AIzaSyAe5gxLBHN9CQ6zVhKF6zQGbvgMXCbqoF4",
-  authDomain: "jc-logi-map.firebaseapp.com",
-  projectId: "jc-logi-map",
-  storageBucket: "jc-logi-map.firebasestorage.app",
-  messagingSenderId: "98258062805",
-  appId: "1:98258062805:web:d004b291c639e126e7c15c"
+const BTM = {
+  cy:    { bg: C.cy,  color: '#04060a', border: 'none' },
+  am:    { bg: C.am,  color: '#04060a', border: 'none' },
+  gn:    { bg: C.gn,  color: '#04060a', border: 'none' },
+  rd:    { bg: C.rd,  color: '#fff',    border: 'none' },
+  ghost: { bg: 'transparent', color: C.t2, border: `1px solid ${C.bd}` },
+  dark:  { bg: C.bg3, color: C.t1,  border: `1px solid ${C.bd}` },
+  link:  { bg: 'transparent', color: C.t2, border: 'none' },
 };
 
-let _fbInstance = null;
-const initFirebase = async () => {
-  if (_fbInstance) return _fbInstance;
-  try {
-    const fbApp = await import('https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js');
-    const fstore = await import('https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js');
-    const existingApps = fbApp.getApps();
-    const app = existingApps.length > 0 ? existingApps[0] : fbApp.initializeApp(FIREBASE_CONFIG);
-    const db = fstore.getFirestore(app);
-    _fbInstance = { db, ...fstore };
-    return _fbInstance;
-  } catch (e) {
-    console.warn('[MileageTool][Firebase] init failed:', e);
-    return null;
-  }
+const G = {
+  btn: (v = 'cy', sm = false) => {
+    const { bg, color, border } = BTM[v] || BTM.cy;
+    return {
+      background: bg, color, border, borderRadius: 6, cursor: 'pointer',
+      fontFamily: 'inherit', fontWeight: 700,
+      fontSize: sm ? 12 : 14,
+      padding: sm ? '6px 12px' : '10px 18px',
+      display: 'inline-flex', alignItems: 'center',
+      justifyContent: 'center', gap: 6,
+      transition: 'opacity .15s, transform .1s',
+      letterSpacing: '.02em',
+    };
+  },
+  inp: (err = false, lg = false, mono = false, center = false) => ({
+    width: '100%', boxSizing: 'border-box',
+    background: C.bg0, border: `1px solid ${err ? C.rd : C.bd}`,
+    borderRadius: 6, padding: lg ? '14px 12px' : '10px 12px',
+    color: C.t1, fontSize: lg ? 26 : 14,
+    fontFamily: mono ? "'Courier New', monospace" : 'inherit',
+    fontWeight: lg ? 700 : 400, outline: 'none',
+    textAlign: center ? 'center' : 'left',
+  }),
+  card: (accent = false) => ({
+    background: C.bg2,
+    border: `1px solid ${accent ? C.cy + '44' : C.bd}`,
+    borderRadius: 10, overflow: 'hidden',
+    ...(accent ? { borderTop: `2px solid ${C.cy}` } : {}),
+  }),
 };
 
-// ── 工具函式 ──────────────────────────────────────────────────────────
-const getTaiwanPeriod = () => {
-  const d = new Date(new Date().toLocaleString('en-US', { timeZone: 'Asia/Taipei' }));
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+// ── UTILS ──────────────────────────────────────────────────────
+const fmt    = (n) => Number(n || 0).toLocaleString();
+const clean  = (v) => parseFloat(String(v || 0).replace(/,/g, '')) || 0;
+const uid    = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
+const fmtDt  = (iso) => {
+  if (!iso) return '-';
+  return new Date(iso).toLocaleString('zh-TW', {
+    timeZone: 'Asia/Taipei', hour12: false,
+    year: 'numeric', month: '2-digit', day: '2-digit',
+    hour: '2-digit', minute: '2-digit',
+  });
 };
-const getPrevPeriod = (period) => {
-  const [y, m] = period.split('-').map(Number);
-  const pm = m === 1 ? 12 : m - 1;
-  const py = m === 1 ? y - 1 : y;
-  return `${py}-${String(pm).padStart(2, '0')}`;
+const curMonth = () => {
+  const n = new Date();
+  return (n.getDate() <= 5
+    ? new Date(n.getFullYear(), n.getMonth() - 1, 1)
+    : n
+  ).toISOString().slice(0, 7);
 };
-const fmtNum = (n) => n == null ? '—' : Number(n).toLocaleString();
+const parseCSVText = (text) =>
+  text.trim().split('\n').slice(1)
+    .map((l) => l.split(',').map((p) => p.trim().replace(/^"|"$/g, '')));
 
-// ═══════════════════════════════════════════════════════════════════════
-// Main Component
-// ═══════════════════════════════════════════════════════════════════════
-const MileageTool = ({ onBack, windowHeight }) => {
-  // ── Auth ─────────────────────────────────────────────────────────
-  const [currentUser, setCurrentUser] = useState(null);
-  const [isAdmin, setIsAdmin] = useState(false);
-  const [showAdminPw, setShowAdminPw] = useState(false);
-  const [adminPwInput, setAdminPwInput] = useState('');
-  const [adminPwError, setAdminPwError] = useState(false);
-  const [loginDept, setLoginDept] = useState('');
-  const [customName, setCustomName] = useState('');
+// ── FIRESTORE HELPERS ──────────────────────────────────────────
+const COL = { d: 'drivers', v: 'vehicles', l: 'logs', s: 'settings' };
 
-  // ── Core Data (Firestore synced) ────────────────────────────────
-  const [departments, setDepartments] = useState(DEFAULT_DEPARTMENTS);
-  const [vehicles, setVehicles] = useState(DEFAULT_VEHICLES);
-  const [personnel, setPersonnel] = useState(DEFAULT_PERSONNEL);
-  const [monthlyRecords, setMonthlyRecords] = useState([]);
-  const [adhocRecords, setAdhocRecords] = useState([]);
-  const [dataLoading, setDataLoading] = useState(false);
-  const [syncStatus, setSyncStatus] = useState('');
-
-  // ── UI State ────────────────────────────────────────────────────
-  const [activeSection, setActiveSection] = useState('dashboard'); // dashboard | monthly | adhoc | vehicles | personnel | departments | export
-  const [selectedPeriod, setSelectedPeriod] = useState(getTaiwanPeriod());
-  const [filterDept, setFilterDept] = useState('all');
-  const [showModal, setShowModal] = useState(null); // null | 'monthly' | 'adhoc' | 'vehicle' | 'person' | 'dept'
-  const [editItem, setEditItem] = useState(null);
-
-  // ── Report Form State ───────────────────────────────────────────
-  const [reportVehicle, setReportVehicle] = useState('');
-  const [reportReading, setReportReading] = useState('');
-  const [reportNotes, setReportNotes] = useState('');
-  const [reportPeriod, setReportPeriod] = useState(getTaiwanPeriod());
-  // Adhoc form
-  const [adhocVehicle, setAdhocVehicle] = useState('');
-  const [adhocDate, setAdhocDate] = useState(new Date().toISOString().slice(0, 10));
-  const [adhocStart, setAdhocStart] = useState('');
-  const [adhocEnd, setAdhocEnd] = useState('');
-  const [adhocPurpose, setAdhocPurpose] = useState('');
-  const [adhocNotes, setAdhocNotes] = useState('');
-
-  // ── Firestore CRUD ──────────────────────────────────────────────
-  const saveCollection = async (collName, data) => {
-    const fb = await initFirebase();
-    if (!fb) { setSyncStatus('error'); return; }
-    try {
-      setSyncStatus('saving');
-      await fb.setDoc(fb.doc(fb.db, 'mileage_config', collName), { data, updatedAt: new Date().toISOString() });
-      setSyncStatus('saved');
-      setTimeout(() => setSyncStatus(''), 2000);
-    } catch (e) {
-      console.error('[MileageTool] save failed:', collName, e);
-      setSyncStatus('error:' + (e?.code || e?.message || ''));
-    }
-  };
-
-  const loadCollection = async (collName) => {
-    const fb = await initFirebase();
-    if (!fb) return null;
-    try {
-      const snap = await fb.getDoc(fb.doc(fb.db, 'mileage_config', collName));
-      if (snap.exists()) return snap.data().data;
-    } catch (e) { console.warn('[MileageTool] load failed:', collName, e); }
-    return null;
-  };
-
-  // ── Initial Load ────────────────────────────────────────────────
+async function fsAdd(col, data) {
+  const ref = await addDoc(collection(db, col), { ...data, _ts: serverTimestamp() });
+  return ref.id;
+}
+async function fsSet(col, id, data) {
+  await setDoc(doc(db, col, id), { ...data, _ts: serverTimestamp() }, { merge: true });
+}
+async function fsDel(col, id) {
+  await deleteDoc(doc(db, col, id));
+}
+async function fsUpdate(col, id, data) {
+  await updateDoc(doc(db, col, id), { ...data, _ts: serverTimestamp() });
+}
+function useCollection(col, transform) {
+  const [data, setData] = useState([]);
+  const [loading, setLoading] = useState(true);
   useEffect(() => {
-    const load = async () => {
-      setDataLoading(true);
-      const [depts, vehs, pers, monthly, adhoc] = await Promise.all([
-        loadCollection('departments'),
-        loadCollection('vehicles'),
-        loadCollection('personnel'),
-        loadCollection('monthly_records'),
-        loadCollection('adhoc_records'),
-      ]);
-      if (depts) setDepartments(depts);
-      if (vehs) setVehicles(vehs);
-      if (pers) setPersonnel(pers);
-      if (monthly) setMonthlyRecords(monthly);
-      if (adhoc) setAdhocRecords(adhoc);
-      setDataLoading(false);
-    };
-    load();
-  }, []);
+    const unsub = onSnapshot(collection(db, col), (snap) => {
+      const docs = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+      setData(transform ? transform(docs) : docs);
+      setLoading(false);
+    });
+    return unsub;
+  }, [col]);
+  return { data, loading };
+}
 
-  // ── Auto Save helpers ───────────────────────────────────────────
-  const debounceRef = useRef({});
-  const autoSave = (key, data, setter) => {
-    setter(data);
-    if (debounceRef.current[key]) clearTimeout(debounceRef.current[key]);
-    debounceRef.current[key] = setTimeout(() => saveCollection(key, data), 1500);
-  };
+// ── SHARED UI ──────────────────────────────────────────────────
+const Lbl = ({ c }) => (
+  <div style={{ color: C.t3, fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.1em', marginBottom: 6 }}>{c}</div>
+);
+const Tag = ({ c, label }) => (
+  <span style={{ background: c + '22', color: c, border: `1px solid ${c}44`, borderRadius: 4, padding: '2px 8px', fontSize: 11, fontWeight: 700, letterSpacing: '.06em' }}>{label}</span>
+);
+const TH = ({ c }) => (
+  <th style={{ padding: '10px 14px', textAlign: 'left', color: C.t3, fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.06em', background: C.bg1, whiteSpace: 'nowrap' }}>{c}</th>
+);
 
-  // ── Auth helpers ────────────────────────────────────────────────
-  const ADMIN_PW = 'admin2024';
-
-  // Group personnel by department for the selection screen
-  const personnelByDept = useMemo(() => {
-    const active = personnel.filter(p => p.status === 'active');
-    const logi = active.filter(p => p.deptId === 'dept_logi');
-    const sale = active.filter(p => p.deptId === 'dept_sale');
-    return { logi, sale };
-  }, [personnel]);
-
-  // ── Get previous reading for a vehicle ──────────────────────────
-  const getPrevReading = (vehiclePlate, period) => {
-    const prev = getPrevPeriod(period);
-    const rec = monthlyRecords.find(r => r.vehiclePlate === vehiclePlate && r.period === prev);
-    if (rec) return rec.odometerReading;
-    // Fallback to Feb seed data
-    if (prev === '2026-02' || !monthlyRecords.some(r => r.vehiclePlate === vehiclePlate)) {
-      return FEB_MILEAGE[vehiclePlate] || null;
-    }
-    return null;
-  };
-
-  // ── Submit monthly report ───────────────────────────────────────
-  const handleSubmitMonthly = () => {
-    if (!reportVehicle || !reportReading) return;
-    const reading = parseInt(reportReading);
-    if (isNaN(reading) || reading < 0) return;
-
-    const veh = vehicles.find(v => v.id === reportVehicle);
-    if (!veh) return;
-    const prevReading = getPrevReading(veh.plate, reportPeriod);
-    const monthlyMileage = prevReading != null ? reading - prevReading : null;
-
-    // Anomaly check
-    if (monthlyMileage != null && (monthlyMileage < 0)) {
-      if (!window.confirm(`累計里程 ${fmtNum(reading)} 小於上期 ${fmtNum(prevReading)}，是否確認送出？`)) return;
-    }
-    if (monthlyMileage != null && monthlyMileage > 10000) {
-      if (!window.confirm(`本月行駛里程 ${fmtNum(monthlyMileage)} km 異常偏高，是否確認送出？`)) return;
-    }
-
-    // Check if already reported
-    const existingIdx = monthlyRecords.findIndex(r => r.vehiclePlate === veh.plate && r.period === reportPeriod);
-    const record = {
-      id: existingIdx >= 0 ? monthlyRecords[existingIdx].id : `mr_${Date.now()}`,
-      vehicleId: veh.id,
-      vehiclePlate: veh.plate,
-      reporterId: currentUser.id,
-      reporterName: currentUser.name,
-      period: reportPeriod,
-      odometerReading: reading,
-      previousReading: prevReading,
-      monthlyMileage,
-      notes: reportNotes,
-      status: 'submitted',
-      submittedAt: new Date().toISOString(),
-    };
-
-    let newRecords;
-    if (existingIdx >= 0) {
-      newRecords = [...monthlyRecords];
-      newRecords[existingIdx] = record;
-    } else {
-      newRecords = [...monthlyRecords, record];
-    }
-    autoSave('monthly_records', newRecords, setMonthlyRecords);
-    setReportVehicle('');
-    setReportReading('');
-    setReportNotes('');
-    setShowModal(null);
-  };
-
-  // ── Submit adhoc report ─────────────────────────────────────────
-  const handleSubmitAdhoc = () => {
-    if (!adhocVehicle || !adhocStart || !adhocEnd || !adhocPurpose) return;
-    const start = parseInt(adhocStart);
-    const end = parseInt(adhocEnd);
-    if (isNaN(start) || isNaN(end) || end < start) {
-      alert('結束里程必須大於起始里程');
-      return;
-    }
-    const veh = vehicles.find(v => v.id === adhocVehicle);
-    const record = {
-      id: `ar_${Date.now()}`,
-      vehicleId: veh.id,
-      vehiclePlate: veh.plate,
-      userId: currentUser.id,
-      userName: currentUser.name,
-      date: adhocDate,
-      startMileage: start,
-      endMileage: end,
-      tripMileage: end - start,
-      purpose: adhocPurpose,
-      notes: adhocNotes,
-      status: 'submitted',
-      submittedAt: new Date().toISOString(),
-    };
-    const newRecords = [...adhocRecords, record];
-    autoSave('adhoc_records', newRecords, setAdhocRecords);
-    setAdhocVehicle('');
-    setAdhocStart('');
-    setAdhocEnd('');
-    setAdhocPurpose('');
-    setAdhocNotes('');
-    setShowModal(null);
-  };
-
-  // ── Approve / Reject ────────────────────────────────────────────
-  const handleApprove = (recordId, type) => {
-    if (type === 'monthly') {
-      const newRecords = monthlyRecords.map(r => r.id === recordId ? { ...r, status: 'approved', approvedBy: currentUser.name, approvedAt: new Date().toISOString() } : r);
-      autoSave('monthly_records', newRecords, setMonthlyRecords);
-    } else {
-      const newRecords = adhocRecords.map(r => r.id === recordId ? { ...r, status: 'approved', approvedBy: currentUser.name } : r);
-      autoSave('adhoc_records', newRecords, setAdhocRecords);
-    }
-  };
-  const handleReject = (recordId, type) => {
-    const reason = window.prompt('請輸入退回原因：');
-    if (!reason) return;
-    if (type === 'monthly') {
-      const newRecords = monthlyRecords.map(r => r.id === recordId ? { ...r, status: 'rejected', rejectReason: reason, approvedBy: currentUser.name } : r);
-      autoSave('monthly_records', newRecords, setMonthlyRecords);
-    } else {
-      const newRecords = adhocRecords.map(r => r.id === recordId ? { ...r, status: 'rejected', rejectReason: reason } : r);
-      autoSave('adhoc_records', newRecords, setAdhocRecords);
-    }
-  };
-  const handleDeleteRecord = (recordId, type) => {
-    if (!window.confirm('確定刪除此筆紀錄？')) return;
-    if (type === 'monthly') {
-      autoSave('monthly_records', monthlyRecords.filter(r => r.id !== recordId), setMonthlyRecords);
-    } else {
-      autoSave('adhoc_records', adhocRecords.filter(r => r.id !== recordId), setAdhocRecords);
-    }
-  };
-
-  // ── Export CSV ──────────────────────────────────────────────────
-  const exportCSV = (type) => {
-    const BOM = '\uFEFF';
-    let headers, rows;
-    if (type === 'monthly') {
-      headers = ['期別','車牌','累計里程','上期里程','本月里程','回報人','狀態','備註','回報時間'];
-      rows = monthlyRecords.filter(r => filterDept === 'all' || vehicles.find(v => v.plate === r.vehiclePlate)?.deptId === filterDept)
-        .sort((a, b) => a.period.localeCompare(b.period) || a.vehiclePlate.localeCompare(b.vehiclePlate))
-        .map(r => [r.period, r.vehiclePlate, r.odometerReading, r.previousReading ?? '', r.monthlyMileage ?? '', r.reporterName, r.status === 'approved' ? '已審核' : r.status === 'rejected' ? '退回' : '待審', r.notes || '', r.submittedAt || '']);
-    } else {
-      headers = ['日期','車牌','使用人','起始里程','結束里程','區間里程','事由','狀態','備註'];
-      rows = adhocRecords.map(r => [r.date, r.vehiclePlate, r.userName, r.startMileage, r.endMileage, r.tripMileage, r.purpose, r.status === 'approved' ? '已審核' : '待審', r.notes || '']);
-    }
-    const csv = [headers.join(','), ...rows.map(r => r.map(c => `"${String(c).replace(/"/g, '""')}"`).join(','))].join('\n');
-    const blob = new Blob([BOM + csv], { type: 'text/csv;charset=utf-8;' });
-    const link = document.createElement('a');
-    link.href = URL.createObjectURL(blob);
-    link.download = `${type === 'monthly' ? '月報里程' : '臨時使用里程'}_${new Date().toISOString().slice(0, 10)}.csv`;
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-  };
-
-  // ── Computed Stats ──────────────────────────────────────────────
-  const periodRecords = useMemo(() =>
-    monthlyRecords.filter(r => r.period === selectedPeriod), [monthlyRecords, selectedPeriod]);
-
-  const reportProgress = useMemo(() => {
-    const activeVehicles = vehicles.filter(v => v.status === 'active' && (filterDept === 'all' || v.deptId === filterDept));
-    const reported = activeVehicles.filter(v => periodRecords.some(r => r.vehiclePlate === v.plate));
-    return { total: activeVehicles.length, reported: reported.length, missing: activeVehicles.filter(v => !periodRecords.some(r => r.vehiclePlate === v.plate)) };
-  }, [vehicles, periodRecords, filterDept]);
-
-  const statusMap = { submitted: { label: '待審核', color: 'bg-amber-100 text-amber-700' }, approved: { label: '已審核', color: 'bg-green-100 text-green-700' }, rejected: { label: '已退回', color: 'bg-red-100 text-red-700' } };
-
-  // ═════════════════════════════════════════════════════════════════
-  // RENDER: Identity Selection (no password for users)
-  // ═════════════════════════════════════════════════════════════════
-  if (!currentUser) {
-    return (
-      <div style={{ height: windowHeight + 'px' }} className="bg-gradient-to-br from-slate-900 via-slate-800 to-emerald-900 flex items-center justify-center font-sans">
-        <div className="w-full max-w-md mx-4">
-          <div className="text-center mb-8">
-            <div className="text-5xl mb-4">📊</div>
-            <h1 className="text-xl font-bold text-white tracking-wider">車輛里程管理系統</h1>
-            <p className="text-emerald-400 text-xs tracking-widest mt-2 uppercase">Vehicle Mileage Management</p>
-          </div>
-          <div className="bg-white bg-opacity-10 backdrop-blur rounded-2xl p-6 border border-white border-opacity-20 space-y-4">
-            {!loginDept ? <>
-              {/* Step 1: 選擇部門 */}
-              <div className="text-xs text-emerald-300 font-bold tracking-wider">請選擇部門</div>
-              <div className="grid grid-cols-2 gap-3">
-                {departments.map(d => (
-                  <button key={d.id} onClick={() => setLoginDept(d.id)}
-                    className="py-4 bg-white bg-opacity-5 border border-white border-opacity-10 rounded-xl text-white text-sm font-bold hover:bg-emerald-500 hover:bg-opacity-30 hover:border-emerald-400 transition-all">
-                    {d.name}
-                    <div className="text-[10px] text-white text-opacity-30 mt-1">{personnelByDept[d.id === 'dept_logi' ? 'logi' : 'sale'].length} 人</div>
-                  </button>
-                ))}
-              </div>
-            </> : <>
-              {/* Step 2: 選擇姓名 */}
-              <div className="flex items-center justify-between">
-                <div className="text-xs text-emerald-300 font-bold tracking-wider">{departments.find(d=>d.id===loginDept)?.name} — 請選擇姓名</div>
-                <button onClick={() => setLoginDept('')} className="text-[10px] text-white text-opacity-40 hover:text-opacity-80 transition-all">← 返回</button>
-              </div>
-              <div className="grid grid-cols-3 gap-1.5">
-                {personnelByDept[loginDept === 'dept_logi' ? 'logi' : 'sale'].map(p => (
-                  <button key={p.id} onClick={() => { setCurrentUser(p); setActiveSection('dashboard'); setLoginDept(''); }}
-                    className="py-2.5 px-2 bg-white bg-opacity-5 border border-white border-opacity-10 rounded-lg text-white text-xs font-bold hover:bg-emerald-500 hover:bg-opacity-30 hover:border-emerald-400 transition-all">
-                    {p.name}
-                  </button>
-                ))}
-              </div>
-              <div className="flex gap-2 mt-2">
-                <input value={customName} onChange={e => setCustomName(e.target.value)}
-                  onKeyDown={e => { if (e.key === 'Enter' && customName.trim()) { setCurrentUser({ id: `custom_${Date.now()}`, name: customName.trim(), deptId: loginDept, status: 'active' }); setActiveSection('dashboard'); setLoginDept(''); setCustomName(''); } }}
-                  placeholder="不在名單內？輸入姓名"
-                  className="flex-1 p-2 bg-white bg-opacity-5 border border-white border-opacity-10 rounded-lg text-white text-xs outline-none focus:border-emerald-400 placeholder-white placeholder-opacity-20" />
-                <button onClick={() => { if (!customName.trim()) return; setCurrentUser({ id: `custom_${Date.now()}`, name: customName.trim(), deptId: loginDept, status: 'active' }); setActiveSection('dashboard'); setLoginDept(''); setCustomName(''); }}
-                  disabled={!customName.trim()}
-                  className="px-3 py-2 bg-emerald-500 bg-opacity-30 border border-emerald-400 border-opacity-30 rounded-lg text-emerald-300 text-xs font-bold hover:bg-opacity-50 disabled:opacity-30 transition-all">
-                  進入
-                </button>
-              </div>
-            </>}
-            <div className="pt-2 flex gap-2">
-              <button onClick={() => setShowAdminPw(true)}
-                className="flex-1 py-2 text-emerald-400 text-opacity-50 text-[10px] border border-emerald-400 border-opacity-20 rounded-lg hover:border-opacity-50 hover:text-opacity-80 transition-all tracking-wider">
-                🔐 管理者登入
-              </button>
-              <button onClick={onBack}
-                className="flex-1 py-2 text-white text-opacity-30 text-[10px] border border-white border-opacity-10 rounded-lg hover:text-opacity-60 transition-all">
-                返回首頁
-              </button>
-            </div>
-          </div>
-          {/* Admin password modal */}
-          {showAdminPw && (
-            <div className="fixed inset-0 bg-black bg-opacity-60 z-50 flex items-center justify-center" onClick={() => { setShowAdminPw(false); setAdminPwInput(''); setAdminPwError(false); }}>
-              <div className="bg-slate-800 rounded-2xl p-6 w-80 border border-emerald-500 border-opacity-30 space-y-4" onClick={e => e.stopPropagation()}>
-                <div className="text-sm font-bold text-white">🔐 管理者驗證</div>
-                <input type="password" value={adminPwInput} onChange={e => setAdminPwInput(e.target.value)}
-                  onKeyDown={e => { if (e.key === 'Enter') { if (adminPwInput === ADMIN_PW) { setIsAdmin(true); setCurrentUser({ id: 'admin', name: '管理者', deptId: 'dept_logi' }); setShowAdminPw(false); setAdminPwInput(''); setActiveSection('dashboard'); } else { setAdminPwError(true); setTimeout(() => setAdminPwError(false), 1500); } } }}
-                  placeholder="輸入管理者密碼" autoFocus
-                  className={`w-full p-2.5 bg-slate-700 border ${adminPwError ? 'border-red-500' : 'border-slate-600'} rounded-lg text-white text-sm outline-none`} />
-                {adminPwError && <div className="text-red-400 text-xs">密碼錯誤</div>}
-                <button onClick={() => { if (adminPwInput === ADMIN_PW) { setIsAdmin(true); setCurrentUser({ id: 'admin', name: '管理者', deptId: 'dept_logi' }); setShowAdminPw(false); setAdminPwInput(''); setActiveSection('dashboard'); } else { setAdminPwError(true); setTimeout(() => setAdminPwError(false), 1500); } }}
-                  className="w-full py-2.5 bg-emerald-500 text-white rounded-lg font-bold text-sm hover:bg-emerald-600">驗證</button>
-              </div>
-            </div>
-          )}
-        </div>
-      </div>
-    );
-  }
-
-  // ═════════════════════════════════════════════════════════════════
-  // RENDER: Main App
-  // ═════════════════════════════════════════════════════════════════
-  const menuItems = [
-    { key: 'dashboard', icon: '📊', label: '儀表板' },
-    { key: 'monthly', icon: '📋', label: '月報里程' },
-    { key: 'adhoc', icon: '🚗', label: '臨時使用' },
-    ...(isAdmin ? [
-      { key: 'vehicles', icon: '🔧', label: '車輛管理' },
-      { key: 'personnel', icon: '👥', label: '人員管理' },
-    ] : []),
-    { key: 'export', icon: '⬇️', label: '匯出報表' },
-  ];
-
-  const getDeptName = (deptId) => departments.find(d => d.id === deptId)?.name || deptId;
-
+function Toast({ msg, onDone }) {
+  useEffect(() => {
+    if (msg) { const t = setTimeout(onDone, 3200); return () => clearTimeout(t); }
+  }, [msg]);
+  if (!msg) return null;
+  const e = msg.type === 'error';
   return (
-    <div className="flex font-sans text-gray-900 overflow-hidden" style={{ height: windowHeight + 'px' }}>
-      {/* ── Sidebar ── */}
-      <div className="w-56 bg-slate-900 flex flex-col flex-shrink-0">
-        <div className="p-4 border-b border-slate-700">
-          <div className="flex items-center gap-2">
-            <span className="text-lg">📊</span>
-            <div>
-              <div className="text-white text-xs font-bold tracking-wider">車輛里程管理</div>
-              <div className="text-slate-500 text-[10px]">
-                {syncStatus === 'saving' && '● 儲存中…'}
-                {syncStatus === 'saved' && '✓ 已同步'}
-                {syncStatus.startsWith('error') && '✗ 同步失敗'}
-                {!syncStatus && (dataLoading ? '⟳ 載入中…' : 'Firestore 同步')}
-              </div>
-            </div>
-          </div>
-        </div>
-        <nav className="flex-1 overflow-y-auto py-2">
-          {menuItems.map(item => (
-            <button key={item.key} onClick={() => setActiveSection(item.key)}
-              className={`w-full flex items-center gap-3 px-4 py-2.5 text-xs font-bold transition-all
-                ${activeSection === item.key ? 'bg-emerald-500 bg-opacity-20 text-emerald-400 border-r-2 border-emerald-400' : 'text-slate-400 hover:text-white hover:bg-slate-800'}`}>
-              <span className="text-sm">{item.icon}</span>
-              {item.label}
-            </button>
-          ))}
-        </nav>
-        <div className="p-3 border-t border-slate-700">
-          <div className="text-slate-400 text-[10px] mb-2">
-            {currentUser.name} · {getDeptName(currentUser.deptId)} · {isAdmin ? '👑 管理者' : '使用者'}
-          </div>
-          <div className="flex gap-2">
-            <button onClick={() => { setCurrentUser(null); setIsAdmin(false); }}
-              className="flex-1 py-1.5 text-[10px] text-slate-500 border border-slate-700 rounded hover:bg-slate-800 transition-all">切換身份</button>
-            <button onClick={onBack}
-              className="flex-1 py-1.5 text-[10px] text-slate-500 border border-slate-700 rounded hover:bg-slate-800 transition-all">首頁</button>
-          </div>
-        </div>
-      </div>
-
-      {/* ── Main Content ── */}
-      <div className="flex-1 bg-gray-50 overflow-y-auto">
-        <div className="p-6 max-w-6xl mx-auto space-y-6">
-
-          {/* ═══ DASHBOARD ═══ */}
-          {activeSection === 'dashboard' && <>
-            <div className="flex items-center justify-between">
-              <h2 className="text-lg font-bold text-gray-800">儀表板</h2>
-              <div className="flex items-center gap-3">
-                <select value={filterDept} onChange={e => setFilterDept(e.target.value)}
-                  className="border border-gray-300 rounded-lg px-3 py-1.5 text-xs">
-                  <option value="all">全部門</option>
-                  {departments.map(d => <option key={d.id} value={d.id}>{d.name}</option>)}
-                </select>
-                <input type="month" value={selectedPeriod} onChange={e => setSelectedPeriod(e.target.value)}
-                  className="border border-gray-300 rounded-lg px-3 py-1.5 text-xs" />
-              </div>
-            </div>
-
-            {/* Stats Cards */}
-            <div className="grid grid-cols-4 gap-4">
-              <div className="bg-white rounded-xl p-4 border border-gray-200 shadow-sm">
-                <div className="text-xs text-gray-500 mb-1">回報進度</div>
-                <div className="text-2xl font-bold text-blue-600">{reportProgress.reported}/{reportProgress.total}</div>
-                <div className="text-[10px] text-gray-400 mt-1">{reportProgress.total - reportProgress.reported} 輛未回報</div>
-              </div>
-              <div className="bg-white rounded-xl p-4 border border-gray-200 shadow-sm">
-                <div className="text-xs text-gray-500 mb-1">待審核</div>
-                <div className="text-2xl font-bold text-amber-600">{periodRecords.filter(r => r.status === 'submitted').length}</div>
-              </div>
-              <div className="bg-white rounded-xl p-4 border border-gray-200 shadow-sm">
-                <div className="text-xs text-gray-500 mb-1">本月平均里程</div>
-                <div className="text-2xl font-bold text-emerald-600">
-                  {periodRecords.filter(r => r.monthlyMileage > 0).length > 0
-                    ? fmtNum(Math.round(periodRecords.filter(r => r.monthlyMileage > 0).reduce((s, r) => s + r.monthlyMileage, 0) / periodRecords.filter(r => r.monthlyMileage > 0).length))
-                    : '—'}
-                </div>
-                <div className="text-[10px] text-gray-400 mt-1">km / 車</div>
-              </div>
-              <div className="bg-white rounded-xl p-4 border border-gray-200 shadow-sm">
-                <div className="text-xs text-gray-500 mb-1">臨時使用（本月）</div>
-                <div className="text-2xl font-bold text-purple-600">
-                  {adhocRecords.filter(r => r.date?.startsWith(selectedPeriod)).length}
-                </div>
-                <div className="text-[10px] text-gray-400 mt-1">
-                  {fmtNum(adhocRecords.filter(r => r.date?.startsWith(selectedPeriod)).reduce((s, r) => s + (r.tripMileage || 0), 0))} km
-                </div>
-              </div>
-            </div>
-
-            {/* Missing Reports */}
-            {reportProgress.missing.length > 0 && (
-              <div className="bg-amber-50 border border-amber-200 rounded-xl p-4">
-                <h3 className="text-sm font-bold text-amber-700 mb-2">⚠️ 尚未回報（{selectedPeriod}）</h3>
-                <div className="flex flex-wrap gap-2">
-                  {reportProgress.missing.map(v => (
-                    <span key={v.id} className="text-xs bg-amber-100 text-amber-800 px-2 py-1 rounded-lg font-bold">{v.plate}</span>
-                  ))}
-                </div>
-              </div>
-            )}
-
-            {/* Quick Actions */}
-            <div className="flex gap-3">
-              <button onClick={() => setShowModal('monthly')}
-                className="px-4 py-2.5 bg-emerald-500 text-white rounded-lg text-xs font-bold hover:bg-emerald-600 transition-all shadow-sm">
-                + 回報月里程
-              </button>
-              <button onClick={() => setShowModal('adhoc')}
-                className="px-4 py-2.5 bg-purple-500 text-white rounded-lg text-xs font-bold hover:bg-purple-600 transition-all shadow-sm">
-                + 回報臨時使用
-              </button>
-            </div>
-          </>}
-
-          {/* ═══ MONTHLY RECORDS ═══ */}
-          {activeSection === 'monthly' && <>
-            <div className="flex items-center justify-between">
-              <h2 className="text-lg font-bold text-gray-800">月報里程總表</h2>
-              <div className="flex items-center gap-3">
-                <select value={filterDept} onChange={e => setFilterDept(e.target.value)}
-                  className="border border-gray-300 rounded-lg px-3 py-1.5 text-xs">
-                  <option value="all">全部門</option>
-                  {departments.map(d => <option key={d.id} value={d.id}>{d.name}</option>)}
-                </select>
-                <input type="month" value={selectedPeriod} onChange={e => setSelectedPeriod(e.target.value)}
-                  className="border border-gray-300 rounded-lg px-3 py-1.5 text-xs" />
-                <button onClick={() => setShowModal('monthly')}
-                  className="px-4 py-1.5 bg-emerald-500 text-white rounded-lg text-xs font-bold hover:bg-emerald-600">
-                  + 回報
-                </button>
-              </div>
-            </div>
-            <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-x-auto">
-              <table className="w-full text-xs">
-                <thead>
-                  <tr className="bg-gray-50 border-b border-gray-200">
-                    <th className="text-left px-4 py-3 font-bold text-gray-600">車牌</th>
-                    <th className="text-left px-4 py-3 font-bold text-gray-600">部門</th>
-                    <th className="text-right px-4 py-3 font-bold text-gray-600">累計里程</th>
-                    <th className="text-right px-4 py-3 font-bold text-gray-600">上期里程</th>
-                    <th className="text-right px-4 py-3 font-bold text-gray-600">本月里程</th>
-                    <th className="text-left px-4 py-3 font-bold text-gray-600">回報人</th>
-                    <th className="text-center px-4 py-3 font-bold text-gray-600">狀態</th>
-                    {isAdmin && <th className="text-center px-4 py-3 font-bold text-gray-600">操作</th>}
-                  </tr>
-                </thead>
-                <tbody>
-                  {vehicles
-                    .filter(v => v.status === 'active' && (filterDept === 'all' || v.deptId === filterDept))
-                    .map(v => {
-                      const rec = periodRecords.find(r => r.vehiclePlate === v.plate);
-                      return (
-                        <tr key={v.id} className="border-b border-gray-100 hover:bg-gray-50">
-                          <td className="px-4 py-3 font-bold text-gray-800">{v.plate}</td>
-                          <td className="px-4 py-3 text-gray-500">{getDeptName(v.deptId)}</td>
-                          {rec ? <>
-                            <td className="px-4 py-3 text-right font-mono">{fmtNum(rec.odometerReading)}</td>
-                            <td className="px-4 py-3 text-right font-mono text-gray-400">{fmtNum(rec.previousReading)}</td>
-                            <td className="px-4 py-3 text-right font-mono font-bold text-blue-600">{fmtNum(rec.monthlyMileage)}</td>
-                            <td className="px-4 py-3">{rec.reporterName}</td>
-                            <td className="px-4 py-3 text-center">
-                              <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${statusMap[rec.status]?.color || 'bg-gray-100'}`}>
-                                {statusMap[rec.status]?.label || rec.status}
-                              </span>
-                            </td>
-                            {isAdmin && (
-                              <td className="px-4 py-3 text-center">
-                                <div className="flex items-center justify-center gap-1">
-                                  {rec.status === 'submitted' && <>
-                                    <button onClick={() => handleApprove(rec.id, 'monthly')} className="text-[10px] px-2 py-1 bg-green-50 text-green-600 rounded font-bold hover:bg-green-100">通過</button>
-                                    <button onClick={() => handleReject(rec.id, 'monthly')} className="text-[10px] px-2 py-1 bg-red-50 text-red-600 rounded font-bold hover:bg-red-100">退回</button>
-                                  </>}
-                                  <button onClick={() => handleDeleteRecord(rec.id, 'monthly')} className="text-[10px] px-2 py-1 text-gray-400 hover:text-red-500">刪</button>
-                                </div>
-                              </td>
-                            )}
-                          </> : <>
-                            <td className="px-4 py-3 text-right text-gray-300">未回報</td>
-                            <td className="px-4 py-3 text-right font-mono text-gray-300">{fmtNum(getPrevReading(v.plate, selectedPeriod))}</td>
-                            <td className="px-4 py-3"></td>
-                            <td className="px-4 py-3"></td>
-                            <td className="px-4 py-3 text-center"><span className="text-[10px] text-gray-400">—</span></td>
-                            {isAdmin && <td className="px-4 py-3"></td>}
-                          </>}
-                        </tr>
-                      );
-                    })}
-                </tbody>
-              </table>
-            </div>
-          </>}
-
-          {/* ═══ ADHOC RECORDS ═══ */}
-          {activeSection === 'adhoc' && <>
-            <div className="flex items-center justify-between">
-              <h2 className="text-lg font-bold text-gray-800">臨時使用里程</h2>
-              <button onClick={() => setShowModal('adhoc')}
-                className="px-4 py-1.5 bg-purple-500 text-white rounded-lg text-xs font-bold hover:bg-purple-600">+ 回報</button>
-            </div>
-            <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-x-auto">
-              <table className="w-full text-xs">
-                <thead>
-                  <tr className="bg-gray-50 border-b border-gray-200">
-                    <th className="text-left px-4 py-3 font-bold text-gray-600">日期</th>
-                    <th className="text-left px-4 py-3 font-bold text-gray-600">車牌</th>
-                    <th className="text-left px-4 py-3 font-bold text-gray-600">使用人</th>
-                    <th className="text-right px-4 py-3 font-bold text-gray-600">起始里程</th>
-                    <th className="text-right px-4 py-3 font-bold text-gray-600">結束里程</th>
-                    <th className="text-right px-4 py-3 font-bold text-gray-600">區間里程</th>
-                    <th className="text-left px-4 py-3 font-bold text-gray-600">事由</th>
-                    <th className="text-center px-4 py-3 font-bold text-gray-600">狀態</th>
-                    {isAdmin && <th className="text-center px-4 py-3 font-bold text-gray-600">操作</th>}
-                  </tr>
-                </thead>
-                <tbody>
-                  {adhocRecords.sort((a, b) => (b.date || '').localeCompare(a.date || '')).map(r => (
-                    <tr key={r.id} className="border-b border-gray-100 hover:bg-gray-50">
-                      <td className="px-4 py-3">{r.date}</td>
-                      <td className="px-4 py-3 font-bold">{r.vehiclePlate}</td>
-                      <td className="px-4 py-3">{r.userName}</td>
-                      <td className="px-4 py-3 text-right font-mono">{fmtNum(r.startMileage)}</td>
-                      <td className="px-4 py-3 text-right font-mono">{fmtNum(r.endMileage)}</td>
-                      <td className="px-4 py-3 text-right font-mono font-bold text-purple-600">{fmtNum(r.tripMileage)}</td>
-                      <td className="px-4 py-3">{r.purpose}</td>
-                      <td className="px-4 py-3 text-center">
-                        <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${statusMap[r.status]?.color || ''}`}>
-                          {statusMap[r.status]?.label || r.status}
-                        </span>
-                      </td>
-                      {isAdmin && (
-                        <td className="px-4 py-3 text-center">
-                          <div className="flex items-center justify-center gap-1">
-                            {r.status === 'submitted' && <>
-                              <button onClick={() => handleApprove(r.id, 'adhoc')} className="text-[10px] px-2 py-1 bg-green-50 text-green-600 rounded font-bold hover:bg-green-100">通過</button>
-                              <button onClick={() => handleReject(r.id, 'adhoc')} className="text-[10px] px-2 py-1 bg-red-50 text-red-600 rounded font-bold hover:bg-red-100">退回</button>
-                            </>}
-                            <button onClick={() => handleDeleteRecord(r.id, 'adhoc')} className="text-[10px] px-2 py-1 text-gray-400 hover:text-red-500">刪</button>
-                          </div>
-                        </td>
-                      )}
-                    </tr>
-                  ))}
-                  {adhocRecords.length === 0 && (
-                    <tr><td colSpan={isAdmin ? 9 : 8} className="px-4 py-8 text-center text-gray-400">尚無臨時使用紀錄</td></tr>
-                  )}
-                </tbody>
-              </table>
-            </div>
-          </>}
-
-          {/* ═══ VEHICLE MANAGEMENT ═══ */}
-          {activeSection === 'vehicles' && isAdmin && <>
-            <div className="flex items-center justify-between">
-              <h2 className="text-lg font-bold text-gray-800">車輛管理（{vehicles.filter(v => v.status === 'active').length} 輛）</h2>
-              <button onClick={() => { setEditItem({ plate: '', name: '', deptId: 'dept_logi', assignedTo: '', status: 'active' }); setShowModal('vehicle'); }}
-                className="px-4 py-1.5 bg-blue-500 text-white rounded-lg text-xs font-bold hover:bg-blue-600">+ 新增車輛</button>
-            </div>
-            <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-x-auto">
-              <table className="w-full text-xs">
-                <thead>
-                  <tr className="bg-gray-50 border-b border-gray-200">
-                    <th className="text-left px-4 py-3 font-bold text-gray-600">車牌</th>
-                    <th className="text-left px-4 py-3 font-bold text-gray-600">部門</th>
-                    <th className="text-left px-4 py-3 font-bold text-gray-600">負責人</th>
-                    <th className="text-center px-4 py-3 font-bold text-gray-600">狀態</th>
-                    <th className="text-right px-4 py-3 font-bold text-gray-600">2月里程</th>
-                    <th className="text-center px-4 py-3 font-bold text-gray-600">操作</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {vehicles.map(v => (
-                    <tr key={v.id} className="border-b border-gray-100 hover:bg-gray-50">
-                      <td className="px-4 py-3 font-bold">{v.plate}</td>
-                      <td className="px-4 py-3">{getDeptName(v.deptId)}</td>
-                      <td className="px-4 py-3">{personnel.find(p => p.id === v.assignedTo)?.name || '—'}</td>
-                      <td className="px-4 py-3 text-center">
-                        <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${v.status === 'active' ? 'bg-green-100 text-green-700' : 'bg-gray-200 text-gray-500'}`}>
-                          {v.status === 'active' ? '使用中' : v.status}
-                        </span>
-                      </td>
-                      <td className="px-4 py-3 text-right font-mono text-gray-500">{fmtNum(FEB_MILEAGE[v.plate])}</td>
-                      <td className="px-4 py-3 text-center">
-                        <button onClick={() => { setEditItem({ ...v }); setShowModal('vehicle'); }}
-                          className="text-[10px] px-2 py-1 text-blue-600 hover:bg-blue-50 rounded font-bold">編輯</button>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          </>}
-
-          {/* ═══ PERSONNEL MANAGEMENT ═══ */}
-          {activeSection === 'personnel' && isAdmin && <>
-            <div className="flex items-center justify-between">
-              <h2 className="text-lg font-bold text-gray-800">人員管理（{personnel.filter(p => p.status === 'active').length} 人）</h2>
-              <button onClick={() => { setEditItem({ name: '', role: 'driver', deptId: 'dept_logi', status: 'active' }); setShowModal('person'); }}
-                className="px-4 py-1.5 bg-blue-500 text-white rounded-lg text-xs font-bold hover:bg-blue-600">+ 新增人員</button>
-            </div>
-            <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-x-auto">
-              <table className="w-full text-xs">
-                <thead>
-                  <tr className="bg-gray-50 border-b border-gray-200">
-                    <th className="text-left px-4 py-3 font-bold text-gray-600">姓名</th>
-                    <th className="text-left px-4 py-3 font-bold text-gray-600">部門</th>
-                    <th className="text-center px-4 py-3 font-bold text-gray-600">角色</th>
-                    <th className="text-center px-4 py-3 font-bold text-gray-600">狀態</th>
-                    <th className="text-center px-4 py-3 font-bold text-gray-600">操作</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {personnel.filter(p => p.id !== 'p_admin').map(p => (
-                    <tr key={p.id} className="border-b border-gray-100 hover:bg-gray-50">
-                      <td className="px-4 py-3 font-bold">{p.name}</td>
-                      <td className="px-4 py-3">{getDeptName(p.deptId)}</td>
-                      <td className="px-4 py-3 text-center text-[10px]">{p.role === 'admin' ? '管理者' : '使用者'}</td>
-                      <td className="px-4 py-3 text-center">
-                        <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${p.status === 'active' ? 'bg-green-100 text-green-700' : 'bg-gray-200 text-gray-500'}`}>
-                          {p.status === 'active' ? '在職' : '離職'}
-                        </span>
-                      </td>
-                      <td className="px-4 py-3 text-center">
-                        <button onClick={() => { setEditItem({ ...p }); setShowModal('person'); }}
-                          className="text-[10px] px-2 py-1 text-blue-600 hover:bg-blue-50 rounded font-bold">編輯</button>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          </>}
-
-          {/* ═══ DEPARTMENTS ═══ */}
-          {activeSection === 'departments' && isAdmin && <>
-            <h2 className="text-lg font-bold text-gray-800">部門管理</h2>
-            <div className="grid grid-cols-2 gap-4">
-              {departments.map(d => (
-                <div key={d.id} className="bg-white rounded-xl p-4 border border-gray-200 shadow-sm">
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <div className="font-bold text-gray-800">{d.name}</div>
-                      <div className="text-[10px] text-gray-400 mt-1">
-                        {vehicles.filter(v => v.deptId === d.id && v.status === 'active').length} 輛車・
-                        {personnel.filter(p => p.deptId === d.id && p.status === 'active').length} 人
-                      </div>
-                    </div>
-                    <span className="text-xs bg-gray-100 text-gray-500 px-2 py-1 rounded font-mono">{d.code}</span>
-                  </div>
-                </div>
-              ))}
-            </div>
-          </>}
-
-          {/* ═══ EXPORT ═══ */}
-          {activeSection === 'export' && <>
-            <h2 className="text-lg font-bold text-gray-800">匯出報表</h2>
-            <div className="grid grid-cols-2 gap-4">
-              <div className="bg-white rounded-xl p-5 border border-gray-200 shadow-sm space-y-3">
-                <div className="text-sm font-bold text-gray-800">📋 月報里程</div>
-                <p className="text-xs text-gray-500">匯出所有月報里程紀錄，含審核狀態</p>
-                <button onClick={() => exportCSV('monthly')}
-                  className="w-full py-2 bg-emerald-500 text-white rounded-lg text-xs font-bold hover:bg-emerald-600">下載 CSV</button>
-              </div>
-              <div className="bg-white rounded-xl p-5 border border-gray-200 shadow-sm space-y-3">
-                <div className="text-sm font-bold text-gray-800">🚗 臨時使用里程</div>
-                <p className="text-xs text-gray-500">匯出所有臨時使用紀錄</p>
-                <button onClick={() => exportCSV('adhoc')}
-                  className="w-full py-2 bg-purple-500 text-white rounded-lg text-xs font-bold hover:bg-purple-600">下載 CSV</button>
-              </div>
-            </div>
-          </>}
-
-        </div>
-      </div>
-
-      {/* ═══ MODALS ═══ */}
-      {showModal === 'monthly' && (
-        <div className="fixed inset-0 bg-black bg-opacity-40 backdrop-blur-sm z-[9999] flex items-center justify-center p-4" onClick={() => setShowModal(null)}>
-          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md p-6 space-y-4" onClick={e => e.stopPropagation()}>
-            <h3 className="text-base font-bold text-gray-800">📋 回報月里程</h3>
-            <div className="space-y-3">
-              <div>
-                <label className="text-xs font-bold text-gray-500 block mb-1">期別</label>
-                <input type="month" value={reportPeriod} onChange={e => setReportPeriod(e.target.value)}
-                  className="w-full border border-gray-300 rounded-lg p-2 text-sm focus:border-emerald-500 outline-none" />
-              </div>
-              <div>
-                <label className="text-xs font-bold text-gray-500 block mb-1">車輛 *</label>
-                <select value={reportVehicle} onChange={e => setReportVehicle(e.target.value)}
-                  className="w-full border border-gray-300 rounded-lg p-2 text-sm focus:border-emerald-500 outline-none">
-                  <option value="">選擇車輛</option>
-                  {vehicles.filter(v => v.status === 'active').map(v => (
-                    <option key={v.id} value={v.id}>{v.plate} ({getDeptName(v.deptId)})</option>
-                  ))}
-                </select>
-              </div>
-              {reportVehicle && (() => {
-                const veh = vehicles.find(v => v.id === reportVehicle);
-                const prev = veh ? getPrevReading(veh.plate, reportPeriod) : null;
-                return prev != null ? (
-                  <div className="text-xs bg-blue-50 border border-blue-200 rounded-lg p-2.5">
-                    上期累計里程：<span className="font-bold font-mono">{fmtNum(prev)}</span> km
-                  </div>
-                ) : null;
-              })()}
-              <div>
-                <label className="text-xs font-bold text-gray-500 block mb-1">本期累計里程表讀數 *（km）</label>
-                <input type="number" value={reportReading} onChange={e => setReportReading(e.target.value)}
-                  placeholder="例：45230"
-                  className="w-full border border-gray-300 rounded-lg p-2 text-sm focus:border-emerald-500 outline-none font-mono" />
-              </div>
-              {reportReading && reportVehicle && (() => {
-                const veh = vehicles.find(v => v.id === reportVehicle);
-                const prev = veh ? getPrevReading(veh.plate, reportPeriod) : null;
-                const diff = prev != null ? parseInt(reportReading) - prev : null;
-                if (diff == null) return null;
-                const isAbnormal = diff < 0 || diff > 10000;
-                return (
-                  <div className={`text-xs rounded-lg p-2.5 border ${isAbnormal ? 'bg-red-50 border-red-200 text-red-700' : 'bg-green-50 border-green-200 text-green-700'}`}>
-                    本月行駛里程：<span className="font-bold font-mono">{fmtNum(diff)}</span> km
-                    {isAbnormal && ' ⚠️ 數值異常，請確認'}
-                  </div>
-                );
-              })()}
-              <div>
-                <label className="text-xs font-bold text-gray-500 block mb-1">備註</label>
-                <input value={reportNotes} onChange={e => setReportNotes(e.target.value)}
-                  placeholder="選填"
-                  className="w-full border border-gray-300 rounded-lg p-2 text-sm focus:border-emerald-500 outline-none" />
-              </div>
-            </div>
-            <div className="flex gap-3 pt-2">
-              <button onClick={() => setShowModal(null)} className="flex-1 py-2.5 border border-gray-300 rounded-lg text-gray-600 font-bold text-sm hover:bg-gray-50">取消</button>
-              <button onClick={handleSubmitMonthly} disabled={!reportVehicle || !reportReading}
-                className="flex-1 py-2.5 bg-emerald-500 text-white rounded-lg font-bold text-sm hover:bg-emerald-600 disabled:opacity-40">送出回報</button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {showModal === 'adhoc' && (
-        <div className="fixed inset-0 bg-black bg-opacity-40 backdrop-blur-sm z-[9999] flex items-center justify-center p-4" onClick={() => setShowModal(null)}>
-          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md p-6 space-y-4" onClick={e => e.stopPropagation()}>
-            <h3 className="text-base font-bold text-gray-800">🚗 回報臨時使用里程</h3>
-            <div className="space-y-3">
-              <div>
-                <label className="text-xs font-bold text-gray-500 block mb-1">車輛 *</label>
-                <select value={adhocVehicle} onChange={e => setAdhocVehicle(e.target.value)}
-                  className="w-full border border-gray-300 rounded-lg p-2 text-sm outline-none">
-                  <option value="">選擇車輛</option>
-                  {vehicles.filter(v => v.status === 'active').map(v => (
-                    <option key={v.id} value={v.id}>{v.plate}</option>
-                  ))}
-                </select>
-              </div>
-              <div>
-                <label className="text-xs font-bold text-gray-500 block mb-1">日期 *</label>
-                <input type="date" value={adhocDate} onChange={e => setAdhocDate(e.target.value)}
-                  className="w-full border border-gray-300 rounded-lg p-2 text-sm outline-none" />
-              </div>
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="text-xs font-bold text-gray-500 block mb-1">起始里程 *</label>
-                  <input type="number" value={adhocStart} onChange={e => setAdhocStart(e.target.value)} placeholder="km"
-                    className="w-full border border-gray-300 rounded-lg p-2 text-sm outline-none font-mono" />
-                </div>
-                <div>
-                  <label className="text-xs font-bold text-gray-500 block mb-1">結束里程 *</label>
-                  <input type="number" value={adhocEnd} onChange={e => setAdhocEnd(e.target.value)} placeholder="km"
-                    className="w-full border border-gray-300 rounded-lg p-2 text-sm outline-none font-mono" />
-                </div>
-              </div>
-              {adhocStart && adhocEnd && (
-                <div className="text-xs bg-purple-50 border border-purple-200 rounded-lg p-2.5 text-purple-700">
-                  區間里程：<span className="font-bold font-mono">{fmtNum(parseInt(adhocEnd) - parseInt(adhocStart))}</span> km
-                </div>
-              )}
-              <div>
-                <label className="text-xs font-bold text-gray-500 block mb-1">使用事由 *</label>
-                <select value={adhocPurpose} onChange={e => setAdhocPurpose(e.target.value)}
-                  className="w-full border border-gray-300 rounded-lg p-2 text-sm outline-none">
-                  <option value="">選擇事由</option>
-                  <option>支援配送</option>
-                  <option>臨時調度</option>
-                  <option>客戶拜訪</option>
-                  <option>維修保養</option>
-                  <option>其他</option>
-                </select>
-              </div>
-              <div>
-                <label className="text-xs font-bold text-gray-500 block mb-1">備註</label>
-                <input value={adhocNotes} onChange={e => setAdhocNotes(e.target.value)} placeholder="選填"
-                  className="w-full border border-gray-300 rounded-lg p-2 text-sm outline-none" />
-              </div>
-            </div>
-            <div className="flex gap-3 pt-2">
-              <button onClick={() => setShowModal(null)} className="flex-1 py-2.5 border border-gray-300 rounded-lg text-gray-600 font-bold text-sm hover:bg-gray-50">取消</button>
-              <button onClick={handleSubmitAdhoc} disabled={!adhocVehicle || !adhocStart || !adhocEnd || !adhocPurpose}
-                className="flex-1 py-2.5 bg-purple-500 text-white rounded-lg font-bold text-sm hover:bg-purple-600 disabled:opacity-40">送出回報</button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {showModal === 'vehicle' && editItem && (
-        <div className="fixed inset-0 bg-black bg-opacity-40 backdrop-blur-sm z-[9999] flex items-center justify-center p-4" onClick={() => { setShowModal(null); setEditItem(null); }}>
-          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md p-6 space-y-4" onClick={e => e.stopPropagation()}>
-            <h3 className="text-base font-bold text-gray-800">{editItem.id ? '編輯車輛' : '新增車輛'}</h3>
-            <div className="space-y-3">
-              <div><label className="text-xs font-bold text-gray-500 block mb-1">車牌 *</label>
-                <input value={editItem.plate} onChange={e => setEditItem({ ...editItem, plate: e.target.value })}
-                  className="w-full border border-gray-300 rounded-lg p-2 text-sm outline-none" /></div>
-              <div><label className="text-xs font-bold text-gray-500 block mb-1">部門</label>
-                <select value={editItem.deptId} onChange={e => setEditItem({ ...editItem, deptId: e.target.value })}
-                  className="w-full border border-gray-300 rounded-lg p-2 text-sm outline-none">
-                  {departments.map(d => <option key={d.id} value={d.id}>{d.name}</option>)}
-                </select></div>
-              <div><label className="text-xs font-bold text-gray-500 block mb-1">負責人</label>
-                <select value={editItem.assignedTo} onChange={e => setEditItem({ ...editItem, assignedTo: e.target.value })}
-                  className="w-full border border-gray-300 rounded-lg p-2 text-sm outline-none">
-                  <option value="">未指定</option>
-                  {personnel.filter(p => p.status === 'active').map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
-                </select></div>
-              <div><label className="text-xs font-bold text-gray-500 block mb-1">狀態</label>
-                <select value={editItem.status} onChange={e => setEditItem({ ...editItem, status: e.target.value })}
-                  className="w-full border border-gray-300 rounded-lg p-2 text-sm outline-none">
-                  <option value="active">使用中</option>
-                  <option value="maintenance">維修中</option>
-                  <option value="retired">已報廢</option>
-                </select></div>
-            </div>
-            <div className="flex gap-3 pt-2">
-              <button onClick={() => { setShowModal(null); setEditItem(null); }} className="flex-1 py-2.5 border border-gray-300 rounded-lg text-gray-600 font-bold text-sm hover:bg-gray-50">取消</button>
-              <button onClick={() => {
-                const plate = editItem.plate.trim();
-                if (!plate) return;
-                let newVehicles;
-                if (editItem.id) {
-                  newVehicles = vehicles.map(v => v.id === editItem.id ? { ...editItem, name: plate } : v);
-                } else {
-                  newVehicles = [...vehicles, { ...editItem, id: `v_${Date.now()}`, name: plate }];
-                }
-                autoSave('vehicles', newVehicles, setVehicles);
-                setShowModal(null);
-                setEditItem(null);
-              }} className="flex-1 py-2.5 bg-blue-500 text-white rounded-lg font-bold text-sm hover:bg-blue-600">儲存</button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {showModal === 'person' && editItem && (
-        <div className="fixed inset-0 bg-black bg-opacity-40 backdrop-blur-sm z-[9999] flex items-center justify-center p-4" onClick={() => { setShowModal(null); setEditItem(null); }}>
-          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md p-6 space-y-4" onClick={e => e.stopPropagation()}>
-            <h3 className="text-base font-bold text-gray-800">{editItem.id ? '編輯人員' : '新增人員'}</h3>
-            <div className="space-y-3">
-              <div><label className="text-xs font-bold text-gray-500 block mb-1">姓名 *</label>
-                <input value={editItem.name} onChange={e => setEditItem({ ...editItem, name: e.target.value })}
-                  className="w-full border border-gray-300 rounded-lg p-2 text-sm outline-none" /></div>
-              <div><label className="text-xs font-bold text-gray-500 block mb-1">部門</label>
-                <select value={editItem.deptId} onChange={e => setEditItem({ ...editItem, deptId: e.target.value })}
-                  className="w-full border border-gray-300 rounded-lg p-2 text-sm outline-none">
-                  {departments.map(d => <option key={d.id} value={d.id}>{d.name}</option>)}
-                </select></div>
-              <div><label className="text-xs font-bold text-gray-500 block mb-1">角色</label>
-                <select value={editItem.role} onChange={e => setEditItem({ ...editItem, role: e.target.value })}
-                  className="w-full border border-gray-300 rounded-lg p-2 text-sm outline-none">
-                  <option value="driver">使用者</option>
-                  <option value="admin">管理者</option>
-                </select></div>
-              <div><label className="text-xs font-bold text-gray-500 block mb-1">狀態</label>
-                <select value={editItem.status} onChange={e => setEditItem({ ...editItem, status: e.target.value })}
-                  className="w-full border border-gray-300 rounded-lg p-2 text-sm outline-none">
-                  <option value="active">在職</option>
-                  <option value="inactive">離職</option>
-                </select></div>
-            </div>
-            <div className="flex gap-3 pt-2">
-              <button onClick={() => { setShowModal(null); setEditItem(null); }} className="flex-1 py-2.5 border border-gray-300 rounded-lg text-gray-600 font-bold text-sm hover:bg-gray-50">取消</button>
-              <button onClick={() => {
-                if (!editItem.name.trim()) return;
-                let newPersonnel;
-                if (editItem.id) {
-                  newPersonnel = personnel.map(p => p.id === editItem.id ? editItem : p);
-                } else {
-                  newPersonnel = [...personnel, { ...editItem, id: `p_${Date.now()}` }];
-                }
-                autoSave('personnel', newPersonnel, setPersonnel);
-                setShowModal(null);
-                setEditItem(null);
-              }} className="flex-1 py-2.5 bg-blue-500 text-white rounded-lg font-bold text-sm hover:bg-blue-600">儲存</button>
-            </div>
-          </div>
-        </div>
-      )}
+    <div style={{
+      position: 'fixed', top: 16, left: '50%', transform: 'translateX(-50%)', zIndex: 9999,
+      padding: '10px 20px', borderRadius: 24, background: e ? '#1a0707' : '#071a0e',
+      border: `1px solid ${e ? C.rd + '55' : C.gn + '55'}`, color: e ? C.rd : C.gn,
+      fontWeight: 700, fontSize: 13, boxShadow: '0 12px 40px rgba(0,0,0,.7)',
+      display: 'flex', alignItems: 'center', gap: 8, whiteSpace: 'nowrap',
+    }}>
+      {e ? <AlertTriangle size={14} /> : <CheckCircle size={14} />} {msg.text}
     </div>
   );
-};
+}
 
-export default MileageTool;
+function Confirm({ title, body, onOk, onCancel, danger }) {
+  return (
+    <div style={{
+      position: 'fixed', inset: 0, zIndex: 8000, background: 'rgba(0,0,0,.8)',
+      backdropFilter: 'blur(8px)', display: 'flex', alignItems: 'center',
+      justifyContent: 'center', padding: 20,
+    }}>
+      <div style={{ ...G.card(), padding: 24, maxWidth: 400, width: '100%', boxShadow: '0 24px 64px rgba(0,0,0,.8)' }}>
+        <div style={{ color: C.t1, fontSize: 17, fontWeight: 700, marginBottom: 8 }}>{title}</div>
+        <div style={{ color: C.t2, fontSize: 14, lineHeight: 1.6, marginBottom: 22 }}>{body}</div>
+        <div style={{ display: 'flex', gap: 10 }}>
+          <button onClick={onCancel} style={{ ...G.btn('ghost'), flex: 1 }}>取消</button>
+          <button onClick={onOk}     style={{ ...G.btn(danger ? 'rd' : 'cy'), flex: 1 }}>確認</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ── NAV ────────────────────────────────────────────────────────
+const VIEWS = ['home', 'report', 'dashboard', 'vehicles', 'drivers', 'logs'];
+const VL = { home: '主頁', report: '里程回報', dashboard: '分析報表', vehicles: '車輛管理', drivers: '人員管理', logs: '申報日誌' };
+const VI = { home: Home, report: Navigation, dashboard: BarChart3, vehicles: Truck, drivers: Users, logs: FileText };
+
+function TopNav({ view, setView, isAdmin, adminMode, setAdminMode, onBack }) {
+  const [mOpen, setMOpen] = useState(false);
+  const navItems = isAdmin ? VIEWS : ['home', 'report'];
+
+  const NavBtn = ({ id }) => {
+    const Icon = VI[id];
+    const active = view === id;
+    return (
+      <button onClick={() => { setView(id); setMOpen(false); }} style={{
+        background: active ? C.cyD : 'transparent',
+        color: active ? C.cy : C.t2,
+        border: `1px solid ${active ? C.cy + '44' : 'transparent'}`,
+        borderRadius: 6, padding: '7px 14px', cursor: 'pointer',
+        fontFamily: 'inherit', fontWeight: 600, fontSize: 13,
+        display: 'flex', alignItems: 'center', gap: 6,
+        transition: 'all .15s', whiteSpace: 'nowrap',
+      }}>
+        <Icon size={14} />{VL[id]}
+      </button>
+    );
+  };
+
+  return (
+    <>
+      <nav style={{ background: C.bg1, borderBottom: `1px solid ${C.bd}`, position: 'sticky', top: 0, zIndex: 100 }}>
+        <div style={{ maxWidth: 1280, margin: '0 auto', padding: '0 16px', height: 52, display: 'flex', alignItems: 'center', gap: 12 }}>
+          {/* 返回首頁按鈕 */}
+          <button onClick={onBack} style={{ ...G.btn('ghost', true), padding: '6px 10px', flexShrink: 0 }} title="返回平台首頁">
+            <ArrowLeft size={14} />
+          </button>
+          <button onClick={() => setView('home')} style={{ display: 'flex', alignItems: 'center', gap: 10, background: 'none', border: 'none', cursor: 'pointer', padding: 0, flexShrink: 0 }}>
+            <div style={{ background: C.cyD, border: `1px solid ${C.cy}33`, borderRadius: 8, padding: 7, lineHeight: 0 }}>
+              <Truck size={18} color={C.cy} />
+            </div>
+            <span style={{ color: C.cy, fontFamily: "'Courier New', monospace", fontWeight: 700, fontSize: 15, letterSpacing: '.1em' }}>FLEETOPS</span>
+          </button>
+
+          <div style={{ display: 'flex', gap: 4, marginLeft: 8, flex: 1, overflowX: 'auto' }} className="fo-desktop-nav">
+            {navItems.map((id) => <NavBtn key={id} id={id} />)}
+          </div>
+
+          <div style={{ marginLeft: 'auto', display: 'flex', gap: 8, flexShrink: 0 }}>
+            {!adminMode
+              ? <button onClick={() => setAdminMode(true)} style={{ ...G.btn('ghost', true) }}><Lock size={12} /> 管理後台</button>
+              : <button onClick={() => setAdminMode(false)} style={{ ...G.btn('ghost', true) }}><LogOut size={12} /> 離開後台</button>
+            }
+            <button onClick={() => setMOpen((o) => !o)} className="fo-mobile-btn"
+              style={{ ...G.btn('ghost', true), padding: '8px', display: 'none' }}><Menu size={16} /></button>
+          </div>
+        </div>
+        {mOpen && (
+          <div style={{ background: C.bg2, borderTop: `1px solid ${C.bd}`, padding: 12, display: 'flex', flexDirection: 'column', gap: 4 }}>
+            {navItems.map((id) => <NavBtn key={id} id={id} />)}
+          </div>
+        )}
+      </nav>
+      <style>{`
+        @media(max-width:640px){
+          .fo-desktop-nav{display:none!important}
+          .fo-mobile-btn{display:flex!important}
+        }
+      `}</style>
+    </>
+  );
+}
+
+// ── HOME PAGE ─────────────────────────────────────────────────
+function HomePage({ drivers, vehicles, logs, setView, isAdmin, loading }) {
+  const thisMonth = curMonth();
+  const monthLogs = useMemo(() => logs.filter((l) => l.reportMonth === thisMonth), [logs, thisMonth]);
+  const totalKM   = useMemo(() => monthLogs.reduce((s, l) => s + (l.calculatedKM || 0), 0), [monthLogs]);
+  const activeV   = useMemo(() => new Set(monthLogs.map((l) => l.vehicleId)).size, [monthLogs]);
+
+  const STATS = [
+    { label: '本月總里程', val: `${fmt(totalKM)} KM`, icon: Activity,  color: C.cy },
+    { label: '活躍車輛',   val: `${activeV} / ${vehicles.length} 輛`, icon: Truck,    color: C.am },
+    { label: '人員總數',   val: `${drivers.length} 人`,                icon: Users,    color: C.gn },
+    { label: '本月申報',   val: `${monthLogs.length} 筆`,              icon: FileText, color: '#a78bfa' },
+  ];
+
+  const MODULES = [
+    { id: 'report',    icon: Navigation, color: C.cy,     title: '里程回報',  desc: '提交月底結算或跨車支援里程', live: true },
+    { id: 'dashboard', icon: BarChart3,  color: C.am,     title: '分析報表',  desc: '績效儀表板、趨勢與 AI 診斷', live: true,  admin: true },
+    { id: 'vehicles',  icon: Truck,      color: C.gn,     title: '車輛管理',  desc: '車牌建檔、里程基準、匯入匯出', live: true,  admin: true },
+    { id: 'drivers',   icon: Users,      color: '#a78bfa',title: '人員管理',  desc: '司機名單、部門分類、資料維護', live: true,  admin: true },
+    { id: 'logs',      icon: FileText,   color: C.t2,     title: '申報日誌',  desc: '完整稽核記錄與操作歷程匯出', live: true,  admin: true },
+    { id: null,        icon: MapPin,     color: C.t3,     title: '路線規劃',  desc: '智慧派車與最佳路徑（即將推出）', live: false },
+  ];
+
+  return (
+    <div style={{ maxWidth: 1280, margin: '0 auto', padding: '0 16px 64px' }}>
+      <div style={{ padding: '48px 0 40px', borderBottom: `1px solid ${C.bd}`, position: 'relative', overflow: 'hidden' }}>
+        <div style={{ position: 'absolute', inset: 0, backgroundImage: `linear-gradient(${C.cyG} 1px,transparent 1px),linear-gradient(90deg,${C.cyG} 1px,transparent 1px)`, backgroundSize: '40px 40px', pointerEvents: 'none' }} />
+        <div style={{ position: 'relative' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 12 }}>
+            <div style={{ width: 8, height: 8, borderRadius: '50%', background: loading ? C.am : C.gn, boxShadow: `0 0 10px ${loading ? C.am : C.gn}`, animation: 'fopulse 2s infinite' }} />
+            <span style={{ color: loading ? C.am : C.gn, fontSize: 11, fontWeight: 700, letterSpacing: '.15em', textTransform: 'uppercase' }}>
+              {loading ? '雲端同步中...' : '系統連線 ONLINE'}
+            </span>
+            <span style={{ color: C.t3, fontSize: 11, marginLeft: 8 }}>{thisMonth}</span>
+          </div>
+          <h1 style={{ color: C.t1, fontSize: 'clamp(28px,6vw,52px)', fontFamily: "'Courier New', monospace", fontWeight: 700, letterSpacing: '.05em', lineHeight: 1, marginBottom: 8 }}>
+            南區物流<span style={{ color: C.cy }}>車隊管理平台</span>
+          </h1>
+          <p style={{ color: C.t2, fontSize: 14, letterSpacing: '.05em' }}>DANCELIGHT LOGISTICS · 南區物流部 · v4.1.0</p>
+        </div>
+      </div>
+
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(180px,1fr))', gap: 12, padding: '24px 0' }}>
+        {STATS.map(({ label, val, icon: Icon, color }) => (
+          <div key={label} style={{ ...G.card(), padding: '18px 20px', borderLeft: `3px solid ${color}` }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+              <div>
+                <div style={{ color: C.t3, fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.1em', marginBottom: 6 }}>{label}</div>
+                <div style={{ color, fontFamily: "'Courier New', monospace", fontSize: 'clamp(16px,3vw,22px)', fontWeight: 700 }}>{val}</div>
+              </div>
+              <div style={{ background: color + '15', borderRadius: 8, padding: 8, lineHeight: 0 }}>
+                <Icon size={18} color={color} />
+              </div>
+            </div>
+          </div>
+        ))}
+      </div>
+
+      <div style={{ marginBottom: 32 }}>
+        <div style={{ color: C.t3, fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.12em', marginBottom: 14, display: 'flex', alignItems: 'center', gap: 8 }}>
+          <LayoutGrid size={12} /> 功能模組
+        </div>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(240px,1fr))', gap: 12 }}>
+          {MODULES.map(({ id, icon: Icon, color, title, desc, live, admin }) => {
+            const canUse = live && (isAdmin || !admin);
+            return (
+              <button key={title} onClick={() => canUse && id && setView(id)} style={{
+                background: C.bg2, border: `1px solid ${canUse ? C.bd : C.bg3}`,
+                borderRadius: 10, padding: '20px 18px', cursor: canUse ? 'pointer' : 'default',
+                textAlign: 'left', fontFamily: 'inherit', outline: 'none', transition: 'all .2s', opacity: canUse ? 1 : .45,
+              }}
+                onMouseEnter={(e) => { if (canUse) { e.currentTarget.style.borderColor = color + '66'; e.currentTarget.style.background = C.bg3; } }}
+                onMouseLeave={(e) => { if (canUse) { e.currentTarget.style.borderColor = C.bd; e.currentTarget.style.background = C.bg2; } }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 12 }}>
+                  <div style={{ background: color + '18', border: `1px solid ${color}33`, borderRadius: 8, padding: 9, lineHeight: 0 }}>
+                    <Icon size={20} color={color} />
+                  </div>
+                  <div style={{ display: 'flex', gap: 4 }}>
+                    {!live && <Tag c={C.t3} label="即將推出" />}
+                    {admin && live && !isAdmin && <Tag c={C.am} label="需授權" />}
+                    {live && (isAdmin || !admin) && <Tag c={C.gn} label="可用" />}
+                  </div>
+                </div>
+                <div style={{ color: canUse ? C.t1 : C.t3, fontWeight: 700, fontSize: 15, marginBottom: 4 }}>{title}</div>
+                <div style={{ color: C.t3, fontSize: 12, lineHeight: 1.5 }}>{desc}</div>
+              </button>
+            );
+          })}
+        </div>
+      </div>
+
+      {logs.length > 0 && (
+        <div>
+          <div style={{ color: C.t3, fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.12em', marginBottom: 14, display: 'flex', alignItems: 'center', gap: 8 }}>
+            <Activity size={12} /> 最近申報記錄
+          </div>
+          <div style={{ ...G.card(), overflowX: 'auto' }}>
+            <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 480 }}>
+              <thead><tr style={{ background: C.bg1 }}>
+                {['時間', '申報人', '車牌', '月份', '里程'].map((h) => (
+                  <TH key={h} c={h} />
+                ))}
+              </tr></thead>
+              <tbody>
+                {logs.slice(0, 6).map((l) => (
+                  <tr key={l.id} style={{ borderTop: `1px solid ${C.bg3}` }}>
+                    <td style={{ padding: '10px 14px', color: C.t3, fontSize: 12, whiteSpace: 'nowrap' }}>{fmtDt(l.timestamp).slice(5, 16)}</td>
+                    <td style={{ padding: '10px 14px', color: C.t1, fontWeight: 600, whiteSpace: 'nowrap' }}>{l.driverName}</td>
+                    <td style={{ padding: '10px 14px', color: C.cy, fontFamily: "'Courier New', monospace", fontWeight: 700, whiteSpace: 'nowrap' }}>{l.vehicleId}</td>
+                    <td style={{ padding: '10px 14px', color: C.t2, fontSize: 13 }}>{l.reportMonth}</td>
+                    <td style={{ padding: '10px 14px', color: C.am, fontFamily: "'Courier New', monospace", fontWeight: 700, whiteSpace: 'nowrap' }}>+{fmt(l.calculatedKM)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+      <style>{`@keyframes fopulse{0%,100%{opacity:1}50%{opacity:.4}}`}</style>
+    </div>
+  );
+}
+
+// ── REPORT PAGE ───────────────────────────────────────────────
+function ReportPage({ drivers, vehicles, onSubmit }) {
+  const [step, setStep]       = useState(1);
+  const [driver, setDriver]   = useState(null);
+  const [mode, setMode]       = useState('monthly');
+  const [month, setMonth]     = useState(curMonth());
+  const [vehicle, setVehicle] = useState(null);
+  const [endOdo, setEndOdo]   = useState('');
+  const [crossMode, setCrossMode] = useState('range');
+  const [sKM, setSKM] = useState(''); const [eKM, setEKM] = useState(''); const [dKM, setDKM] = useState('');
+  const [busy, setBusy]   = useState(false);
+  const [done, setDone]   = useState(false);
+  const [lastKM, setLastKM] = useState(0);
+  const [dept, setDept]   = useState('全部');
+
+  const depts   = useMemo(() => ['全部', ...Array.from(new Set(drivers.map((d) => d.department || '未分類')))], [drivers]);
+  const dlist   = useMemo(() => dept === '全部' ? drivers : drivers.filter((d) => d.department === dept), [drivers, dept]);
+  const calc    = useMemo(() => {
+    if (mode === 'monthly') { const b = clean(vehicle?.currentMileage ?? 0), e = clean(endOdo); return { start: b, end: e, km: e - b }; }
+    if (crossMode === 'range') { const s = clean(sKM), e = clean(eKM); return { start: s, end: e, km: e - s }; }
+    return { start: 0, end: 0, km: clean(dKM) };
+  }, [mode, vehicle, endOdo, crossMode, sKM, eKM, dKM]);
+
+  const canGo = () => {
+    if (!vehicle) return false;
+    if (mode === 'monthly')    return endOdo !== '' && calc.km >= 0;
+    if (crossMode === 'range') return sKM !== '' && eKM !== '' && calc.km >= 0;
+    return dKM !== '' && clean(dKM) > 0;
+  };
+  const reset = () => { setStep(1); setDriver(null); setVehicle(null); setEndOdo(''); setSKM(''); setEKM(''); setDKM(''); setMode('monthly'); setCrossMode('range'); setDone(false); };
+  const submit = async () => {
+    setBusy(true);
+    try {
+      await onSubmit(
+        { type: mode, driverName: driver.name, department: driver.department, vehicleId: vehicle.id, reportMonth: month, startMileage: calc.start, endMileage: calc.end, calculatedKM: calc.km, crossMode: mode === 'cross' ? crossMode : null, timestamp: new Date().toISOString() },
+        mode === 'monthly' ? { vehicleId: vehicle.id, newMileage: calc.end, driverName: driver.name } : null
+      );
+      setLastKM(calc.km); setDone(true);
+    } finally { setBusy(false); }
+  };
+
+  const W = { maxWidth: 540, margin: '0 auto', padding: '24px 16px' };
+  const Progress = () => (
+    <div style={{ display: 'flex', gap: 4, marginBottom: 24 }}>
+      {[1, 2, 3, 4].map((s) => <div key={s} style={{ flex: 1, height: 3, borderRadius: 2, background: step > s ? C.cy : step === s ? C.cy + '88' : C.bg4, transition: 'background .3s' }} />)}
+    </div>
+  );
+
+  if (done) return (
+    <div style={{ ...W, textAlign: 'center', paddingTop: 60 }}>
+      <div style={{ width: 70, height: 70, borderRadius: '50%', background: C.gnD, border: `2px solid ${C.gn}`, display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 16px' }}>
+        <Check size={32} color={C.gn} />
+      </div>
+      <div style={{ color: C.gn, fontWeight: 700, fontSize: 22, marginBottom: 5 }}>申報成功</div>
+      <div style={{ color: C.t2, fontSize: 14, marginBottom: 4 }}>{driver?.name} · {vehicle?.id} · {month}</div>
+      <div style={{ color: C.am, fontFamily: "'Courier New',monospace", fontSize: 42, fontWeight: 700, margin: '16px 0 32px' }}>
+        +{fmt(lastKM)} <span style={{ fontSize: 16, opacity: .5 }}>KM</span>
+      </div>
+      <button onClick={reset} style={{ ...G.btn('cy'), padding: '12px 32px', fontSize: 15 }}>繼續申報</button>
+    </div>
+  );
+
+  if (step === 1) return (
+    <div style={W}>
+      <Progress />
+      <div style={{ color: C.cy, fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.15em', marginBottom: 8 }}>STEP 01 / 04</div>
+      <h2 style={{ color: C.t1, fontSize: 22, fontWeight: 700, marginBottom: 4 }}>選擇您的名字</h2>
+      <p style={{ color: C.t2, fontSize: 13, marginBottom: 20 }}>點選對應的回報人員</p>
+      {depts.length > 2 && (
+        <div style={{ display: 'flex', gap: 6, marginBottom: 14, flexWrap: 'wrap' }}>
+          {depts.map((d) => <button key={d} onClick={() => setDept(d)} style={{ ...G.btn(dept === d ? 'cy' : 'ghost', true), borderRadius: 20 }}>{d}</button>)}
+        </div>
+      )}
+      {dlist.length === 0 && <div style={{ color: C.t3, padding: '32px 0', textAlign: 'center', fontSize: 14 }}>尚無人員，請由管理後台新增</div>}
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+        {dlist.map((d) => (
+          <button key={d.id} onClick={() => { setDriver(d); setStep(2); }} style={{
+            background: C.bg2, border: `1px solid ${C.bd}`, borderRadius: 8, padding: '14px',
+            cursor: 'pointer', textAlign: 'left', fontFamily: 'inherit', outline: 'none', transition: 'all .15s',
+          }}
+            onMouseEnter={(e) => { e.currentTarget.style.borderColor = C.cy + '66'; e.currentTarget.style.background = C.cyD; }}
+            onMouseLeave={(e) => { e.currentTarget.style.borderColor = C.bd; e.currentTarget.style.background = C.bg2; }}>
+            <div style={{ color: C.t1, fontWeight: 700, fontSize: 15 }}>{d.name}</div>
+            <div style={{ color: C.t3, fontSize: 11, marginTop: 3, textTransform: 'uppercase', letterSpacing: '.05em' }}>{d.department}</div>
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+
+  if (step === 2) return (
+    <div style={W}>
+      <Progress />
+      <button onClick={() => setStep(1)} style={{ ...G.btn('link'), marginBottom: 14, marginLeft: -6, fontSize: 13 }}><ChevronLeft size={13} /> 返回</button>
+      <div style={{ color: C.cy, fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.15em', marginBottom: 8 }}>STEP 02 / 04</div>
+      <h2 style={{ color: C.t1, fontSize: 22, fontWeight: 700, marginBottom: 4 }}>申報類型</h2>
+      <p style={{ color: C.t2, fontSize: 13, marginBottom: 18 }}>已選：<span style={{ color: C.cy }}>{driver?.name}</span></p>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 10, marginBottom: 20 }}>
+        {[{ id: 'monthly', title: '月底結算', desc: '輸入本月最終儀表總讀數，系統自動計算行駛差額' },
+          { id: 'cross',   title: '跨車支援', desc: '臨時借用其他車輛，記錄本次行駛里程' }].map((m) => (
+          <button key={m.id} onClick={() => setMode(m.id)} style={{
+            background: mode === m.id ? C.gnD : C.bg2, border: `2px solid ${mode === m.id ? C.gn : C.bd}`,
+            borderRadius: 8, padding: '14px 16px', cursor: 'pointer', textAlign: 'left', fontFamily: 'inherit', outline: 'none', transition: 'all .15s',
+          }}>
+            <div style={{ color: mode === m.id ? C.gn : C.t1, fontWeight: 700, fontSize: 15, marginBottom: 3 }}>{m.title}</div>
+            <div style={{ color: C.t2, fontSize: 13 }}>{m.desc}</div>
+          </button>
+        ))}
+      </div>
+      <Lbl c="申報月份" />
+      <input type="month" value={month} onChange={(e) => setMonth(e.target.value)} style={{ ...G.inp(), colorScheme: 'dark', marginBottom: 20 }} />
+      <button onClick={() => setStep(3)} style={{ ...G.btn('cy'), width: '100%', padding: '12px', fontSize: 15 }}>下一步 <ChevronRight size={16} /></button>
+    </div>
+  );
+
+  if (step === 3) return (
+    <div style={W}>
+      <Progress />
+      <button onClick={() => setStep(2)} style={{ ...G.btn('link'), marginBottom: 14, marginLeft: -6, fontSize: 13 }}><ChevronLeft size={13} /> 返回</button>
+      <div style={{ color: C.cy, fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.15em', marginBottom: 8 }}>STEP 03 / 04</div>
+      <h2 style={{ color: C.t1, fontSize: 22, fontWeight: 700, marginBottom: 4 }}>{mode === 'monthly' ? '月底結算' : '跨車支援'}</h2>
+      <p style={{ color: C.t2, fontSize: 13, marginBottom: 18 }}>{driver?.name} · <span style={{ color: C.cy }}>{month}</span></p>
+      <Lbl c="選擇車牌號碼" />
+      <select value={vehicle?.id || ''} onChange={(e) => setVehicle(vehicles.find((x) => x.id === e.target.value) || null)} style={{ ...G.inp(false, false, true), marginBottom: 18 }}>
+        <option value="">── 選取車牌 ──</option>
+        {vehicles.map((v) => <option key={v.id} value={v.id}>{v.id}  {v.currentMileage ? `(${fmt(v.currentMileage)} KM)` : ''}</option>)}
+      </select>
+
+      {mode === 'monthly' && vehicle && <>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: C.bg0, border: `1px solid ${C.bd}`, borderRadius: 6, padding: '12px 14px', marginBottom: 16 }}>
+          <span style={{ color: C.t2, fontSize: 13 }}>上次結算里程（系統基準）</span>
+          <span style={{ color: C.cy, fontFamily: "'Courier New',monospace", fontWeight: 700, fontSize: 18 }}>{fmt(vehicle.currentMileage)} KM</span>
+        </div>
+        <Lbl c="本月最終儀表讀數 (KM)" />
+        <input type="number" value={endOdo} onChange={(e) => setEndOdo(e.target.value)} placeholder="輸入目前儀表總里程" inputMode="numeric"
+          style={{ ...G.inp(endOdo !== '' && calc.km < 0, true, true, true), marginBottom: 12 }} />
+        {endOdo !== '' && (
+          <div style={{ background: calc.km >= 0 ? C.gnD : C.rdD, border: `1px solid ${calc.km >= 0 ? C.gn + '44' : C.rd + '44'}`, borderRadius: 6, padding: '12px 14px', marginBottom: 16, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <span style={{ color: C.t2, fontSize: 13 }}>{calc.km >= 0 ? '本月行駛里程' : '⚠ 讀數低於系統基準'}</span>
+            <span style={{ color: calc.km >= 0 ? C.gn : C.rd, fontFamily: "'Courier New',monospace", fontWeight: 700, fontSize: 20 }}>{calc.km >= 0 ? '+' : ''}{fmt(calc.km)} KM</span>
+          </div>
+        )}
+      </>}
+
+      {mode === 'cross' && <>
+        <div style={{ display: 'flex', gap: 3, background: C.bg0, padding: 3, borderRadius: 6, marginBottom: 14, border: `1px solid ${C.bd}` }}>
+          {[{ id: 'range', l: '輸入起訖讀數' }, { id: 'direct', l: '直接輸入里程' }].map((m) => (
+            <button key={m.id} onClick={() => setCrossMode(m.id)} style={{ flex: 1, padding: '9px', borderRadius: 4, border: 'none', cursor: 'pointer', background: crossMode === m.id ? C.bg3 : 'transparent', color: crossMode === m.id ? C.t1 : C.t2, fontWeight: 700, fontSize: 13, fontFamily: 'inherit' }}>{m.l}</button>
+          ))}
+        </div>
+        {crossMode === 'range'
+          ? <div style={{ display: 'flex', gap: 10, alignItems: 'flex-end', marginBottom: 14 }}>
+              <div style={{ flex: 1 }}><Lbl c="起始讀數" /><input type="number" value={sKM} onChange={(e) => setSKM(e.target.value)} style={G.inp()} placeholder="0" inputMode="numeric" /></div>
+              <div style={{ color: C.t3, paddingBottom: 11 }}><ArrowRight size={16} /></div>
+              <div style={{ flex: 1 }}><Lbl c="結束讀數" /><input type="number" value={eKM} onChange={(e) => setEKM(e.target.value)} style={G.inp(eKM !== '' && calc.km < 0)} placeholder="0" inputMode="numeric" /></div>
+            </div>
+          : <div style={{ marginBottom: 14 }}><Lbl c="本次行駛公里數" /><input type="number" value={dKM} onChange={(e) => setDKM(e.target.value)} placeholder="0" inputMode="numeric" style={G.inp(false, true, true, true)} /></div>
+        }
+        {calc.km > 0 && (
+          <div style={{ background: C.gnD, border: `1px solid ${C.gn}44`, borderRadius: 6, padding: '12px 14px', marginBottom: 10, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <span style={{ color: C.t2, fontSize: 13 }}>本次行駛里程</span>
+            <span style={{ color: C.gn, fontFamily: "'Courier New',monospace", fontWeight: 700, fontSize: 20 }}>+{fmt(calc.km)} KM</span>
+          </div>
+        )}
+      </>}
+
+      <div style={{ marginTop: 20 }}>
+        <button onClick={() => setStep(4)} disabled={!canGo()} style={{ ...G.btn('cy'), width: '100%', padding: '12px', fontSize: 15, opacity: canGo() ? 1 : .3 }}>確認申報 <ChevronRight size={16} /></button>
+      </div>
+    </div>
+  );
+
+  if (step === 4) return (
+    <div style={W}>
+      <Progress />
+      <button onClick={() => setStep(3)} style={{ ...G.btn('link'), marginBottom: 14, marginLeft: -6, fontSize: 13 }}><ChevronLeft size={13} /> 返回修改</button>
+      <div style={{ color: C.cy, fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.15em', marginBottom: 8 }}>STEP 04 / 04 · 確認提交</div>
+      <h2 style={{ color: C.t1, fontSize: 22, fontWeight: 700, marginBottom: 18 }}>請確認申報資訊</h2>
+      <div style={G.card()}>
+        {[['申報人員', driver?.name], ['所屬部門', driver?.department], ['申報月份', month], ['車牌號碼', vehicle?.id], ['申報類型', mode === 'monthly' ? '月底結算' : '跨車支援'],
+          ...(mode === 'monthly' || (mode === 'cross' && crossMode === 'range') ? [['起始里程', fmt(calc.start) + ' KM'], ['結束里程', fmt(calc.end) + ' KM']] : [])
+        ].map(([l, v], i) => (
+          <div key={i} style={{ display: 'flex', justifyContent: 'space-between', padding: '11px 16px', borderBottom: `1px solid ${C.bg3}` }}>
+            <span style={{ color: C.t2, fontSize: 13 }}>{l}</span>
+            <span style={{ color: C.t1, fontWeight: 600, fontSize: 14 }}>{v}</span>
+          </div>
+        ))}
+        <div style={{ display: 'flex', justifyContent: 'space-between', padding: '16px', background: C.gnD, alignItems: 'center' }}>
+          <span style={{ color: C.gn, fontWeight: 700 }}>本次行駛里程</span>
+          <span style={{ color: C.gn, fontFamily: "'Courier New',monospace", fontWeight: 700, fontSize: 28 }}>+{fmt(calc.km)} KM</span>
+        </div>
+      </div>
+      <button onClick={submit} disabled={busy} style={{ ...G.btn('gn'), width: '100%', padding: '14px', fontSize: 15, marginTop: 18, opacity: busy ? .6 : 1 }}>
+        {busy ? <><Loader size={15} /> 送出中...</> : <><Check size={16} /> 確認並寫入系統</>}
+      </button>
+    </div>
+  );
+  return null;
+}
+
+// ── DASHBOARD PAGE ────────────────────────────────────────────
+function DashboardPage({ drivers, vehicles, logs }) {
+  const [period, setPeriod]     = useState('month');
+  const [selMonth, setSelMonth] = useState(curMonth());
+  const [aiText, setAiText]     = useState('');
+  const [aiLoading, setAiLoading] = useState(false);
+
+  const filtered = useMemo(() => {
+    const now = new Date();
+    return logs.filter((l) => {
+      if (!l.reportMonth) return false;
+      if (period === 'month')   return l.reportMonth === selMonth;
+      if (period === 'quarter') { const q = Math.floor(new Date(l.reportMonth + '-01').getMonth() / 3); return q === Math.floor(now.getMonth() / 3) && l.reportMonth.startsWith(String(now.getFullYear())); }
+      if (period === 'year')    return l.reportMonth.startsWith(String(now.getFullYear()));
+      return true;
+    });
+  }, [logs, period, selMonth]);
+
+  const vehicleSummary = useMemo(() => vehicles.map((v) => {
+    const vl = filtered.filter((l) => l.vehicleId === v.id);
+    const hasM = vl.some((l) => l.type === 'monthly');
+    const km = hasM ? vl.filter((l) => l.type === 'monthly').reduce((s, l) => s + (l.calculatedKM || 0), 0) : vl.reduce((s, l) => s + (l.calculatedKM || 0), 0);
+    return { id: v.id, km, count: vl.length, drvs: Array.from(new Set(vl.map((l) => l.driverName))).join('、') || '—' };
+  }).sort((a, b) => b.km - a.km), [vehicles, filtered]);
+
+  const totalKM = vehicleSummary.reduce((s, v) => s + v.km, 0);
+
+  const driverSummary = useMemo(() => {
+    const map = {};
+    drivers.forEach((d) => { map[d.name] = 0; });
+    filtered.forEach((l) => { map[l.driverName] = (map[l.driverName] || 0) + (l.calculatedKM || 0); });
+    return Object.entries(map).map(([name, km]) => ({ name, km })).sort((a, b) => b.km - a.km);
+  }, [drivers, filtered]);
+
+  const periodLabel = { month: selMonth, quarter: `${new Date().getFullYear()} Q${Math.floor(new Date().getMonth() / 3) + 1}`, year: `${new Date().getFullYear()} 年度`, all: '全部期間' }[period];
+
+  const exportCSV = () => {
+    const rows = vehicleSummary.map((v) => `${v.id},${v.km},"${v.drvs}",${v.count}`);
+    const blob = new Blob(['\uFEFF車號,里程(KM),行駛人員,筆數\n' + rows.join('\n')], { type: 'text/csv;charset=utf-8;' });
+    const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = `里程報表_${periodLabel}.csv`; a.click();
+  };
+
+  const callAI = async () => {
+    setAiLoading(true); setAiText('');
+    const vDetails = vehicleSummary.map((v) => `  · ${v.id}：${fmt(v.km)} KM（${v.count}筆｜駕駛：${v.drvs}）`).join('\n');
+    const dDetails = driverSummary.map((d) => `  · ${d.name}：${fmt(d.km)} KM`).join('\n');
+    const prompt = `你是一位資深物流車隊管理顧問，負責分析車隊運營數據並提供專業建議。\n\n【統計週期】${periodLabel}\n【整體概況】\n  · 總里程：${fmt(totalKM)} KM\n  · 活躍車輛：${vehicleSummary.filter((v) => v.km > 0).length} 輛（總計 ${vehicles.length} 輛）\n  · 申報筆數：${filtered.length} 筆\n  · 參與人數：${new Set(filtered.map((l) => l.driverName)).size} 人\n\n【車輛里程明細】\n${vDetails}\n\n【司機里程明細】\n${dDetails}\n\n【零里程項目】\n  · 未申報車輛：${vehicleSummary.filter((v) => v.km === 0).map((v) => v.id).join('、') || '無'}\n  · 零里程司機：${driverSummary.filter((d) => d.km === 0).map((d) => d.name).join('、') || '無'}\n\n請提供以下五項分析（繁體中文，每項以標題開頭，條列格式，語氣專業精準）：\n\n1. 📊 整體績效評估\n2. 🏆 關鍵表現指標\n3. ⚠️ 異常與風險提示\n4. 💡 效率改善建議\n5. 📈 下期管理重點`;
+    try {
+      const res = await fetch('/api/analyze', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ prompt }) });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Server error');
+      setAiText(data.text || 'AI 回應異常，請稍後再試。');
+    } catch (e) {
+      setAiText('❌ AI 連線失敗：' + e.message + '\n\n請確認 Vercel 後台已正確設定 ANTHROPIC_API_KEY 環境變數。');
+    } finally { setAiLoading(false); }
+  };
+
+  return (
+    <div style={{ maxWidth: 1280, margin: '0 auto', padding: '0 16px 64px' }}>
+      <div style={{ padding: '20px 0 16px', display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
+        {[['month', '月份'], ['quarter', '本季'], ['year', '年度'], ['all', '全部']].map(([id, l]) => (
+          <button key={id} onClick={() => setPeriod(id)} style={{ ...G.btn(period === id ? 'cy' : 'ghost', true), borderRadius: 20 }}>{l}</button>
+        ))}
+        {period === 'month' && <input type="month" value={selMonth} onChange={(e) => setSelMonth(e.target.value)} style={{ ...G.inp(), width: 'auto', colorScheme: 'dark', padding: '7px 12px', fontSize: 14 }} />}
+        <span style={{ flex: 1 }} />
+        <button onClick={exportCSV} style={{ ...G.btn('dark', true) }}><Download size={13} /> 匯出 CSV</button>
+      </div>
+
+      <div style={{ ...G.card(true), padding: '28px 24px', marginBottom: 16, textAlign: 'center', background: `linear-gradient(135deg,${C.bg2},${C.bg1})` }}>
+        <div style={{ color: C.t3, fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.15em', marginBottom: 8 }}>本期總里程 · {periodLabel}</div>
+        <div style={{ color: C.am, fontFamily: "'Courier New',monospace", fontSize: 'clamp(40px,8vw,72px)', fontWeight: 700, lineHeight: 1 }}>
+          {fmt(totalKM)} <span style={{ fontSize: 'clamp(16px,3vw,24px)', opacity: .4 }}>KM</span>
+        </div>
+        <div style={{ color: C.t3, fontSize: 13, marginTop: 8 }}>{filtered.length} 筆申報 · {vehicleSummary.filter((v) => v.km > 0).length} 輛作業 · {new Set(filtered.map((l) => l.driverName)).size} 位司機</div>
+      </div>
+
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(400px,1fr))', gap: 16, marginBottom: 20 }}>
+        <div style={G.card()}>
+          <div style={{ padding: '11px 16px', borderBottom: `1px solid ${C.bg3}`, display: 'flex', alignItems: 'center', gap: 8 }}>
+            <Truck size={14} color={C.am} /><span style={{ color: C.t1, fontWeight: 700, fontSize: 14 }}>車輛里程彙整</span>
+          </div>
+          <div style={{ overflowX: 'auto' }}>
+            <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+              <thead><tr><TH c="車牌" /><TH c="里程 KM" /><TH c="司機" /><TH c="筆數" /></tr></thead>
+              <tbody>
+                {vehicleSummary.map((v) => (
+                  <tr key={v.id} style={{ borderTop: `1px solid ${C.bg3}` }} onMouseEnter={(e) => e.currentTarget.style.background = C.bg3} onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}>
+                    <td style={{ padding: '10px 14px', color: C.cy, fontFamily: "'Courier New',monospace", fontWeight: 700 }}>{v.id}</td>
+                    <td style={{ padding: '10px 14px', color: C.am, fontFamily: "'Courier New',monospace", fontWeight: 700 }}>{fmt(v.km)}</td>
+                    <td style={{ padding: '10px 14px', color: C.t2, fontSize: 12, maxWidth: 160, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{v.drvs}</td>
+                    <td style={{ padding: '10px 14px', color: C.t3, fontSize: 13 }}>{v.count}</td>
+                  </tr>
+                ))}
+                {vehicleSummary.length === 0 && <tr><td colSpan={4} style={{ padding: 28, textAlign: 'center', color: C.t3 }}>本期無資料</td></tr>}
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <div style={G.card()}>
+          <div style={{ padding: '11px 16px', borderBottom: `1px solid ${C.bg3}`, display: 'flex', alignItems: 'center', gap: 8 }}>
+            <Users size={14} color={C.cy} /><span style={{ color: C.t1, fontWeight: 700, fontSize: 14 }}>司機里程彙整</span>
+          </div>
+          <div style={{ overflowX: 'auto' }}>
+            <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+              <thead><tr><TH c="姓名" /><TH c="里程 KM" /><TH c="佔比" /></tr></thead>
+              <tbody>
+                {driverSummary.map((d) => {
+                  const pct = totalKM > 0 ? ((d.km / totalKM) * 100).toFixed(1) : '0.0';
+                  return (
+                    <tr key={d.name} style={{ borderTop: `1px solid ${C.bg3}` }} onMouseEnter={(e) => e.currentTarget.style.background = C.bg3} onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}>
+                      <td style={{ padding: '10px 14px', color: C.t1, fontWeight: 600 }}>{d.name}</td>
+                      <td style={{ padding: '10px 14px', color: d.km > 0 ? C.gn : C.t3, fontFamily: "'Courier New',monospace", fontWeight: 700 }}>{fmt(d.km)}</td>
+                      <td style={{ padding: '10px 14px', minWidth: 140 }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                          <div style={{ flex: 1, height: 4, background: C.bg4, borderRadius: 2, overflow: 'hidden' }}>
+                            <div style={{ width: `${pct}%`, height: '100%', background: C.gn, borderRadius: 2 }} />
+                          </div>
+                          <span style={{ color: C.t2, fontSize: 12, minWidth: 36 }}>{pct}%</span>
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
+      <div style={G.card(true)}>
+        <div style={{ padding: '14px 18px', borderBottom: `1px solid ${C.bg3}`, display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 10 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+            <div style={{ background: C.cyD, border: `1px solid ${C.cy}33`, borderRadius: 8, padding: 8, lineHeight: 0 }}><Cpu size={16} color={C.cy} /></div>
+            <div>
+              <div style={{ color: C.t1, fontWeight: 700, fontSize: 15 }}>AI 物流效能診斷</div>
+              <div style={{ color: C.t3, fontSize: 12 }}>由 Claude AI 分析本期車隊數據，提供五大面向專業洞察</div>
+            </div>
+          </div>
+          <button onClick={callAI} disabled={aiLoading || totalKM === 0} style={{ ...G.btn('cy'), opacity: aiLoading || totalKM === 0 ? .5 : 1 }}>
+            {aiLoading ? <><Loader size={14} /> 分析中...</> : <><Sparkles size={14} /> 執行 AI 分析</>}
+          </button>
+        </div>
+        {!aiText && !aiLoading && <div style={{ padding: 40, textAlign: 'center', color: C.t3, fontSize: 14 }}>{totalKM === 0 ? '本期尚無里程數據。' : '點擊「執行 AI 分析」取得本期診斷報告。'}</div>}
+        {aiLoading && <div style={{ padding: 40, textAlign: 'center', color: C.cy, fontSize: 14, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 10 }}><Loader size={16} /> 正在分析數據，請稍候...</div>}
+        {aiText && <div style={{ padding: '20px 24px' }}><pre style={{ color: C.t2, fontSize: 14, lineHeight: 1.8, whiteSpace: 'pre-wrap', fontFamily: 'inherit', margin: 0 }}>{aiText}</pre></div>}
+      </div>
+    </div>
+  );
+}
+
+// ── VEHICLES PAGE ─────────────────────────────────────────────
+function VehiclesPage({ vehicles, onMsg }) {
+  const [plate, setPlate]   = useState('');
+  const [km, setKm]         = useState('');
+  const [bulk, setBulk]     = useState('');
+  const [showBulk, setShowBulk] = useState(false);
+  const [confirm, setConfirm]   = useState(null);
+  const [saving, setSaving]     = useState(false);
+  const fileRef = useRef();
+
+  const add = async () => {
+    if (!plate.trim()) return;
+    const id = plate.trim().toUpperCase();
+    if (vehicles.find((v) => v.id === id)) { onMsg({ type: 'error', text: '車牌已存在' }); return; }
+    setSaving(true);
+    try {
+      await fsSet(COL.v, id, { currentMileage: clean(km), lastUpdated: new Date().toISOString() });
+      setPlate(''); setKm(''); onMsg({ type: 'success', text: '已新增車輛' });
+    } finally { setSaving(false); }
+  };
+
+  const addBulk = async () => {
+    const lines = bulk.split('\n').map((l) => l.trim()).filter(Boolean);
+    const existing = new Set(vehicles.map((v) => v.id));
+    const toAdd = lines.map((line) => { const [p, k] = line.split(/\s+/); if (!p) return null; const id = p.toUpperCase(); if (existing.has(id)) return null; return { id, currentMileage: parseFloat(k) || 0 }; }).filter(Boolean);
+    if (!toAdd.length) { onMsg({ type: 'error', text: '無新車牌可新增' }); return; }
+    setSaving(true);
+    try {
+      await Promise.all(toAdd.map((v) => fsSet(COL.v, v.id, { currentMileage: v.currentMileage, lastUpdated: new Date().toISOString() })));
+      setBulk(''); setShowBulk(false); onMsg({ type: 'success', text: `已批次新增 ${toAdd.length} 輛` });
+    } finally { setSaving(false); }
+  };
+
+  const del = async (id) => {
+    await fsDel(COL.v, id); onMsg({ type: 'success', text: '已移除' });
+  };
+
+  const exportCSV = () => {
+    const rows = vehicles.map((v) => `${v.id},${v.currentMileage || 0}`);
+    const blob = new Blob(['\uFEFF車牌號碼,目前里程\n' + rows.join('\n')], { type: 'text/csv;charset=utf-8;' });
+    const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = 'vehicles.csv'; a.click();
+  };
+
+  const importFile = (e) => {
+    const file = e.target.files[0]; if (!file) return;
+    const isXLSX = /\.(xlsx|xls)$/i.test(file.name);
+    const r = new FileReader();
+    r.onload = async (ev) => {
+      let rows = [];
+      if (isXLSX) {
+        if (!window.XLSX) { onMsg({ type: 'error', text: 'XLSX 載入中，請稍後再試' }); return; }
+        const wb = window.XLSX.read(ev.target.result, { type: 'array' });
+        const ws = wb.Sheets[wb.SheetNames[0]];
+        rows = window.XLSX.utils.sheet_to_json(ws, { header: 1 }).slice(1);
+      } else {
+        rows = parseCSVText(ev.target.result);
+      }
+      const existing = new Set(vehicles.map((v) => v.id));
+      const toAdd = rows
+        .filter(([p]) => p && String(p).trim())
+        .map(([p, k]) => ({ id: String(p).trim().toUpperCase(), currentMileage: parseFloat(k) || 0 }))
+        .filter(({ id }) => !existing.has(id));
+      if (!toAdd.length) { onMsg({ type: 'error', text: '無新資料可匯入（已存在或格式錯誤）' }); return; }
+      await Promise.all(toAdd.map((v) => fsSet(COL.v, v.id, { currentMileage: v.currentMileage, lastUpdated: new Date().toISOString() })));
+      onMsg({ type: 'success', text: `已匯入 ${toAdd.length} 輛` });
+    };
+    if (isXLSX) r.readAsArrayBuffer(file); else r.readAsText(file);
+    e.target.value = '';
+  };
+
+  return (
+    <div style={{ maxWidth: 1280, margin: '0 auto', padding: '0 16px 64px' }}>
+      <div style={{ padding: '20px 0 16px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 10 }}>
+        <h2 style={{ color: C.t1, fontSize: 20, fontWeight: 700, display: 'flex', alignItems: 'center', gap: 8 }}><Truck size={20} color={C.am} /> 車輛管理 <Tag c={C.t3} label={`${vehicles.length} 輛`} /></h2>
+        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+          <button onClick={exportCSV} style={{ ...G.btn('dark', true) }}><Download size={12} /> 匯出</button>
+          <button onClick={() => fileRef.current?.click()} style={{ ...G.btn('dark', true) }}><Upload size={12} /> 匯入 Excel/CSV</button>
+          <button onClick={() => setShowBulk((o) => !o)} style={{ ...G.btn('dark', true) }}><LayoutGrid size={12} /> 批次新增</button>
+          <input ref={fileRef} type="file" accept=".csv,.xlsx,.xls" style={{ display: 'none' }} onChange={importFile} />
+        </div>
+      </div>
+      <div style={{ ...G.card(), padding: 16, marginBottom: 16 }}>
+        <Lbl c="新增單一車輛" />
+        <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+          <input value={plate} onChange={(e) => setPlate(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && add()} placeholder="車牌號碼（例：BUB-0572）" style={{ ...G.inp(false, false, true), flex: '1 1 180px' }} />
+          <input value={km} onChange={(e) => setKm(e.target.value)} placeholder="起始里程（選填）" style={{ ...G.inp(false, false, true), flex: '1 1 140px' }} inputMode="numeric" />
+          <button onClick={add} disabled={saving} style={{ ...G.btn('am'), flexShrink: 0 }}><Plus size={14} /> 新增</button>
+        </div>
+      </div>
+      {showBulk && (
+        <div style={{ ...G.card(), padding: 16, marginBottom: 16 }}>
+          <Lbl c="批次新增（一行一輛，可附起始里程）" />
+          <textarea value={bulk} onChange={(e) => setBulk(e.target.value)} rows={5} placeholder={'BUB-0572 266082\nAAA-1234 50000'} style={{ ...G.inp(), resize: 'vertical', marginBottom: 10 }} />
+          <div style={{ display: 'flex', gap: 8 }}><button onClick={addBulk} disabled={saving} style={G.btn('am')}><Check size={14} /> 確認批次新增</button><button onClick={() => setShowBulk(false)} style={G.btn('ghost', true)}><X size={13} /></button></div>
+        </div>
+      )}
+      <div style={G.card()}>
+        <div style={{ overflowX: 'auto' }}>
+          <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 400 }}>
+            <thead><tr><TH c="車牌號碼" /><TH c="目前里程" /><TH c="最後更新" /><TH c="最後駕駛" /><TH c="" /></tr></thead>
+            <tbody>
+              {vehicles.map((v) => (
+                <tr key={v.id} style={{ borderTop: `1px solid ${C.bg3}` }} onMouseEnter={(e) => e.currentTarget.style.background = C.bg3} onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}>
+                  <td style={{ padding: '11px 14px', color: C.cy, fontFamily: "'Courier New',monospace", fontWeight: 700, fontSize: 15 }}>{v.id}</td>
+                  <td style={{ padding: '11px 14px', color: C.am, fontFamily: "'Courier New',monospace", fontWeight: 700 }}>{fmt(v.currentMileage)} KM</td>
+                  <td style={{ padding: '11px 14px', color: C.t3, fontSize: 12 }}>{fmtDt(v.lastUpdated).slice(0, 16)}</td>
+                  <td style={{ padding: '11px 14px', color: C.t2, fontSize: 13 }}>{v.lastDriver || '—'}</td>
+                  <td style={{ padding: '11px 14px', textAlign: 'right' }}>
+                    <button onClick={() => setConfirm({ fn: () => del(v.id), l: v.id })} style={{ background: C.rdD, border: `1px solid ${C.rd}44`, borderRadius: 6, cursor: 'pointer', color: C.rd, padding: '5px 10px', display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 12, fontWeight: 700, fontFamily: 'inherit' }}><Trash2 size={13} /> 刪除</button>
+                  </td>
+                </tr>
+              ))}
+              {vehicles.length === 0 && <tr><td colSpan={5} style={{ padding: 40, textAlign: 'center', color: C.t3 }}>尚無車輛，請新增或匯入</td></tr>}
+            </tbody>
+          </table>
+        </div>
+      </div>
+      {confirm && <Confirm title={`確認移除 ${confirm.l}？`} body="歷史申報紀錄不受影響，車牌將從選單移除。" danger onOk={() => { confirm.fn(); setConfirm(null); }} onCancel={() => setConfirm(null)} />}
+    </div>
+  );
+}
+
+// ── DRIVERS PAGE ──────────────────────────────────────────────
+function DriversPage({ drivers, onMsg }) {
+  const [name, setName]     = useState('');
+  const [dept, setDept]     = useState('物流部');
+  const [bulk, setBulk]     = useState('');
+  const [showBulk, setShowBulk] = useState(false);
+  const [confirm, setConfirm]   = useState(null);
+  const [filter, setFilter]     = useState('全部');
+  const [saving, setSaving]     = useState(false);
+  const fileRef = useRef();
+  const DEPTS = ['物流部', '業務部', '其他'];
+  const depts = useMemo(() => ['全部', ...Array.from(new Set(drivers.map((d) => d.department || '未分類')))], [drivers]);
+  const list  = useMemo(() => filter === '全部' ? drivers : drivers.filter((d) => d.department === filter), [drivers, filter]);
+
+  const add = async () => {
+    if (!name.trim()) return;
+    if (drivers.find((d) => d.name === name.trim())) { onMsg({ type: 'error', text: '人員已存在' }); return; }
+    setSaving(true);
+    try {
+      await fsAdd(COL.d, { name: name.trim(), department: dept });
+      setName(''); onMsg({ type: 'success', text: '已新增人員' });
+    } finally { setSaving(false); }
+  };
+
+  const addBulk = async () => {
+    const lines = bulk.split('\n').map((l) => l.trim()).filter(Boolean);
+    const existing = new Set(drivers.map((d) => d.name));
+    const toAdd = lines.filter((n) => !existing.has(n));
+    if (!toAdd.length) { onMsg({ type: 'error', text: '無新人員可新增' }); return; }
+    setSaving(true);
+    try {
+      await Promise.all(toAdd.map((n) => fsAdd(COL.d, { name: n, department: dept })));
+      setBulk(''); setShowBulk(false); onMsg({ type: 'success', text: `已批次新增 ${toAdd.length} 人` });
+    } finally { setSaving(false); }
+  };
+
+  const del = async (id) => { await fsDel(COL.d, id); onMsg({ type: 'success', text: '已移除' }); };
+
+  const exportCSV = () => {
+    const rows = drivers.map((d) => `"${d.name}","${d.department}"`);
+    const blob = new Blob(['\uFEFF姓名,部門\n' + rows.join('\n')], { type: 'text/csv;charset=utf-8;' });
+    const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = 'drivers.csv'; a.click();
+  };
+
+  const importCSV = (e) => {
+    const file = e.target.files[0]; if (!file) return;
+    const r = new FileReader();
+    r.onload = async (ev) => {
+      const rows = parseCSVText(ev.target.result);
+      const existing = new Set(drivers.map((d) => d.name));
+      const toAdd = rows.filter(([n]) => n && !existing.has(n)).map(([n, d]) => ({ name: n, department: d || '物流部' }));
+      if (!toAdd.length) { onMsg({ type: 'error', text: '無新資料可匯入' }); return; }
+      await Promise.all(toAdd.map((d) => fsAdd(COL.d, d)));
+      onMsg({ type: 'success', text: `已匯入 ${toAdd.length} 人` });
+    };
+    r.readAsText(file); e.target.value = '';
+  };
+
+  return (
+    <div style={{ maxWidth: 1280, margin: '0 auto', padding: '0 16px 64px' }}>
+      <div style={{ padding: '20px 0 16px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 10 }}>
+        <h2 style={{ color: C.t1, fontSize: 20, fontWeight: 700, display: 'flex', alignItems: 'center', gap: 8 }}><Users size={20} color={C.cy} /> 人員管理 <Tag c={C.t3} label={`${drivers.length} 人`} /></h2>
+        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+          <button onClick={exportCSV} style={{ ...G.btn('dark', true) }}><Download size={12} /> 匯出</button>
+          <button onClick={() => fileRef.current?.click()} style={{ ...G.btn('dark', true) }}><Upload size={12} /> 匯入 CSV</button>
+          <button onClick={() => setShowBulk((o) => !o)} style={{ ...G.btn('dark', true) }}><LayoutGrid size={12} /> 批次新增</button>
+          <input ref={fileRef} type="file" accept=".csv" style={{ display: 'none' }} onChange={importCSV} />
+        </div>
+      </div>
+      <div style={{ ...G.card(), padding: 16, marginBottom: 16 }}>
+        <Lbl c="新增人員" />
+        <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'flex-end' }}>
+          <input value={name} onChange={(e) => setName(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && add()} placeholder="輸入姓名後按 Enter" style={{ ...G.inp(), flex: '1 1 160px' }} />
+          <div style={{ display: 'flex', gap: 4 }}>
+            {DEPTS.map((d) => <button key={d} onClick={() => setDept(d)} style={{ ...G.btn(dept === d ? 'cy' : 'ghost', true), borderRadius: 20 }}>{d}</button>)}
+          </div>
+          <button onClick={add} disabled={saving} style={{ ...G.btn('cy'), flexShrink: 0 }}><Plus size={14} /> 新增</button>
+        </div>
+      </div>
+      {showBulk && (
+        <div style={{ ...G.card(), padding: 16, marginBottom: 16 }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+            <Lbl c={`批次新增（部門：${dept}）`} />
+            <div style={{ display: 'flex', gap: 4 }}>
+              {DEPTS.map((d) => <button key={d} onClick={() => setDept(d)} style={{ ...G.btn(dept === d ? 'cy' : 'ghost', true), borderRadius: 20 }}>{d}</button>)}
+            </div>
+          </div>
+          <textarea value={bulk} onChange={(e) => setBulk(e.target.value)} rows={5} placeholder={'王小明\n李大華\n陳小春'} style={{ ...G.inp(), resize: 'vertical', marginBottom: 10 }} />
+          <div style={{ display: 'flex', gap: 8 }}><button onClick={addBulk} disabled={saving} style={G.btn('cy')}><Check size={14} /> 確認批次新增</button><button onClick={() => setShowBulk(false)} style={G.btn('ghost', true)}><X size={13} /></button></div>
+        </div>
+      )}
+      {depts.length > 2 && <div style={{ display: 'flex', gap: 6, marginBottom: 12, flexWrap: 'wrap' }}>
+        {depts.map((d) => <button key={d} onClick={() => setFilter(d)} style={{ ...G.btn(filter === d ? 'cy' : 'ghost', true), borderRadius: 20 }}>{d}</button>)}
+      </div>}
+      <div style={G.card()}>
+        <div style={{ overflowX: 'auto' }}>
+          <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 320 }}>
+            <thead><tr><TH c="姓名" /><TH c="部門" /><TH c="" /></tr></thead>
+            <tbody>
+              {list.map((d) => (
+                <tr key={d.id} style={{ borderTop: `1px solid ${C.bg3}` }} onMouseEnter={(e) => e.currentTarget.style.background = C.bg3} onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}>
+                  <td style={{ padding: '11px 14px', color: C.t1, fontWeight: 600, fontSize: 15 }}>{d.name}</td>
+                  <td style={{ padding: '11px 14px' }}><Tag c={C.cy} label={d.department} /></td>
+                  <td style={{ padding: '11px 14px', textAlign: 'right' }}>
+                    <button onClick={() => setConfirm({ fn: () => del(d.id), l: d.name })} style={{ background: 'none', border: 'none', cursor: 'pointer', color: C.t3, padding: 4 }} onMouseEnter={(e) => e.currentTarget.style.color = C.rd} onMouseLeave={(e) => e.currentTarget.style.color = C.t3}><Trash2 size={14} /></button>
+                  </td>
+                </tr>
+              ))}
+              {list.length === 0 && <tr><td colSpan={3} style={{ padding: 40, textAlign: 'center', color: C.t3 }}>尚無人員，請新增或匯入</td></tr>}
+            </tbody>
+          </table>
+        </div>
+      </div>
+      {confirm && <Confirm title={`確認移除 ${confirm.l}？`} body="歷史申報紀錄不受影響，人員將從選單移除。" danger onOk={() => { confirm.fn(); setConfirm(null); }} onCancel={() => setConfirm(null)} />}
+    </div>
+  );
+}
+
+// ── LOGS PAGE ─────────────────────────────────────────────────
+function LogsPage({ logs, onMsg }) {
+  const [confirm, setConfirm] = useState(null);
+  const del = async (id) => { await fsDel(COL.l, id); onMsg({ type: 'success', text: '已刪除' }); };
+  const exportAll = () => {
+    const rows = logs.map((l) => `"${fmtDt(l.timestamp)}","${l.driverName}","${l.vehicleId}","${l.reportMonth}","${l.type === 'monthly' ? '月結' : '跨車'}",${l.calculatedKM || 0}`);
+    const blob = new Blob(['\uFEFF時間,申報人,車牌,月份,類型,里程(KM)\n' + rows.join('\n')], { type: 'text/csv;charset=utf-8;' });
+    const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = '申報日誌_全部.csv'; a.click();
+  };
+
+  return (
+    <div style={{ maxWidth: 1280, margin: '0 auto', padding: '0 16px 64px' }}>
+      <div style={{ padding: '20px 0 16px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 10 }}>
+        <h2 style={{ color: C.t1, fontSize: 20, fontWeight: 700, display: 'flex', alignItems: 'center', gap: 8 }}><FileText size={20} color={C.t2} /> 申報日誌 <Tag c={C.t3} label={`${logs.length} 筆`} /></h2>
+        <button onClick={exportAll} style={{ ...G.btn('dark', true) }}><Download size={12} /> 匯出全部</button>
+      </div>
+      <div style={G.card()}>
+        <div style={{ overflowX: 'auto' }}>
+          <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 560 }}>
+            <thead><tr><TH c="時間" /><TH c="申報人" /><TH c="車牌" /><TH c="月份" /><TH c="類型" /><TH c="里程" /><TH c="" /></tr></thead>
+            <tbody>
+              {logs.map((l) => (
+                <tr key={l.id} style={{ borderTop: `1px solid ${C.bg3}` }} onMouseEnter={(e) => e.currentTarget.style.background = C.bg3} onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}>
+                  <td style={{ padding: '9px 14px', color: C.t3, fontSize: 12, whiteSpace: 'nowrap' }}>{fmtDt(l.timestamp).slice(5, 16)}</td>
+                  <td style={{ padding: '9px 14px', color: C.t1, fontWeight: 600, whiteSpace: 'nowrap' }}>{l.driverName}</td>
+                  <td style={{ padding: '9px 14px', color: C.cy, fontFamily: "'Courier New',monospace", fontWeight: 700, whiteSpace: 'nowrap' }}>{l.vehicleId}</td>
+                  <td style={{ padding: '9px 14px', color: C.t2, fontSize: 13 }}>{l.reportMonth}</td>
+                  <td style={{ padding: '9px 14px' }}><Tag c={l.type === 'monthly' ? C.gn : C.cy} label={l.type === 'monthly' ? '月結' : '跨車'} /></td>
+                  <td style={{ padding: '9px 14px', color: C.am, fontFamily: "'Courier New',monospace", fontWeight: 700, whiteSpace: 'nowrap' }}>+{fmt(l.calculatedKM)}</td>
+                  <td style={{ padding: '9px 14px', textAlign: 'right' }}>
+                    <button onClick={() => setConfirm({ fn: () => del(l.id), l: '此筆紀錄' })} style={{ background: 'none', border: 'none', cursor: 'pointer', color: C.t3, padding: 4 }} onMouseEnter={(e) => e.currentTarget.style.color = C.rd} onMouseLeave={(e) => e.currentTarget.style.color = C.t3}><Trash2 size={13} /></button>
+                  </td>
+                </tr>
+              ))}
+              {logs.length === 0 && <tr><td colSpan={7} style={{ padding: 40, textAlign: 'center', color: C.t3 }}>尚無申報紀錄</td></tr>}
+            </tbody>
+          </table>
+        </div>
+      </div>
+      {confirm && <Confirm title={`確認刪除${confirm.l}？`} body="此操作無法復原。" danger onOk={() => { confirm.fn(); setConfirm(null); }} onCancel={() => setConfirm(null)} />}
+    </div>
+  );
+}
+
+// ── ADMIN LOGIN ───────────────────────────────────────────────
+const ADMIN_PIN = 'A10110030827';
+
+function AdminLogin({ onAuth }) {
+  const [p, setP] = useState(''); const [err, setErr] = useState(false);
+  const go = () => { if (p === ADMIN_PIN) onAuth(); else { setErr(true); setTimeout(() => setErr(false), 1500); setP(''); } };
+  return (
+    <div style={{ maxWidth: 360, margin: '40px auto', padding: '0 16px' }}>
+      <div style={{ ...G.card(true), padding: 28 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 20 }}>
+          <div style={{ background: C.amD, border: `1px solid ${C.am}44`, borderRadius: 8, padding: 8, lineHeight: 0 }}><Lock size={18} color={C.am} /></div>
+          <div>
+            <div style={{ color: C.t1, fontWeight: 700, fontSize: 17 }}>管理後台</div>
+            <div style={{ color: C.t3, fontSize: 12 }}>請輸入管理員授權碼</div>
+          </div>
+        </div>
+        <input type="password" value={p} onChange={(e) => setP(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && go()} autoFocus
+          style={{ ...G.inp(err, false, true, true), fontSize: 22, letterSpacing: '.3em', marginBottom: 8 }} placeholder="••••••" />
+        {err && <div style={{ color: C.rd, textAlign: 'center', fontSize: 13, marginBottom: 8 }}>授權碼錯誤</div>}
+        <button onClick={go} style={{ ...G.btn('am'), width: '100%', padding: '12px', fontSize: 15 }}>驗證並進入</button>
+      </div>
+    </div>
+  );
+}
+
+// ── FLEETOPS ROOT ─────────────────────────────────────────────
+export default function FleetOps({ onBack }) {
+  const { data: drivers, loading: dLoad } = useCollection(COL.d, (d) => d.sort((a, b) => (a.name || '').localeCompare(b.name || '', 'zh-TW')));
+  const { data: vehicles, loading: vLoad } = useCollection(COL.v, (d) => d.sort((a, b) => (a.id || '').localeCompare(b.id || '')));
+  const { data: logs, loading: lLoad }     = useCollection(COL.l, (d) => d.sort((a, b) => (b.timestamp || '').localeCompare(a.timestamp || '')));
+
+  const [view, setView]         = useState('home');
+  const [toast, setToast]       = useState(null);
+  const [adminMode, setAdminMode] = useState(false);
+  const [adminAuth, setAdminAuth] = useState(false);
+
+  const loading = dLoad || vLoad || lLoad;
+  const isAdmin = adminMode && adminAuth;
+  const msg = (m) => setToast(m);
+
+  const submitLog = async (entry, vehicleUpdate) => {
+    await fsAdd(COL.l, entry);
+    if (vehicleUpdate) {
+      await fsUpdate(COL.v, vehicleUpdate.vehicleId, {
+        currentMileage: vehicleUpdate.newMileage,
+        lastUpdated: new Date().toISOString(),
+        lastDriver: vehicleUpdate.driverName,
+      });
+    }
+  };
+
+  const handleAdminMode = (val) => { setAdminMode(val); if (!val) setAdminAuth(false); };
+
+  const adminPages = ['dashboard', 'vehicles', 'drivers', 'logs'];
+  const safeView = adminPages.includes(view) && !isAdmin ? 'home' : view;
+
+  return (
+    <div style={{ minHeight: '100vh', background: C.bg1, color: C.t1, fontFamily: "system-ui, -apple-system, 'Segoe UI', 'PingFang TC', 'Noto Sans TC', sans-serif" }}>
+      <style>{`
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        input[type=number]::-webkit-inner-spin-button,
+        input[type=number]::-webkit-outer-spin-button { -webkit-appearance: none; }
+        input[type=number] { -moz-appearance: textfield; }
+        ::-webkit-scrollbar { width: 5px; height: 5px; }
+        ::-webkit-scrollbar-track { background: transparent; }
+        ::-webkit-scrollbar-thumb { background: ${C.bg4}; border-radius: 3px; }
+        select option { background: ${C.bg2}; }
+        button:active { transform: scale(.97); }
+        @media(max-width:640px){
+          .fo-desktop-nav{display:none!important}
+          .fo-mobile-btn{display:flex!important}
+        }
+      `}</style>
+
+      <Toast msg={toast} onDone={() => setToast(null)} />
+      <TopNav view={safeView} setView={setView} isAdmin={isAdmin} adminMode={adminMode} setAdminMode={handleAdminMode} onBack={onBack} />
+
+      {adminMode && !adminAuth
+        ? <AdminLogin onAuth={() => setAdminAuth(true)} />
+        : safeView === 'home'      ? <HomePage      drivers={drivers} vehicles={vehicles} logs={logs} setView={setView} isAdmin={isAdmin} loading={loading} />
+        : safeView === 'report'    ? <ReportPage    drivers={drivers} vehicles={vehicles} onSubmit={submitLog} />
+        : safeView === 'dashboard' ? <DashboardPage drivers={drivers} vehicles={vehicles} logs={logs} />
+        : safeView === 'vehicles'  ? <VehiclesPage  vehicles={vehicles} onMsg={msg} />
+        : safeView === 'drivers'   ? <DriversPage   drivers={drivers} onMsg={msg} />
+        : safeView === 'logs'      ? <LogsPage      logs={logs} onMsg={msg} />
+        : null
+      }
+    </div>
+  );
+}
