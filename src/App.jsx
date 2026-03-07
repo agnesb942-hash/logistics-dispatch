@@ -1833,7 +1833,7 @@ const App = () => {
   if (appMode === 'home') {
     const yr = String(new Date().getFullYear());
     const cardStyle = (accent) => [
-      'flex:none;width:340px;min-height:300px;padding:40px 36px;border-radius:4px;cursor:pointer;position:relative;box-sizing:border-box;',
+      'flex:none;width:min(340px,85vw);min-height:280px;padding:36px 32px;border-radius:4px;cursor:pointer;position:relative;box-sizing:border-box;',
       'transition:all 0.25s;border:1px solid rgba(',accent,',0.25);',
       'background:rgba(',accent,',0.05)',
     ].join('');
@@ -1851,7 +1851,7 @@ const App = () => {
         + '<div style="width:100%;height:1px;background:linear-gradient(90deg,transparent,rgba(0,200,255,0.3),transparent);margin:0 auto 20px"></div>'
         + '<div style="font-size:11px;letter-spacing:6px;color:rgba(0,200,255,0.5);text-transform:uppercase">Logistics · Dispatch · System</div>'
       + '</div>'
-      + '<div style="display:flex;gap:24px;position:relative;z-index:1;flex-wrap:wrap;justify-content:center;width:95vw;max-width:1280px;box-sizing:border-box">'
+      + '<div style="display:flex;gap:20px;position:relative;z-index:1;flex-wrap:wrap;justify-content:center;width:95vw;max-width:1280px;box-sizing:border-box;padding:10px 0">'
         + '<div id="card-dispatch" style="' + cardStyle('0,200,255') + '">'
           + '<div style="position:absolute;top:-1px;left:20px;right:20px;height:2px;background:linear-gradient(90deg,transparent,#00c8ff,transparent)"></div>'
           + '<div style="font-size:42px;margin-bottom:22px">&#128666;</div>'
@@ -1895,10 +1895,10 @@ const App = () => {
           + '</div>'
         + '</div>'
       + '</div>'
-      + '<div style="position:absolute;bottom:20px;font-size:10px;color:rgba(255,255,255,0.12);letter-spacing:3px">v2.1 · KAOHSIUNG · ' + yr + '</div>';
+      + '<div style="margin-top:30px;font-size:10px;color:rgba(255,255,255,0.12);letter-spacing:3px">v2.1 · KAOHSIUNG · ' + yr + '</div>';
     return (
       <div
-        style={{height:windowHeight+'px',background:'#080c14',fontFamily:"monospace",display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',position:'relative',overflow:'hidden'}}
+        style={{minHeight:windowHeight+'px',background:'#080c14',fontFamily:"monospace",display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'flex-start',paddingTop:'40px',paddingBottom:'40px',position:'relative',overflowY:'auto',overflowX:'hidden'}}
         dangerouslySetInnerHTML={{__html:html}}
         onClick={(e) => {
           const card = e.target.closest && e.target.closest('#card-dispatch,#card-lookup,#card-mileage');
@@ -1915,7 +1915,7 @@ const App = () => {
     const borderColor = pwError ? 'rgba(239,68,68,0.6)' : 'rgba(0,200,255,0.25)';
     const topLineColor = pwError ? '#ef4444' : '#00c8ff';
     return (
-      <div style={{height:windowHeight+'px',background:'#080c14',fontFamily:"'JetBrains Mono','Courier New',monospace",display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',position:'relative',overflow:'hidden'}}>
+      <div style={{height:windowHeight+'px',background:'#080c14',fontFamily:"'JetBrains Mono','Courier New',monospace",display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',position:'relative',overflow:'auto'}}>
         <div style={bgStyle} />
         <div style={{width:340,padding:'40px 36px',background:'rgba(0,200,255,0.04)',border:'1px solid '+borderColor,borderRadius:4,position:'relative',zIndex:1,transition:'border-color 0.3s'}}>
           <div style={{position:'absolute',top:-1,left:20,right:20,height:2,background:'linear-gradient(90deg,transparent,'+topLineColor+',transparent)',transition:'background 0.3s'}} />
