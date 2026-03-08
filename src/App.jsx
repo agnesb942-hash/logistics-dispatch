@@ -311,11 +311,44 @@ const App = () => {
   const [pwNew2, setPwNew2] = useState('');
   const [pwChangeMsg, setPwChangeMsg] = useState('');
 
+  // 密碼：雲端 Firestore 同步（跨裝置一致），本地 localStorage 為備援
+  const cloudPwRef = useRef(null);      // null = 尚未從雲端載入
+  const [pwLoaded, setPwLoaded] = useState(false);  // 防止登入頁在密碼載入前誤判
+
+  // App 初始化時從 Firestore 拉取密碼
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      const fb = await initFirebase();
+      if (!cancelled && fb) {
+        try {
+          const { db, doc, getDoc } = fb;
+          const snap = await getDoc(doc(db, 'config', 'settings'));
+          if (snap.exists() && snap.data().dispatchPw) {
+            cloudPwRef.current = snap.data().dispatchPw;
+          }
+        } catch(e) { console.warn('[Firebase] 密碼載入失敗：', e); }
+      }
+      if (!cancelled) setPwLoaded(true);
+    })();
+    return () => { cancelled = true; };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   const getStoredPw = () => {
+    if (cloudPwRef.current) return cloudPwRef.current;
     try { return localStorage.getItem('dispatch_pw') || 'logistics2024'; } catch(e) { return 'logistics2024'; }
   };
-  const setStoredPw = (pw) => {
+
+  const setStoredPw = async (pw) => {
+    cloudPwRef.current = pw;
     try { localStorage.setItem('dispatch_pw', pw); } catch(e) {}
+    const fb = await initFirebase();
+    if (!fb) return;
+    try {
+      const { db, doc, setDoc } = fb;
+      await setDoc(doc(db, 'config', 'settings'), { dispatchPw: pw }, { merge: true });
+    } catch(e) { console.warn('[Firebase] 密碼儲存失敗：', e); }
   };
 
   // Firebase 設定（提前宣告，供持久化函式使用）
@@ -411,13 +444,14 @@ const App = () => {
     }
   };
 
-  const handleChangePw = () => {
+  const handleChangePw = async () => {
     if (pwOld !== getStoredPw()) { setPwChangeMsg('error:舊密碼錯誤'); return; }
     if (pwNew1.length < 6) { setPwChangeMsg('error:新密碼至少 6 位'); return; }
     if (pwNew1 !== pwNew2) { setPwChangeMsg('error:兩次輸入不一致'); return; }
-    setStoredPw(pwNew1);
-    setPwChangeMsg('ok:密碼已更新');
-    setTimeout(() => { setPwChangeMode(false); setPwOld(''); setPwNew1(''); setPwNew2(''); setPwChangeMsg(''); }, 1500);
+    setPwChangeMsg('ok:儲存中...');
+    await setStoredPw(pwNew1);
+    setPwChangeMsg('ok:密碼已更新（所有裝置同步）');
+    setTimeout(() => { setPwChangeMode(false); setPwOld(''); setPwNew1(''); setPwNew2(''); setPwChangeMsg(''); }, 2000);
   };
 
   // Main Data States
@@ -1853,8 +1887,9 @@ const App = () => {
       + '<div style="position:absolute;bottom:24px;left:24px;width:60px;height:60px;border-bottom:2px solid rgba(0,200,255,0.4);border-left:2px solid rgba(0,200,255,0.4)"></div>'
       + '<div style="position:absolute;bottom:24px;right:24px;width:60px;height:60px;border-bottom:2px solid rgba(0,200,255,0.4);border-right:2px solid rgba(0,200,255,0.4)"></div>'
       + '<div style="text-align:center;margin-bottom:56px;position:relative;z-index:1;width:90vw;max-width:1160px">'
-        + '<div style="width:100%;margin-bottom:28px">' + logoImg + '</div>'
-        + '<div style="width:100%;height:1px;background:linear-gradient(90deg,transparent,rgba(0,200,255,0.3),transparent);margin:0 auto 20px"></div>'
+        + '<div style="width:100%;margin-bottom:20px">' + logoImg + '</div>'
+        + '<div style="font-size:20px;font-weight:700;letter-spacing:8px;color:#ffffff;margin-bottom:10px;text-shadow:0 0 20px rgba(0,200,255,0.4)">物流管理平台</div>'
+        + '<div style="width:100%;height:1px;background:linear-gradient(90deg,transparent,rgba(0,200,255,0.3),transparent);margin:0 auto 14px"></div>'
         + '<div style="font-size:11px;letter-spacing:6px;color:rgba(0,200,255,0.5);text-transform:uppercase">Logistics · Dispatch · System</div>'
       + '</div>'
       + '<div style="display:flex;gap:20px;position:relative;z-index:1;flex-wrap:wrap;justify-content:center;width:95vw;max-width:1280px;box-sizing:border-box;padding:10px 0">'
@@ -1920,6 +1955,14 @@ const App = () => {
     const bgStyle = {position:'absolute',inset:0,backgroundImage:'linear-gradient(rgba(0,200,255,0.04) 1px,transparent 1px),linear-gradient(90deg,rgba(0,200,255,0.04) 1px,transparent 1px)',backgroundSize:'40px 40px',pointerEvents:'none'};
     const borderColor = pwError ? 'rgba(239,68,68,0.6)' : 'rgba(0,200,255,0.25)';
     const topLineColor = pwError ? '#ef4444' : '#00c8ff';
+    // 等待 Firestore 密碼載入完成，避免用舊密碼誤判
+    if (!pwLoaded) return (
+      <div style={{height:windowHeight+'px',background:'#080c14',display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',fontFamily:"'JetBrains Mono','Courier New',monospace"}}>
+        <div style={{width:28,height:28,border:'2px solid rgba(0,200,255,0.2)',borderTopColor:'#00c8ff',borderRadius:'50%',animation:'spin 0.9s linear infinite',marginBottom:14}} />
+        <div style={{fontSize:10,letterSpacing:4,color:'rgba(0,200,255,0.4)'}}>LOADING...</div>
+        <style>{`@keyframes spin{to{transform:rotate(360deg)}}`}</style>
+      </div>
+    );
     return (
       <div style={{height:windowHeight+'px',background:'#080c14',fontFamily:"'JetBrains Mono','Courier New',monospace",display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',position:'relative',overflow:'auto'}}>
         <div style={bgStyle} />
