@@ -521,7 +521,10 @@ const App = () => {
   const [adminBoundsError, setAdminBoundsError] = useState(false);
   const [adminRefreshKey, setAdminRefreshKey] = useState(0); // 手動強制重整行政區圖層
   const [windowHeight, setWindowHeight] = useState(600);
+  const [windowWidth, setWindowWidth] = useState(window.innerWidth || 375);
+  const [mobileShowMap, setMobileShowMap] = useState(false);
   const [leftPanelWidth, setLeftPanelWidth] = useState(400);
+  const isMobile = windowWidth < 768;
   const isResizing = useRef(false);
   const resizeStartX = useRef(0);
   const resizeStartWidth = useRef(400);
@@ -541,7 +544,10 @@ const App = () => {
 
   // 動態取得視窗高度（修正 iframe 環境中 100vh 失效問題）
   useEffect(() => {
-    const updateHeight = () => setWindowHeight(window.innerHeight || 600);
+    const updateHeight = () => {
+      setWindowHeight(window.innerHeight || 600);
+      setWindowWidth(window.innerWidth || 375);
+    };
     updateHeight();
     window.addEventListener('resize', updateHeight);
     return () => window.removeEventListener('resize', updateHeight);
@@ -1982,7 +1988,12 @@ const App = () => {
   return (
     <div className="flex w-full bg-gray-100 font-sans text-gray-900 overflow-hidden relative" style={{height: `${windowHeight}px`}}>
       
-      <div className="bg-white shadow-2xl flex flex-col z-20 h-full flex-shrink-0 border-r border-gray-200" style={{width: leftPanelWidth + 'px'}}>
+      <div className="bg-white shadow-2xl flex flex-col z-20 h-full flex-shrink-0 border-r border-gray-200"
+        style={{
+          width: isMobile ? '100%' : leftPanelWidth + 'px',
+          display: isMobile && mobileShowMap ? 'none' : 'flex',
+          flexDirection: 'column',
+        }}>
         <div className="p-4 bg-slate-900 text-white flex-shrink-0 shadow-md z-10" style={{borderBottom:'1px solid rgba(0,200,255,0.2)'}}>
           <div className="flex items-center justify-between mb-1">
             <div className="flex items-center gap-2.5">
@@ -2460,9 +2471,19 @@ const App = () => {
                 <IconDownload className="w-4 h-4" />匯出報表
             </button>
         </div>}
+        {isMobile && (
+          <div className="p-3 border-t border-gray-200 bg-white flex-shrink-0">
+            <button
+              onClick={() => { setMobileShowMap(true); setTimeout(() => { try { mapInstanceRef.current && mapInstanceRef.current.invalidateSize(); } catch(e){} }, 200); }}
+              className="w-full py-3 rounded-xl bg-blue-600 text-white font-bold text-sm flex items-center justify-center gap-2 shadow-md"
+            >
+              <IconMap className="w-5 h-5" /> 查看地圖
+            </button>
+          </div>
+        )}
       </div>
-      {/* 拖曳調整分隔條 */}
-      <div
+      {/* 拖曳調整分隔條（桌機版專用） */}
+      {!isMobile && <div
         onMouseDown={onResizeMouseDown}
         style={{width:'5px',cursor:'col-resize',background:'transparent',flexShrink:0,zIndex:30,position:'relative'}}
         title="拖曳調整面板寬度"
@@ -2471,10 +2492,18 @@ const App = () => {
           onMouseEnter={e => e.currentTarget.style.background='rgba(0,200,255,0.5)'}
           onMouseLeave={e => e.currentTarget.style.background='rgba(0,200,255,0.15)'}
         />
-      </div>
-      <div className="flex-1 relative bg-gray-200 h-full">
+      </div>}
+      <div className="flex-1 relative bg-gray-200 h-full" style={{display: isMobile && !mobileShowMap ? 'none' : undefined}}>
          <div ref={mapContainerRef} className="w-full h-full z-0" style={{minHeight: '400px'}} />
-         <div className="absolute top-4 right-4 flex flex-col gap-2 z-[1000]">
+         {isMobile && mobileShowMap && (
+           <button
+             onClick={() => setMobileShowMap(false)}
+             style={{position:'absolute',top:8,left:8,zIndex:1001,background:'rgba(15,23,42,0.88)',color:'white',border:'none',borderRadius:8,padding:'8px 14px',fontSize:13,fontWeight:700,display:'flex',alignItems:'center',gap:6,cursor:'pointer',boxShadow:'0 2px 8px rgba(0,0,0,0.3)'}}
+           >
+             ← 返回面板
+           </button>
+         )}
+         {!isMobile && <div className="absolute top-4 right-4 flex flex-col gap-2 z-[1000]">
              <div className="bg-white bg-opacity-95 backdrop-blur-sm p-4 rounded-xl shadow-lg border border-gray-200 text-xs w-[280px]">
                 <h4 className="font-bold mb-2 flex items-center gap-1.5 text-gray-800 border-b pb-1.5">
                     <IconNavigation className="w-4 h-4 text-blue-600" />系統操作提示
@@ -2509,7 +2538,7 @@ const App = () => {
                 </button>
              </div>
 
-         </div>
+         </div>}
          {!mapInitialized && (
              <div className="absolute inset-0 flex items-center justify-center bg-gray-100 bg-opacity-80 backdrop-blur z-50">
                 <div className="text-center p-6 bg-white rounded-2xl shadow-xl border border-gray-100">
