@@ -346,12 +346,12 @@ const MileageTool = ({ onBack, windowHeight }) => {
   // ── Get previous reading for a vehicle ──────────────────────────
   const getPrevReading = (vehiclePlate, period) => {
     const prev = getPrevPeriod(period);
+    // 優先從 monthlyRecords 找前一期記錄
     const rec = monthlyRecords.find(r => r.vehiclePlate === vehiclePlate && r.period === prev);
     if (rec) return rec.odometerReading;
-    // Fallback to Feb seed data
-    if (prev === '2026-02' || !monthlyRecords.some(r => r.vehiclePlate === vehiclePlate)) {
-      return FEB_MILEAGE[vehiclePlate] || null;
-    }
+    // FEB seed 只在前一期恰好是 2026-02 時作為回退值
+    // 不可用於其他缺失期別（例如：補登 2026-01 的前一期是 2025-12，不應回傳 FEB 值）
+    if (prev === '2026-02') return FEB_MILEAGE[vehiclePlate] || null;
     return null;
   };
 
@@ -362,10 +362,19 @@ const MileageTool = ({ onBack, windowHeight }) => {
     if (isNaN(reading) || reading <= 0) return null;
     const veh = vehicles.find(v => v.id === reportVehicle);
     if (!veh) return null;
-    // 排除 FEB seed：僅分析 monthlyRecords 中的記錄
+
     const relevantRecords = monthlyRecords.filter(r => r.vehiclePlate === veh.plate);
-    if (relevantRecords.length === 0) return null;
-    return analyzeConflict(relevantRecords, veh.plate, reportPeriod, reading);
+
+    // 將 FEB seed（2026-02）納入衝突分析，讓補登 2025-12、2026-01 時
+    // 能正確偵測「超越後期（OVERFLOW）」衝突
+    const febReading = FEB_MILEAGE[veh.plate];
+    const hasFebInRecords = relevantRecords.some(r => r.period === '2026-02');
+    const allRecords = (febReading && !hasFebInRecords)
+      ? [...relevantRecords, { id: '__seed_feb__', vehiclePlate: veh.plate, period: '2026-02', odometerReading: febReading, retroactive: false, notes: '（種子資料）' }]
+      : relevantRecords;
+
+    if (allRecords.length === 0) return null;
+    return analyzeConflict(allRecords, veh.plate, reportPeriod, reading);
   }, [reportVehicle, reportPeriod, reportReading, monthlyRecords, vehicles]);
 
   // ── Get last known mileage for a vehicle (from all sources) ─────
@@ -1181,7 +1190,8 @@ const MileageTool = ({ onBack, windowHeight }) => {
                         {c.record && (
                           <div className="mt-1.5 bg-white rounded px-2 py-1 text-gray-500 text-xs">
                             現有記錄：{c.record.period} · {fmtNum(c.record.odometerReading)} km
-                            {c.record.retroactive && <span className="ml-1 text-amber-500">（補登）</span>}
+                            {c.record.id === '__seed_feb__' && <span className="ml-1 text-blue-500">（2月起始資料）</span>}
+                            {c.record.retroactive && c.record.id !== '__seed_feb__' && <span className="ml-1 text-amber-500">（補登）</span>}
                           </div>
                         )}
                       </div>
