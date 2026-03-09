@@ -1955,12 +1955,14 @@ const MileageTool = ({ onBack, windowHeight }) => {
               const median  = kms.length ? kms[Math.floor(kms.length/2)] : 0;
               const deptLabel = aiDept==='all' ? '全部部門' : ((departments.find(d=>d.id===aiDept)||{name:aiDept}).name);
               // top5/bottom5 依每台車的累計里程排序
-              const top5      = [...vehicleTotals].sort((a,b)=>b.monthlyMileage-a.monthlyMileage).slice(0,5);
-              const bottom5   = [...vehicleTotals].sort((a,b)=>a.monthlyMileage-b.monthlyMileage).slice(0,5);
-              const anomalies = vehicleTotals.filter(r => r.monthlyMileage > avg * 2.0);
-              const rangeTyp  = aiRange==='month'?'月報':aiRange==='quarter'?'季報':aiRange==='year'?'年報':'自訂區間';
+              const top5       = [...vehicleTotals].sort((a,b)=>b.monthlyMileage-a.monthlyMileage).slice(0,5);
+              const bottom5    = [...vehicleTotals].sort((a,b)=>a.monthlyMileage-b.monthlyMileage).slice(0,5);
+              const anomalies  = vehicleTotals.filter(r => r.monthlyMileage > avg * 2.0);
+              // 月均里程 = 期間總里程 ÷ 車輛數 ÷ 月份數
+              const avgPerMonth = periods > 0 ? Math.round(avg / periods) : avg;
+              const rangeTyp   = aiRange==='month'?'月報':aiRange==='quarter'?'季報':aiRange==='year'?'年報':'自訂區間';
 
-              // ── 依部門整理車輛里程（供調度建議用，已合併多月）───────
+              // ── 依部門整理詳細數據（供各區塊分部門分析用）──────────
               const deptGroups = {};
               vehicleTotals.forEach(r => {
                 const veh   = vehicles.find(v => v.plate === r.vehiclePlate);
@@ -1969,57 +1971,84 @@ const MileageTool = ({ onBack, windowHeight }) => {
                 if (!deptGroups[dName]) deptGroups[dName] = [];
                 deptGroups[dName].push({ plate: r.vehiclePlate, km: r.monthlyMileage });
               });
-              const deptDispatchLines = Object.entries(deptGroups).map(([dName, recs]) => {
-                const sorted = [...recs].sort((a,b)=>b.km-a.km);
-                const dAvg   = Math.round(sorted.reduce((s,r)=>s+r.km,0)/sorted.length);
-                const high   = sorted.slice(0, Math.ceil(sorted.length/3));
-                const low    = sorted.slice(-Math.ceil(sorted.length/3));
-                return `【${dName}】共${sorted.length}輛，部門期間平均${dAvg}km\n` +
-                  `  高里程（建議調出）：${high.map(r=>r.plate+' '+r.km+'km').join('、')}\n` +
-                  `  低里程（建議補入）：${low.map(r=>r.plate+' '+r.km+'km').join('、')}`;
-              }).join('\n');
+              // 每部門完整分析數據
+              const deptAnalysisLines = Object.entries(deptGroups).map(([dName, recs]) => {
+                const sorted    = [...recs].sort((a,b)=>b.km-a.km);
+                const dTotal    = sorted.reduce((s,r)=>s+r.km, 0);
+                const dAvg      = Math.round(dTotal / sorted.length);
+                const dAvgMonth = periods > 0 ? Math.round(dAvg / periods) : dAvg;
+                const dMedian   = sorted[Math.floor(sorted.length/2)]?.km || 0;
+                const dAnom     = sorted.filter(r => r.km > dAvg * 2.0);
+                const dHigh     = sorted.slice(0, Math.ceil(sorted.length/3));
+                const dLow      = sorted.slice(-Math.ceil(sorted.length/3));
+                return (
+                  `【${dName}】車輛數：${sorted.length}輛` +
+                  `｜部門總里程：${dTotal.toLocaleString()}km` +
+                  `｜期間累計均值：${dAvg.toLocaleString()}km/輛` +
+                  `｜月均里程：${dAvgMonth.toLocaleString()}km/輛/月` +
+                  `｜中位數：${dMedian.toLocaleString()}km\n` +
+                  `  Top里程：${sorted.slice(0,3).map(r=>r.plate+'('+r.km+'km)').join('、')}\n` +
+                  `  低里程：${dLow.map(r=>r.plate+'('+r.km+'km)').join('、')}\n` +
+                  `  異常高里程（>部門均值200%）：${dAnom.length>0?dAnom.map(r=>r.plate+'('+r.km+'km)').join('、'):'無'}\n` +
+                  `  建議調出（高）：${dHigh.map(r=>r.plate+' '+r.km+'km').join('、')}\n` +
+                  `  建議補入（低）：${dLow.map(r=>r.plate+' '+r.km+'km').join('、')}`
+                );
+              }).join('\n\n');
 
               const prompt = `你是一位專業的物流車隊管理顧問，請根據以下里程數據進行專業診斷分析，並以繁體中文（台灣用語）回覆。
 
-【資料範圍】
-- 分析類型：${rangeTyp}（${aiRangeLabel}，共 ${aiPeriods.length} 個月）
-- 部門：${deptLabel}
-- 有效車輛數（不重複）：${uniqueVehicleCount} 輛（分析期間 ${periods} 個月）
+【分析設定】
+- 分析類型：${rangeTyp}（${aiRangeLabel}，共 ${periods} 個月）
+- 篩選部門：${deptLabel}
+- 不重複車輛數：${uniqueVehicleCount} 輛
 
-【關鍵指標】
+【全車隊整體指標】
 - 期間總里程：${total.toLocaleString()} km
-- 平均里程/輛/月：${avg.toLocaleString()} km
-- 最高 5 輛：${top5.map(r=>r.vehiclePlate+' '+r.monthlyMileage+'km').join('、')}
-- 最低 5 輛：${bottom5.map(r=>r.vehiclePlate+' '+r.monthlyMileage+'km').join('、')}
-- 異常高里程（>平均200%）：${anomalies.length>0?anomalies.map(r=>r.vehiclePlate+' '+r.monthlyMileage+'km').join('、'):'無'}
+- 期間累計均值：${avg.toLocaleString()} km／輛
+- 月均里程：${avgPerMonth.toLocaleString()} km／輛／月
+- 中位數里程：${median.toLocaleString()} km／輛
+- 整體最高 5 輛：${top5.map(r=>r.vehiclePlate+' '+r.monthlyMileage+'km').join('、')}
+- 整體最低 5 輛：${bottom5.map(r=>r.vehiclePlate+' '+r.monthlyMileage+'km').join('、')}
+- 整體異常高里程（>均值200%）：${anomalies.length>0?anomalies.map(r=>r.vehiclePlate+' '+r.monthlyMileage+'km').join('、'):'無'}
 
-【各部門車輛里程分布（供調度建議用）】
-${deptDispatchLines}
+【各部門詳細數據】
+${deptAnalysisLines}
 
-【重要規則】每個部門的車種規格不同，調度建議必須在同部門內進行，禁止跨部門調度。
+【分析規則】
+1. 每個分析區塊（整體評估除外）都必須依部門分開說明，不可混合
+2. 每個部門的車種規格不同，調度建議必須在同部門內進行，嚴禁跨部門調度
+3. 里程數據為分析期間的累計值，引用時請同時標示累計值與月均換算值
 
 【請依序輸出以下五個區塊，標題格式完全照下方格式，不可更改】
 
 1. **整體狀況評估**
-本期車隊運作總體評估（120字以內）
+全車隊總覽，包含整體里程水位、各部門概況對比、主要異常摘要（150字以內）
 
 2. **異常車輛分析**
-針對高里程與低里程車輛的可能成因與風險提示
+依部門分開說明，格式如下：
+【部門名稱】
+- 高里程異常車輛：（車牌、累計里程、月均換算、可能成因、風險提示）
+- 低里程異常車輛：（車牌、累計里程、月均換算、可能成因、風險提示）
 
 3. **管理建議**
-- 建議一：具體可執行的改善行動
-- 建議二：具體可執行的改善行動
-- 建議三：具體可執行的改善行動
+依部門分開說明，格式如下：
+【部門名稱】
+- 建議一：（針對該部門里程現況的具體可執行行動）
+- 建議二：（針對該部門異常車輛的具體改善措施）
+- 建議三：（針對該部門的預防性維護或排班優化建議）
 
 4. **車輛調度建議**
-依據各部門的里程分布，提出同部門內高低里程車輛的最佳交換輪調方案。每個部門分開說明，格式如下：
+依部門分開說明，格式如下：
 【部門名稱】
-- 輪調方向：高里程車輛調至低頻路線，低里程車輛補入高頻路線
-- 建議換班組合：（列出具體車牌的交換建議）
-- 預期效益：（說明輪調後對里程均衡化的預期幫助）
+- 現況摘要：（該部門高低里程分布說明）
+- 建議輪調組合：（列出具體車牌的交換建議，高里程車調往低頻路線，低里程車補入高頻路線）
+- 預期效益：（輪調後對里程均衡化、車輛壽命延長的預期幫助）
 
 5. **下期預測**
-根據趨勢，下期需注意的重點`;
+依部門分開說明，格式如下：
+【部門名稱】
+- 預測趨勢：（基於本期數據的下期里程走向）
+- 需關注重點：（下期需特別監控的車輛或指標）`;
 
               try {
                 const res  = await fetch('/api/ai-diagnose', {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({prompt})});
@@ -2035,7 +2064,7 @@ ${deptDispatchLines}
                     result: resultText,
                     label:  deptLabel + '｜' + aiRangeLabel,
                     savedAt: new Date().toISOString(),
-                    stats:  { total, avg, median, count: uniqueVehicleCount, anomalyCount: anomalies.length, rangeTyp, periods: aiPeriods.length },
+                    stats:  { total, avg, avgPerMonth, median, count: uniqueVehicleCount, anomalyCount: anomalies.length, rangeTyp, periods },
                     top5:    top5.map(r=>({plate:r.vehiclePlate, km:r.monthlyMileage})),
                     bottom5: bottom5.map(r=>({plate:r.vehiclePlate, km:r.monthlyMileage})),
                     anomalies: anomalies.map(r=>({plate:r.vehiclePlate, km:r.monthlyMileage})),
@@ -2148,10 +2177,22 @@ ${deptDispatchLines}
   <!-- KPI -->
   <div data-card style="margin-bottom:10px;">
     <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:8px;">
-      <div style="background:#eff6ff;border:1.5px solid #bfdbfe;border-radius:8px;padding:10px;text-align:center;"><div style="font-size:22px;font-weight:800;color:#1d4ed8;">${stats.total?stats.total.toLocaleString():'—'}</div><div style="font-size:10px;color:#3b82f6;margin-top:3px;">📦 總里程 (km)</div></div>
-      <div style="background:#f0fdf4;border:1.5px solid #bbf7d0;border-radius:8px;padding:10px;text-align:center;"><div style="font-size:22px;font-weight:800;color:#15803d;">${stats.avg?stats.avg.toLocaleString():'—'}</div><div style="font-size:10px;color:#16a34a;margin-top:3px;">📊 平均/輛/月</div></div>
-      <div style="background:#fefce8;border:1.5px solid #fde68a;border-radius:8px;padding:10px;text-align:center;"><div style="font-size:22px;font-weight:800;color:#92400e;">${stats.median?stats.median.toLocaleString():'—'}</div><div style="font-size:10px;color:#b45309;margin-top:3px;">📐 中位數 (km)</div></div>
-      <div style="background:#fff1f2;border:1.5px solid #fecdd3;border-radius:8px;padding:10px;text-align:center;"><div style="font-size:22px;font-weight:800;color:#be123c;">${stats.anomalyCount||0}</div><div style="font-size:10px;color:#e11d48;margin-top:3px;">⚠️ 異常高里程</div></div>
+      <div style="background:#eff6ff;border:1.5px solid #bfdbfe;border-radius:8px;padding:10px;text-align:center;">
+        <div style="font-size:20px;font-weight:800;color:#1d4ed8;">${stats.total?stats.total.toLocaleString():'—'}</div>
+        <div style="font-size:9px;color:#3b82f6;margin-top:3px;">📦 期間總里程 (km)</div>
+      </div>
+      <div style="background:#f0fdf4;border:1.5px solid #bbf7d0;border-radius:8px;padding:10px;text-align:center;">
+        <div style="font-size:20px;font-weight:800;color:#15803d;">${stats.avg?stats.avg.toLocaleString():'—'}</div>
+        <div style="font-size:9px;color:#16a34a;margin-top:3px;">📊 期間累計均值／輛</div>
+      </div>
+      <div style="background:#ecfeff;border:1.5px solid #a5f3fc;border-radius:8px;padding:10px;text-align:center;">
+        <div style="font-size:20px;font-weight:800;color:#0e7490;">${stats.avgPerMonth?stats.avgPerMonth.toLocaleString():(stats.avg&&stats.periods?Math.round(stats.avg/stats.periods).toLocaleString():'—')}</div>
+        <div style="font-size:9px;color:#0891b2;margin-top:3px;">📈 月均里程／輛／月</div>
+      </div>
+      <div style="background:#fff1f2;border:1.5px solid #fecdd3;border-radius:8px;padding:10px;text-align:center;">
+        <div style="font-size:20px;font-weight:800;color:#be123c;">${stats.anomalyCount||0}</div>
+        <div style="font-size:9px;color:#e11d48;margin-top:3px;">⚠️ 異常高里程車輛</div>
+      </div>
     </div>
   </div>
 
