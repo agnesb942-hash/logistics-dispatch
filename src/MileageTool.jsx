@@ -1944,7 +1944,7 @@ const MileageTool = ({ onBack, windowHeight }) => {
               setAiLoading(false);
             };
             return (
-              <div className="space-y-4">
+              <div className="space-y-4 pb-10">
                 <h2 className="text-lg font-bold text-gray-800">🤖 AI 物流診斷分析</h2>
 
                 {/* 設定區 */}
@@ -1979,7 +1979,7 @@ const MileageTool = ({ onBack, windowHeight }) => {
                       <div className="font-bold text-gray-800">AI 診斷報告</div>
                       <span className="text-[10px] bg-indigo-100 text-indigo-700 px-2 py-0.5 rounded-full">Claude Sonnet</span>
                     </div>
-                    <div className="text-sm text-gray-700 leading-relaxed whitespace-pre-wrap">
+                    <div className="text-sm text-gray-700 leading-relaxed whitespace-pre-wrap overflow-y-auto max-h-[60vh]">
                       {aiAnalysis}
                     </div>
                   </div>
