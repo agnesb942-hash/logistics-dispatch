@@ -269,6 +269,17 @@ const MileageTool = ({ onBack, windowHeight }) => {
 
   // ── 衝突分析 state ────────────────────────────────────────────────
   const [conflictOverrideMode, setConflictOverrideMode] = useState(false); // 等待二次確認覆蓋
+
+  // ── 操作記錄 Log ─────────────────────────────────────────────────
+  const [auditLog, setAuditLog] = useState([]);
+  const [logFilter, setLogFilter] = useState('all');
+
+  // ── 刪除確認 modal ────────────────────────────────────────────────
+  const [deleteTarget, setDeleteTarget] = useState(null);
+
+  // ── 回報後確認 && 修改 ─────────────────────────────────────────────
+  const [lastSubmitted, setLastSubmitted] = useState(null);
+  const [editingRecord, setEditingRecord] = useState(null);
   // Adhoc form
   const [adhocVehicle, setAdhocVehicle] = useState('');
   const [adhocDate, setAdhocDate] = useState(new Date().toISOString().slice(0, 10));
@@ -428,6 +439,8 @@ const MileageTool = ({ onBack, windowHeight }) => {
         status: 'submitted', submittedAt: new Date().toISOString(),
       };
       autoSave('monthly_records', [...filtered, record], setMonthlyRecords);
+      logAction('edit', '覆蓋補登', `${veh.plate} ${reportPeriod} → ${fmtNum(reading)} km`);
+      setLastSubmitted({ ...record, isOverride: true });
       setReportVehicle(''); setReportReading(''); setReportNotes(''); setReportProxy('');
       setConflictOverrideMode(false);
       setShowModal(null);
@@ -439,7 +452,10 @@ const MileageTool = ({ onBack, windowHeight }) => {
     const monthlyMileage = prevReading != null ? reading - prevReading : null;
 
     const actualPerson = reportProxy ? personnel.find(p => p.id === reportProxy) : currentUser;
-    const existingIdx = monthlyRecords.findIndex(r => r.vehiclePlate === veh.plate && r.period === reportPeriod);
+    const isEdit = editingRecord != null;
+    const existingIdx = isEdit
+      ? monthlyRecords.findIndex(r => r.id === editingRecord)
+      : monthlyRecords.findIndex(r => r.vehiclePlate === veh.plate && r.period === reportPeriod);
     const record = {
       id: existingIdx >= 0 ? monthlyRecords[existingIdx].id : `mr_${Date.now()}`,
       vehicleId: veh.id, vehiclePlate: veh.plate,
@@ -462,8 +478,11 @@ const MileageTool = ({ onBack, windowHeight }) => {
       newRecords = [...monthlyRecords, record];
     }
     autoSave('monthly_records', newRecords, setMonthlyRecords);
+    logAction(isEdit ? 'edit' : 'monthly', isEdit ? '修改回報' : '回報里程',
+      `${veh.plate} ${reportPeriod} ${fmtNum(reading)} km（${actualPerson?.name || currentUser.name}）`);
+    setLastSubmitted({ ...record, isEdit });
     setReportVehicle(''); setReportReading(''); setReportNotes(''); setReportProxy('');
-    setConflictOverrideMode(false);
+    setConflictOverrideMode(false); setEditingRecord(null);
     setShowModal(null);
   };
 
@@ -513,34 +532,74 @@ const MileageTool = ({ onBack, windowHeight }) => {
     setShowModal(null);
   };
 
-  // ── Approve / Reject ────────────────────────────────────────────
+  // ── 操作記錄 helper ─────────────────────────────────────────────
+  const logAction = (category, action, detail) => {
+    const entry = {
+      id: `log_${Date.now()}_${Math.random().toString(36).slice(2,6)}`,
+      category,   // monthly | adhoc | delete | approve | reject | edit
+      action,
+      detail,
+      operator: currentUser?.name || '—',
+      ts: new Date().toISOString(),
+    };
+    setAuditLog(prev => [entry, ...prev].slice(0, 500)); // 保留最近 500 筆
+  };
+
+  // ── Approve / Reject / Delete ────────────────────────────────────
   const handleApprove = (recordId, type) => {
     if (type === 'monthly') {
+      const rec = monthlyRecords.find(r => r.id === recordId);
       const newRecords = monthlyRecords.map(r => r.id === recordId ? { ...r, status: 'approved', approvedBy: currentUser.name, approvedAt: new Date().toISOString() } : r);
       autoSave('monthly_records', newRecords, setMonthlyRecords);
+      if (rec) logAction('approve', '審核通過', `月報 ${rec.vehiclePlate} ${rec.period} ${fmtNum(rec.odometerReading)} km`);
     } else {
+      const rec = adhocRecords.find(r => r.id === recordId);
       const newRecords = adhocRecords.map(r => r.id === recordId ? { ...r, status: 'approved', approvedBy: currentUser.name } : r);
       autoSave('adhoc_records', newRecords, setAdhocRecords);
+      if (rec) logAction('approve', '審核通過', `用車 ${rec.vehiclePlate} ${rec.date} ${rec.userName}`);
     }
   };
-  const handleReject = (recordId, type) => {
-    const reason = window.prompt('請輸入退回原因：');
-    if (!reason) return;
+
+  // 退回原因改為 inline modal，此處暫存 reject target
+  const [rejectTarget, setRejectTarget] = useState(null); // { id, type, label }
+  const [rejectReason, setRejectReason] = useState('');
+  const doReject = () => {
+    if (!rejectTarget || !rejectReason.trim()) return;
+    const { id, type, label } = rejectTarget;
     if (type === 'monthly') {
-      const newRecords = monthlyRecords.map(r => r.id === recordId ? { ...r, status: 'rejected', rejectReason: reason, approvedBy: currentUser.name } : r);
+      const newRecords = monthlyRecords.map(r => r.id === id ? { ...r, status: 'rejected', rejectReason, approvedBy: currentUser.name } : r);
       autoSave('monthly_records', newRecords, setMonthlyRecords);
     } else {
-      const newRecords = adhocRecords.map(r => r.id === recordId ? { ...r, status: 'rejected', rejectReason: reason } : r);
+      const newRecords = adhocRecords.map(r => r.id === id ? { ...r, status: 'rejected', rejectReason } : r);
       autoSave('adhoc_records', newRecords, setAdhocRecords);
     }
+    logAction('reject', '退回', `${label}｜原因：${rejectReason}`);
+    setRejectTarget(null); setRejectReason('');
   };
-  const handleDeleteRecord = (recordId, type) => {
-    if (!window.confirm('確定刪除此筆紀錄？')) return;
+
+  // 刪除：改為 inline modal（不用 window.confirm）
+  const doDelete = () => {
+    if (!deleteTarget) return;
+    const { id, type, label } = deleteTarget;
     if (type === 'monthly') {
-      autoSave('monthly_records', monthlyRecords.filter(r => r.id !== recordId), setMonthlyRecords);
+      autoSave('monthly_records', monthlyRecords.filter(r => r.id !== id), setMonthlyRecords);
     } else {
-      autoSave('adhoc_records', adhocRecords.filter(r => r.id !== recordId), setAdhocRecords);
+      autoSave('adhoc_records', adhocRecords.filter(r => r.id !== id), setAdhocRecords);
     }
+    logAction('delete', '刪除記錄', label);
+    setDeleteTarget(null);
+  };
+
+  const handleDeleteRecord = (recordId, type) => {
+    let label = '';
+    if (type === 'monthly') {
+      const rec = monthlyRecords.find(r => r.id === recordId);
+      label = rec ? `月報 ${rec.vehiclePlate} ${rec.period} ${fmtNum(rec.odometerReading)} km（${rec.reporterName}）` : recordId;
+    } else {
+      const rec = adhocRecords.find(r => r.id === recordId);
+      label = rec ? `用車 ${rec.vehiclePlate} ${rec.date} ${rec.userName}` : recordId;
+    }
+    setDeleteTarget({ id: recordId, type, label });
   };
 
   // ── Export CSV ──────────────────────────────────────────────────
@@ -682,6 +741,7 @@ const MileageTool = ({ onBack, windowHeight }) => {
     ...(isAdmin ? [
       { key: 'vehicles', icon: '🔧', label: '車輛管理' },
       { key: 'personnel', icon: '👥', label: '人員管理' },
+      { key: 'logs', icon: '🗂️', label: '操作記錄' },
     ] : []),
     { key: 'export', icon: '⬇️', label: '匯出報表' },
   ];
@@ -910,8 +970,9 @@ const MileageTool = ({ onBack, windowHeight }) => {
                                 <div className="flex items-center justify-center gap-1">
                                   {rec.status === 'submitted' && <>
                                     <button onClick={() => handleApprove(rec.id, 'monthly')} className="text-[10px] px-2 py-1 bg-green-50 text-green-600 rounded font-bold hover:bg-green-100">通過</button>
-                                    <button onClick={() => handleReject(rec.id, 'monthly')} className="text-[10px] px-2 py-1 bg-red-50 text-red-600 rounded font-bold hover:bg-red-100">退回</button>
+                                    <button onClick={() => { const r2 = monthlyRecords.find(r => r.id === rec.id); setRejectTarget({ id: rec.id, type: 'monthly', label: `月報 ${rec.vehiclePlate} ${rec.period}` }); setRejectReason(''); }} className="text-[10px] px-2 py-1 bg-red-50 text-red-600 rounded font-bold hover:bg-red-100">退回</button>
                                   </>}
+                                  <button onClick={() => { const veh2 = vehicles.find(v => v.id === rec.vehicleId); setEditingRecord(rec.id); setReportVehicle(rec.vehicleId); setReportPeriod(rec.period); setReportReading(String(rec.odometerReading)); setReportNotes(rec.notes || ''); setShowModal('monthly'); }} className="text-[10px] px-2 py-1 bg-blue-50 text-blue-600 rounded font-bold hover:bg-blue-100">改</button>
                                   <button onClick={() => handleDeleteRecord(rec.id, 'monthly')} className="text-[10px] px-2 py-1 text-gray-400 hover:text-red-500">刪</button>
                                 </div>
                               </td>
@@ -974,7 +1035,7 @@ const MileageTool = ({ onBack, windowHeight }) => {
                           <div className="flex items-center justify-center gap-1">
                             {r.status === 'submitted' && <>
                               <button onClick={() => handleApprove(r.id, 'adhoc')} className="text-[10px] px-2 py-1 bg-green-50 text-green-600 rounded font-bold hover:bg-green-100">通過</button>
-                              <button onClick={() => handleReject(r.id, 'adhoc')} className="text-[10px] px-2 py-1 bg-red-50 text-red-600 rounded font-bold hover:bg-red-100">退回</button>
+                              <button onClick={() => { setRejectTarget({ id: r.id, type: 'adhoc', label: `用車 ${r.vehiclePlate} ${r.date}` }); setRejectReason(''); }} className="text-[10px] px-2 py-1 bg-red-50 text-red-600 rounded font-bold hover:bg-red-100">退回</button>
                             </>}
                             <button onClick={() => handleDeleteRecord(r.id, 'adhoc')} className="text-[10px] px-2 py-1 text-gray-400 hover:text-red-500">刪</button>
                           </div>
@@ -1093,6 +1154,70 @@ const MileageTool = ({ onBack, windowHeight }) => {
             </div>
           </>}
 
+          {/* ═══ LOGS ═══ */}
+          {activeSection === 'logs' && isAdmin && <>
+            <div className="flex items-center justify-between flex-wrap gap-3">
+              <h2 className="text-lg font-bold text-gray-800">🗂️ 操作記錄</h2>
+              <div className="flex items-center gap-2">
+                <select value={logFilter} onChange={e => setLogFilter(e.target.value)}
+                  className="border border-gray-300 rounded-lg px-3 py-1.5 text-xs">
+                  <option value="all">全部類型</option>
+                  <option value="monthly">里程回報</option>
+                  <option value="edit">修改 / 覆蓋</option>
+                  <option value="approve">審核通過</option>
+                  <option value="reject">退回</option>
+                  <option value="delete">刪除</option>
+                </select>
+                <span className="text-xs text-gray-400">共 {auditLog.filter(l => logFilter === 'all' || l.category === logFilter).length} 筆</span>
+              </div>
+            </div>
+            {auditLog.length === 0 ? (
+              <div className="bg-white rounded-xl border border-gray-200 p-10 text-center text-gray-400 text-sm">
+                目前尚無操作記錄。回報里程、審核、刪除等操作均會在此留下記錄。
+              </div>
+            ) : (
+              <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-x-auto">
+                <table className="w-full text-xs">
+                  <thead>
+                    <tr className="bg-gray-50 border-b border-gray-200">
+                      <th className="text-left px-4 py-3 font-bold text-gray-600">時間</th>
+                      <th className="text-left px-4 py-3 font-bold text-gray-600">類型</th>
+                      <th className="text-left px-4 py-3 font-bold text-gray-600">操作</th>
+                      <th className="text-left px-4 py-3 font-bold text-gray-600">明細</th>
+                      <th className="text-left px-4 py-3 font-bold text-gray-600">操作人</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {auditLog
+                      .filter(l => logFilter === 'all' || l.category === logFilter)
+                      .map((l, i) => {
+                        const catStyle = {
+                          monthly: 'bg-blue-100 text-blue-700',
+                          edit: 'bg-purple-100 text-purple-700',
+                          approve: 'bg-green-100 text-green-700',
+                          reject: 'bg-red-100 text-red-700',
+                          delete: 'bg-gray-200 text-gray-600',
+                        }[l.category] || 'bg-gray-100 text-gray-500';
+                        const ts = new Date(l.ts);
+                        const timeStr = `${ts.getFullYear()}-${String(ts.getMonth()+1).padStart(2,'0')}-${String(ts.getDate()).padStart(2,'0')} ${String(ts.getHours()).padStart(2,'0')}:${String(ts.getMinutes()).padStart(2,'0')}:${String(ts.getSeconds()).padStart(2,'0')}`;
+                        return (
+                          <tr key={l.id} className={`border-b border-gray-100 ${i % 2 === 0 ? '' : 'bg-gray-50'}`}>
+                            <td className="px-4 py-2.5 font-mono text-gray-500 whitespace-nowrap">{timeStr}</td>
+                            <td className="px-4 py-2.5">
+                              <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${catStyle}`}>{l.action}</span>
+                            </td>
+                            <td className="px-4 py-2.5 text-gray-700 font-bold">{l.action}</td>
+                            <td className="px-4 py-2.5 text-gray-500">{l.detail}</td>
+                            <td className="px-4 py-2.5 text-gray-600">{l.operator}</td>
+                          </tr>
+                        );
+                      })}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </>}
+
           {/* ═══ EXPORT ═══ */}
           {activeSection === 'export' && <>
             <h2 className="text-lg font-bold text-gray-800">匯出報表</h2>
@@ -1117,10 +1242,10 @@ const MileageTool = ({ onBack, windowHeight }) => {
 
       {/* ═══ MODALS ═══ */}
       {showModal === 'monthly' && (
-        <div className="fixed inset-0 bg-black bg-opacity-40 backdrop-blur-sm z-[9999] flex items-center justify-center p-4" onClick={() => { setShowModal(null); setConflictOverrideMode(false); }}>
+        <div className="fixed inset-0 bg-black bg-opacity-40 backdrop-blur-sm z-[9999] flex items-center justify-center p-4" onClick={() => { setShowModal(null); setConflictOverrideMode(false); setEditingRecord(null); }}>
           <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md p-4 lg:p-6 space-y-3 lg:space-y-4 max-h-[90vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
             <div className="flex items-center justify-between">
-              <h3 className="text-base font-bold text-gray-800">📋 回報月里程</h3>
+              <h3 className="text-base font-bold text-gray-800">{editingRecord ? '✏️ 修改里程回報' : '📋 回報月里程'}</h3>
               {reportPeriod < getTaiwanPeriod() && (
                 <span className="text-xs bg-amber-100 text-amber-700 border border-amber-300 rounded-full px-2.5 py-0.5 font-bold">補登前期</span>
               )}
@@ -1263,7 +1388,7 @@ const MileageTool = ({ onBack, windowHeight }) => {
               const hasWarnOnly = conflictAnalysis && conflictAnalysis.canSubmitWithWarning;
               return (
                 <div className="flex gap-3 pt-2">
-                  <button onClick={() => { setShowModal(null); setConflictOverrideMode(false); }}
+                  <button onClick={() => { setShowModal(null); setConflictOverrideMode(false); setEditingRecord(null); }}
                     className="flex-1 py-2.5 border border-gray-300 rounded-lg text-gray-600 font-bold text-sm hover:bg-gray-50">取消</button>
                   {hasBlocking ? (
                     <button disabled className="flex-1 py-2.5 bg-gray-200 text-gray-400 rounded-lg font-bold text-sm cursor-not-allowed">
@@ -1460,6 +1585,109 @@ const MileageTool = ({ onBack, windowHeight }) => {
                 setShowModal(null);
                 setEditItem(null);
               }} className="flex-1 py-2.5 bg-blue-500 text-white rounded-lg font-bold text-sm hover:bg-blue-600">儲存</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ═══ 刪除確認 Modal ═══ */}
+      {deleteTarget && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 z-[9999] flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm p-6 space-y-4">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 bg-red-100 rounded-full flex items-center justify-center text-red-500 text-xl flex-shrink-0">🗑</div>
+              <div>
+                <h3 className="text-base font-bold text-gray-800">確認刪除</h3>
+                <p className="text-xs text-gray-500 mt-0.5">此操作將由管理者記錄，無法復原</p>
+              </div>
+            </div>
+            <div className="bg-red-50 border border-red-200 rounded-lg px-4 py-3 text-sm text-red-700 font-mono">
+              {deleteTarget.label}
+            </div>
+            <div className="flex gap-3">
+              <button onClick={() => setDeleteTarget(null)}
+                className="flex-1 py-2.5 border border-gray-300 rounded-lg text-gray-600 font-bold text-sm hover:bg-gray-50">取消</button>
+              <button onClick={doDelete}
+                className="flex-1 py-2.5 bg-red-500 text-white rounded-lg font-bold text-sm hover:bg-red-600">確認刪除</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ═══ 退回原因 Modal ═══ */}
+      {rejectTarget && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 z-[9999] flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm p-6 space-y-4">
+            <h3 className="text-base font-bold text-gray-800">📤 退回記錄</h3>
+            <div className="text-xs text-gray-500 bg-gray-50 rounded-lg px-3 py-2">{rejectTarget.label}</div>
+            <div>
+              <label className="text-xs font-bold text-gray-500 block mb-1">退回原因 *</label>
+              <textarea value={rejectReason} onChange={e => setRejectReason(e.target.value)}
+                placeholder="請說明退回原因，將通知回報人修正"
+                className="w-full border border-gray-300 rounded-lg p-2.5 text-sm outline-none resize-none h-20 focus:border-red-400" />
+            </div>
+            <div className="flex gap-3">
+              <button onClick={() => { setRejectTarget(null); setRejectReason(''); }}
+                className="flex-1 py-2.5 border border-gray-300 rounded-lg text-gray-600 font-bold text-sm hover:bg-gray-50">取消</button>
+              <button onClick={doReject} disabled={!rejectReason.trim()}
+                className="flex-1 py-2.5 bg-red-500 text-white rounded-lg font-bold text-sm hover:bg-red-600 disabled:opacity-40">確認退回</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ═══ 回報後確認 Toast Banner ═══ */}
+      {lastSubmitted && (
+        <div className="fixed bottom-4 left-1/2 -translate-x-1/2 z-[9998] w-full max-w-md px-4">
+          <div className="bg-white border border-emerald-300 shadow-xl rounded-2xl p-4 space-y-3">
+            <div className="flex items-start gap-3">
+              <div className="w-8 h-8 bg-emerald-100 rounded-full flex items-center justify-center text-emerald-600 flex-shrink-0">✓</div>
+              <div className="flex-1 min-w-0">
+                <p className="text-sm font-bold text-gray-800">
+                  {lastSubmitted.isEdit ? '修改已送出' : lastSubmitted.isOverride ? '覆蓋完成' : '回報成功，請確認數據'}
+                </p>
+                <div className="mt-1.5 text-xs text-gray-600 space-y-0.5">
+                  <div className="flex gap-4">
+                    <span className="text-gray-400">車牌</span>
+                    <span className="font-mono font-bold">{lastSubmitted.vehiclePlate}</span>
+                  </div>
+                  <div className="flex gap-4">
+                    <span className="text-gray-400">期別</span>
+                    <span className="font-mono">{lastSubmitted.period}</span>
+                    {lastSubmitted.retroactive && <span className="text-amber-600 font-bold">（補登）</span>}
+                  </div>
+                  <div className="flex gap-4">
+                    <span className="text-gray-400">里程</span>
+                    <span className="font-mono font-bold text-blue-600">{fmtNum(lastSubmitted.odometerReading)} km</span>
+                    {lastSubmitted.monthlyMileage != null && (
+                      <span className="text-gray-500">本月 +{fmtNum(lastSubmitted.monthlyMileage)} km</span>
+                    )}
+                  </div>
+                  <div className="flex gap-4">
+                    <span className="text-gray-400">回報人</span>
+                    <span>{lastSubmitted.reporterName}{lastSubmitted.proxyByName ? `（${lastSubmitted.proxyByName} 代填）` : ''}</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+            <div className="flex gap-2 pt-1">
+              <button onClick={() => {
+                  setEditingRecord(lastSubmitted.id);
+                  const veh = vehicles.find(v => v.plate === lastSubmitted.vehiclePlate);
+                  if (veh) setReportVehicle(veh.id);
+                  setReportPeriod(lastSubmitted.period);
+                  setReportReading(String(lastSubmitted.odometerReading));
+                  setReportNotes(lastSubmitted.notes || '');
+                  setLastSubmitted(null);
+                  setShowModal('monthly');
+                }}
+                className="flex-1 py-2 border border-blue-300 text-blue-600 rounded-lg text-xs font-bold hover:bg-blue-50">
+                ✏️ 數據有誤，修改
+              </button>
+              <button onClick={() => setLastSubmitted(null)}
+                className="flex-1 py-2 bg-emerald-500 text-white rounded-lg text-xs font-bold hover:bg-emerald-600">
+                ✓ 確認無誤
+              </button>
             </div>
           </div>
         </div>
