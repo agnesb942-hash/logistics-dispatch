@@ -623,51 +623,7 @@ const MileageTool = ({ onBack, windowHeight }) => {
     setAuditLog(prev => [entry, ...prev].slice(0, 500)); // 保留最近 500 筆
   };
 
-  // ── Approve / Reject / Delete ────────────────────────────────────
-  const handleApprove = (recordId, type) => {
-    if (type === 'monthly') {
-      const rec = monthlyRecords.find(r => r.id === recordId);
-      const newRecords = monthlyRecords.map(r => r.id === recordId ? { ...r, status: 'approved', approvedBy: currentUser.name, approvedAt: new Date().toISOString() } : r);
-      autoSave('monthly_records', newRecords, setMonthlyRecords);
-      if (rec) logAction('approve', '審核通過', `月報 ${rec.vehiclePlate} ${rec.period} ${fmtNum(rec.odometerReading)} km`);
-    } else {
-      const rec = adhocRecords.find(r => r.id === recordId);
-      const newRecords = adhocRecords.map(r => r.id === recordId ? { ...r, status: 'approved', approvedBy: currentUser.name } : r);
-      autoSave('adhoc_records', newRecords, setAdhocRecords);
-      if (rec) logAction('approve', '審核通過', `用車 ${rec.vehiclePlate} ${rec.date} ${rec.userName}`);
-    }
-  };
-
-  // 退回原因改為 inline modal，此處暫存 reject target
-  const [rejectTarget, setRejectTarget] = useState(null); // { id, type, label }
-  const [rejectReason, setRejectReason] = useState('');
-  const doReject = () => {
-    if (!rejectTarget || !rejectReason.trim()) return;
-    const { id, type, label } = rejectTarget;
-    if (type === 'monthly') {
-      const newRecords = monthlyRecords.map(r => r.id === id ? { ...r, status: 'rejected', rejectReason, approvedBy: currentUser.name } : r);
-      autoSave('monthly_records', newRecords, setMonthlyRecords);
-    } else {
-      const newRecords = adhocRecords.map(r => r.id === id ? { ...r, status: 'rejected', rejectReason } : r);
-      autoSave('adhoc_records', newRecords, setAdhocRecords);
-    }
-    logAction('reject', '退回', `${label}｜原因：${rejectReason}`);
-    setRejectTarget(null); setRejectReason('');
-  };
-
-  // 刪除：改為 inline modal（不用 window.confirm）
-  const doDelete = () => {
-    if (!deleteTarget) return;
-    const { id, type, label } = deleteTarget;
-    if (type === 'monthly') {
-      autoSave('monthly_records', monthlyRecords.filter(r => r.id !== id), setMonthlyRecords);
-    } else {
-      autoSave('adhoc_records', adhocRecords.filter(r => r.id !== id), setAdhocRecords);
-    }
-    logAction('delete', '刪除記錄', label);
-    setDeleteTarget(null);
-  };
-
+  // ── Delete ────────────────────────────────────────
   const handleDeleteRecord = (recordId, type) => {
     let label = '';
     if (type === 'monthly') {
@@ -726,7 +682,7 @@ const MileageTool = ({ onBack, windowHeight }) => {
           vehicles.find(v => v.plate === r.vehiclePlate) ? getDeptName(vehicles.find(v => v.plate === r.vehiclePlate).deptId) : '',
           r.vehiclePlate, r.odometerReading, r.previousReading ?? '', r.monthlyMileage ?? '',
           r.reporterName, r.proxyByName || '',
-          r.status === 'approved' ? '已審核' : r.status === 'rejected' ? '退回' : '待審',
+          '已回報',
           r.notes || '', r.submittedAt?.slice(0,10) || ''
         ]),
         summary: {
@@ -749,7 +705,7 @@ const MileageTool = ({ onBack, windowHeight }) => {
           vehicles.find(v => v.plate === r.vehiclePlate) ? getDeptName(vehicles.find(v => v.plate === r.vehiclePlate).deptId) : '',
           r.vehiclePlate, r.userName, r.proxyByName || '',
           r.startMileage, r.endMileage, r.tripMileage, r.purpose,
-          r.status === 'approved' ? '已審核' : '待審', r.notes || ''
+          '已回報', r.notes || ''
         ]),
         summary: {
           total: recs.reduce((s, r) => s + (r.tripMileage || 0), 0),
@@ -824,10 +780,16 @@ const MileageTool = ({ onBack, windowHeight }) => {
       '<div class="summary">' + summaryText + '</div>',
       '</body></html>'
     ].join('\n');
-    const w = window.open('', '_blank');
-    w.document.write(html);
-    w.document.close();
-    setTimeout(() => w.print(), 500);
+    const blob = new Blob([html], { type: 'text/html;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.target = '_blank';
+    a.rel = 'noopener';
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    setTimeout(() => URL.revokeObjectURL(url), 3000);
   };
 
 
@@ -885,7 +847,6 @@ const MileageTool = ({ onBack, windowHeight }) => {
     return { trendData, vehicleData };
   }, [monthlyRecords, periodRecords, selectedPeriod, filterDept, vehicles]);
 
-  const statusMap = { submitted: { label: '待審核', color: 'bg-amber-100 text-amber-700' }, approved: { label: '已審核', color: 'bg-green-100 text-green-700' }, rejected: { label: '已退回', color: 'bg-red-100 text-red-700' } };
 
   // ═════════════════════════════════════════════════════════════════
   // RENDER: Identity Selection (no password for users)
@@ -1074,10 +1035,6 @@ const MileageTool = ({ onBack, windowHeight }) => {
                 <div className="text-[10px] text-gray-400 mt-1">{reportProgress.total - reportProgress.reported} 輛未回報</div>
               </div>
               <div className="bg-white rounded-xl p-4 border border-gray-200 shadow-sm">
-                <div className="text-xs text-gray-500 mb-1">待審核</div>
-                <div className="text-2xl font-bold text-amber-600">{periodRecords.filter(r => r.status === 'submitted').length}</div>
-              </div>
-              <div className="bg-white rounded-xl p-4 border border-gray-200 shadow-sm">
                 <div className="text-xs text-gray-500 mb-1">本月平均里程</div>
                 <div className="text-2xl font-bold text-emerald-600">
                   {periodRecords.filter(r => r.monthlyMileage > 0).length > 0
@@ -1260,7 +1217,7 @@ const MileageTool = ({ onBack, windowHeight }) => {
                     <th className="text-right px-4 py-3 font-bold text-gray-600">上期里程</th>
                     <th className="text-right px-4 py-3 font-bold text-gray-600">本月里程</th>
                     <th className="text-left px-4 py-3 font-bold text-gray-600">回報人</th>
-                    <th className="text-center px-4 py-3 font-bold text-gray-600">狀態</th>
+                    
                     {isAdmin && <th className="text-center px-4 py-3 font-bold text-gray-600">操作</th>}
                   </tr>
                 </thead>
@@ -1286,10 +1243,6 @@ const MileageTool = ({ onBack, windowHeight }) => {
                             {isAdmin && (
                               <td className="px-4 py-3 text-center">
                                 <div className="flex items-center justify-center gap-1">
-                                  {rec.status === 'submitted' && <>
-                                    <button onClick={() => handleApprove(rec.id, 'monthly')} className="text-[10px] px-2 py-1 bg-green-50 text-green-600 rounded font-bold hover:bg-green-100">通過</button>
-                                    <button onClick={() => { const r2 = monthlyRecords.find(r => r.id === rec.id); setRejectTarget({ id: rec.id, type: 'monthly', label: `月報 ${rec.vehiclePlate} ${rec.period}` }); setRejectReason(''); }} className="text-[10px] px-2 py-1 bg-red-50 text-red-600 rounded font-bold hover:bg-red-100">退回</button>
-                                  </>}
                                   <button onClick={() => { const veh2 = vehicles.find(v => v.id === rec.vehicleId); setEditingRecord(rec.id); setReportVehicle(rec.vehicleId); setReportPeriod(rec.period); setReportReading(String(rec.odometerReading)); setReportNotes(rec.notes || ''); setShowModal('monthly'); }} className="text-[10px] px-2 py-1 bg-blue-50 text-blue-600 rounded font-bold hover:bg-blue-100">改</button>
                                   <button onClick={() => handleDeleteRecord(rec.id, 'monthly')} className="text-[10px] px-2 py-1 text-gray-400 hover:text-red-500">刪</button>
                                 </div>
@@ -1329,7 +1282,7 @@ const MileageTool = ({ onBack, windowHeight }) => {
                     <th className="text-right px-4 py-3 font-bold text-gray-600">結束里程</th>
                     <th className="text-right px-4 py-3 font-bold text-gray-600">區間里程</th>
                     <th className="text-left px-4 py-3 font-bold text-gray-600">事由</th>
-                    <th className="text-center px-4 py-3 font-bold text-gray-600">狀態</th>
+                    
                     {isAdmin && <th className="text-center px-4 py-3 font-bold text-gray-600">操作</th>}
                   </tr>
                 </thead>
@@ -1344,17 +1297,10 @@ const MileageTool = ({ onBack, windowHeight }) => {
                       <td className="px-4 py-3 text-right font-mono font-bold text-purple-600">{fmtNum(r.tripMileage)}</td>
                       <td className="px-4 py-3">{r.purpose}</td>
                       <td className="px-4 py-3 text-center">
-                        <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${statusMap[r.status]?.color || ''}`}>
-                          {statusMap[r.status]?.label || r.status}
-                        </span>
                       </td>
                       {isAdmin && (
                         <td className="px-4 py-3 text-center">
                           <div className="flex items-center justify-center gap-1">
-                            {r.status === 'submitted' && <>
-                              <button onClick={() => handleApprove(r.id, 'adhoc')} className="text-[10px] px-2 py-1 bg-green-50 text-green-600 rounded font-bold hover:bg-green-100">通過</button>
-                              <button onClick={() => { setRejectTarget({ id: r.id, type: 'adhoc', label: `用車 ${r.vehiclePlate} ${r.date}` }); setRejectReason(''); }} className="text-[10px] px-2 py-1 bg-red-50 text-red-600 rounded font-bold hover:bg-red-100">退回</button>
-                            </>}
                             <button onClick={() => handleDeleteRecord(r.id, 'adhoc')} className="text-[10px] px-2 py-1 text-gray-400 hover:text-red-500">刪</button>
                           </div>
                         </td>
@@ -1383,7 +1329,7 @@ const MileageTool = ({ onBack, windowHeight }) => {
                     <th className="text-left px-4 py-3 font-bold text-gray-600">車牌</th>
                     <th className="text-left px-4 py-3 font-bold text-gray-600">部門</th>
                     <th className="text-left px-4 py-3 font-bold text-gray-600">負責人</th>
-                    <th className="text-center px-4 py-3 font-bold text-gray-600">狀態</th>
+                    
                     <th className="text-right px-4 py-3 font-bold text-gray-600">起始基準里程</th>
                     <th className="text-center px-4 py-3 font-bold text-gray-600">操作</th>
                   </tr>
@@ -1425,7 +1371,7 @@ const MileageTool = ({ onBack, windowHeight }) => {
                     <th className="text-left px-4 py-3 font-bold text-gray-600">姓名</th>
                     <th className="text-left px-4 py-3 font-bold text-gray-600">部門</th>
                     <th className="text-center px-4 py-3 font-bold text-gray-600">角色</th>
-                    <th className="text-center px-4 py-3 font-bold text-gray-600">狀態</th>
+                    
                     <th className="text-center px-4 py-3 font-bold text-gray-600">操作</th>
                   </tr>
                 </thead>
@@ -1483,7 +1429,6 @@ const MileageTool = ({ onBack, windowHeight }) => {
                   <option value="monthly">里程回報</option>
                   <option value="edit">修改 / 覆蓋</option>
                   <option value="approve">審核通過</option>
-                  <option value="reject">退回</option>
                   <option value="delete">刪除</option>
                 </select>
                 <span className="text-xs text-gray-400">共 {auditLog.filter(l => logFilter === 'all' || l.category === logFilter).length} 筆</span>
@@ -1513,7 +1458,6 @@ const MileageTool = ({ onBack, windowHeight }) => {
                           monthly: 'bg-blue-100 text-blue-700',
                           edit: 'bg-purple-100 text-purple-700',
                           approve: 'bg-green-100 text-green-700',
-                          reject: 'bg-red-100 text-red-700',
                           delete: 'bg-gray-200 text-gray-600',
                         }[l.category] || 'bg-gray-100 text-gray-500';
                         const ts = new Date(l.ts);
@@ -1993,28 +1937,6 @@ const MileageTool = ({ onBack, windowHeight }) => {
                 className="flex-1 py-2.5 border border-gray-300 rounded-lg text-gray-600 font-bold text-sm hover:bg-gray-50">取消</button>
               <button onClick={doDelete}
                 className="flex-1 py-2.5 bg-red-500 text-white rounded-lg font-bold text-sm hover:bg-red-600">確認刪除</button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* ═══ 退回原因 Modal ═══ */}
-      {rejectTarget && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 z-[9999] flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm p-6 space-y-4">
-            <h3 className="text-base font-bold text-gray-800">📤 退回記錄</h3>
-            <div className="text-xs text-gray-500 bg-gray-50 rounded-lg px-3 py-2">{rejectTarget.label}</div>
-            <div>
-              <label className="text-xs font-bold text-gray-500 block mb-1">退回原因 *</label>
-              <textarea value={rejectReason} onChange={e => setRejectReason(e.target.value)}
-                placeholder="請說明退回原因，將通知回報人修正"
-                className="w-full border border-gray-300 rounded-lg p-2.5 text-sm outline-none resize-none h-20 focus:border-red-400" />
-            </div>
-            <div className="flex gap-3">
-              <button onClick={() => { setRejectTarget(null); setRejectReason(''); }}
-                className="flex-1 py-2.5 border border-gray-300 rounded-lg text-gray-600 font-bold text-sm hover:bg-gray-50">取消</button>
-              <button onClick={doReject} disabled={!rejectReason.trim()}
-                className="flex-1 py-2.5 bg-red-500 text-white rounded-lg font-bold text-sm hover:bg-red-600 disabled:opacity-40">確認退回</button>
             </div>
           </div>
         </div>
