@@ -1929,21 +1929,41 @@ const MileageTool = ({ onBack, windowHeight }) => {
             // ── 執行 AI 診斷 ──────────────────────────────────────────
             const runAiAnalysis = async () => {
               setAiLoading(true); setAiAnalysis('');
-              const deptFilter = aiDept === 'all' ? null : aiDept;
+              const deptFilter  = aiDept === 'all' ? null : aiDept;
               const filteredRecs = monthlyRecords.filter(r =>
                 aiPeriods.includes(r.period) &&
                 (!deptFilter || (vehicles.find(v => v.plate === r.vehiclePlate) || {}).deptId === deptFilter)
               );
-              const recWithKm  = filteredRecs.filter(r => (r.monthlyMileage || 0) > 0);
-              const kms        = recWithKm.map(r => r.monthlyMileage).sort((a,b) => a - b);
-              const avg        = kms.length ? Math.round(kms.reduce((s,v) => s+v, 0) / kms.length) : 0;
-              const total      = kms.reduce((s,v) => s+v, 0);
-              const median     = kms.length ? kms[Math.floor(kms.length/2)] : 0;
-              const deptLabel  = aiDept === 'all' ? '全部部門' : ((departments.find(d => d.id === aiDept) || {name: aiDept}).name);
-              const top5       = [...recWithKm].sort((a,b) => (b.monthlyMileage||0)-(a.monthlyMileage||0)).slice(0,5);
-              const bottom5    = [...recWithKm].sort((a,b) => (a.monthlyMileage||0)-(b.monthlyMileage||0)).slice(0,5);
-              const anomalies  = recWithKm.filter(r => r.monthlyMileage > avg * 2.0);
-              const rangeTyp   = aiRange==='month'?'月報':aiRange==='quarter'?'季報':aiRange==='year'?'年報':'自訂區間';
+              const recWithKm = filteredRecs.filter(r => (r.monthlyMileage || 0) > 0);
+              const kms       = recWithKm.map(r => r.monthlyMileage).sort((a,b) => a - b);
+              const avg       = kms.length ? Math.round(kms.reduce((s,v)=>s+v,0)/kms.length) : 0;
+              const total     = kms.reduce((s,v)=>s+v, 0);
+              const median    = kms.length ? kms[Math.floor(kms.length/2)] : 0;
+              const deptLabel = aiDept==='all' ? '全部部門' : ((departments.find(d=>d.id===aiDept)||{name:aiDept}).name);
+              const top5      = [...recWithKm].sort((a,b)=>(b.monthlyMileage||0)-(a.monthlyMileage||0)).slice(0,5);
+              const bottom5   = [...recWithKm].sort((a,b)=>(a.monthlyMileage||0)-(b.monthlyMileage||0)).slice(0,5);
+              const anomalies = recWithKm.filter(r => r.monthlyMileage > avg * 2.0);
+              const rangeTyp  = aiRange==='month'?'月報':aiRange==='quarter'?'季報':aiRange==='year'?'年報':'自訂區間';
+
+              // ── 依部門整理車輛里程（供調度建議用）──────────────────
+              const deptGroups = {};
+              recWithKm.forEach(r => {
+                const veh    = vehicles.find(v => v.plate === r.vehiclePlate);
+                const dId    = veh ? veh.deptId : 'unknown';
+                const dName  = (departments.find(d=>d.id===dId)||{name:dId}).name;
+                if (!deptGroups[dName]) deptGroups[dName] = [];
+                deptGroups[dName].push({ plate: r.vehiclePlate, km: r.monthlyMileage });
+              });
+              const deptDispatchLines = Object.entries(deptGroups).map(([dName, recs]) => {
+                const sorted  = [...recs].sort((a,b)=>b.km-a.km);
+                const dAvg    = Math.round(sorted.reduce((s,r)=>s+r.km,0)/sorted.length);
+                const high    = sorted.slice(0, Math.ceil(sorted.length/3));
+                const low     = sorted.slice(-Math.ceil(sorted.length/3));
+                return `【${dName}】共${sorted.length}輛，部門平均${dAvg}km\n` +
+                  `  高里程（建議調出）：${high.map(r=>r.plate+' '+r.km+'km').join('、')}\n` +
+                  `  低里程（建議補入）：${low.map(r=>r.plate+' '+r.km+'km').join('、')}`;
+              }).join('\n');
+
               const prompt = `你是一位專業的物流車隊管理顧問，請根據以下里程數據進行專業診斷分析，並以繁體中文（台灣用語）回覆。
 
 【資料範圍】
@@ -1954,44 +1974,56 @@ const MileageTool = ({ onBack, windowHeight }) => {
 【關鍵指標】
 - 期間總里程：${total.toLocaleString()} km
 - 平均里程/輛/月：${avg.toLocaleString()} km
-- 最高 5 輛（車牌 里程）：${top5.map(r=>r.vehiclePlate+' '+r.monthlyMileage+'km').join('、')}
-- 最低 5 輛（車牌 里程）：${bottom5.map(r=>r.vehiclePlate+' '+r.monthlyMileage+'km').join('、')}
-- 異常高里程車輛（>平均 200%）：${anomalies.length>0?anomalies.map(r=>r.vehiclePlate+' '+r.monthlyMileage+'km').join('、'):'無'}
+- 最高 5 輛：${top5.map(r=>r.vehiclePlate+' '+r.monthlyMileage+'km').join('、')}
+- 最低 5 輛：${bottom5.map(r=>r.vehiclePlate+' '+r.monthlyMileage+'km').join('、')}
+- 異常高里程（>平均200%）：${anomalies.length>0?anomalies.map(r=>r.vehiclePlate+' '+r.monthlyMileage+'km').join('、'):'無'}
 
-【請依序提供以下分析，每個區塊標題格式必須完全照下方格式輸出】：
+【各部門車輛里程分布（供調度建議用）】
+${deptDispatchLines}
+
+【重要規則】每個部門的車種規格不同，調度建議必須在同部門內進行，禁止跨部門調度。
+
+【請依序輸出以下五個區塊，標題格式完全照下方格式，不可更改】
+
 1. **整體狀況評估**
-（此處填寫本期車隊運作總體評估，100字以內）
+本期車隊運作總體評估（120字以內）
 
 2. **異常車輛分析**
-（此處填寫高里程與低里程車輛的可能成因與風險提示）
+針對高里程與低里程車輛的可能成因與風險提示
 
 3. **管理建議**
-- 建議一：（具體可執行的改善建議）
-- 建議二：（具體可執行的改善建議）
-- 建議三：（具體可執行的改善建議）
+- 建議一：具體可執行的改善行動
+- 建議二：具體可執行的改善行動
+- 建議三：具體可執行的改善行動
 
-4. **下期預測**
-（此處填寫根據趨勢，下期需注意的重點）`;
+4. **車輛調度建議**
+依據各部門的里程分布，提出同部門內高低里程車輛的最佳交換輪調方案。每個部門分開說明，格式如下：
+【部門名稱】
+- 輪調方向：高里程車輛調至低頻路線，低里程車輛補入高頻路線
+- 建議換班組合：（列出具體車牌的交換建議）
+- 預期效益：（說明輪調後對里程均衡化的預期幫助）
+
+5. **下期預測**
+根據趨勢，下期需注意的重點`;
 
               try {
                 const res  = await fetch('/api/ai-diagnose', {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({prompt})});
                 const data = await res.json();
                 if (!res.ok) {
-                  setAiAnalysis('❌ ' + (data.error || '分析失敗，請稍後再試'));
+                  setAiAnalysis('❌ ' + (data.error||'分析失敗，請稍後再試'));
                 } else {
                   const resultText = data.result || '（AI 未回傳結果）';
                   setAiAnalysis(resultText);
                   const newCount  = aiUsageCount + 1;
                   setAiUsageCount(newCount);
-                  // 把統計數據也存進去，供 PDF 使用
                   const savedData = {
                     result: resultText,
-                    label: deptLabel + '｜' + aiRangeLabel,
+                    label:  deptLabel + '｜' + aiRangeLabel,
                     savedAt: new Date().toISOString(),
-                    stats: { total, avg, median, count: recWithKm.length, anomalyCount: anomalies.length, rangeTyp, periods: aiPeriods.length },
-                    top5: top5.map(r => ({plate: r.vehiclePlate, km: r.monthlyMileage})),
-                    bottom5: bottom5.map(r => ({plate: r.vehiclePlate, km: r.monthlyMileage})),
-                    anomalies: anomalies.map(r => ({plate: r.vehiclePlate, km: r.monthlyMileage})),
+                    stats:  { total, avg, median, count: recWithKm.length, anomalyCount: anomalies.length, rangeTyp, periods: aiPeriods.length },
+                    top5:    top5.map(r=>({plate:r.vehiclePlate, km:r.monthlyMileage})),
+                    bottom5: bottom5.map(r=>({plate:r.vehiclePlate, km:r.monthlyMileage})),
+                    anomalies: anomalies.map(r=>({plate:r.vehiclePlate, km:r.monthlyMileage})),
                   };
                   setAiSavedResult(savedData);
                   try {
@@ -2000,16 +2032,16 @@ const MileageTool = ({ onBack, windowHeight }) => {
                       await fb.setDoc(fb.doc(fb.db,'mileage_config','ai_last_result'), savedData);
                       await fb.setDoc(fb.doc(fb.db,'mileage_config','ai_usage'), {count:newCount,updatedAt:new Date().toISOString()});
                     }
-                  } catch(_e) { console.warn('[AI] save failed',_e); }
+                  } catch(_e){ console.warn('[AI] save failed',_e); }
                 }
-              } catch(e) { setAiAnalysis('❌ 網路錯誤：' + e.message); }
+              } catch(e){ setAiAnalysis('❌ 網路錯誤：'+e.message); }
               setAiLoading(false);
             };
 
             const displayResult = aiAnalysis || (aiSavedResult ? aiSavedResult.result : '');
             const isSavedResult = !aiAnalysis && !!aiSavedResult;
 
-            // ── PDF 匯出：完整視覺版 ──────────────────────────────────
+            // ── PDF 匯出：jsPDF + html2canvas → 直接下載 .pdf ────────
             const handlePdfExport = async () => {
               if (!displayResult) return;
               const sd      = aiSavedResult || {};
@@ -2020,203 +2052,215 @@ const MileageTool = ({ onBack, windowHeight }) => {
               const b5      = sd.bottom5 || [];
               const anom    = sd.anomalies || [];
 
-              // ── 解析四個分析區塊 ──────────────────────────────────────
+              // 解析 5 個區塊
               const splitSections = (text) => {
                 const lines = text.split('\n');
-                const buf = { s1:[], s2:[], s3:[], s4:[] };
-                let cur = null;
-                const headMap = [
-                  { keys:['整體狀況評估','整體狀況','整體評估'], t:'s1' },
-                  { keys:['異常車輛分析','異常車輛','異常分析'], t:'s2' },
-                  { keys:['管理建議','管理改善建議'],             t:'s3' },
-                  { keys:['下期預測','下期展望'],                 t:'s4' },
+                const buf   = {s1:[],s2:[],s3:[],s4:[],s5:[]};
+                let cur     = null;
+                const heads = [
+                  {keys:['整體狀況評估','整體狀況','整體評估'], t:'s1'},
+                  {keys:['異常車輛分析','異常車輛','異常分析'],  t:'s2'},
+                  {keys:['管理建議','管理改善'],                  t:'s3'},
+                  {keys:['車輛調度建議','調度建議','輪調建議'],   t:'s4'},
+                  {keys:['下期預測','下期展望'],                  t:'s5'},
                 ];
                 for (const line of lines) {
                   const plain = line.replace(/\*+/g,'').replace(/^\d+[.、)]\s*/,'').trim();
                   if (plain.length > 0 && plain.length < 22) {
                     let matched = false;
-                    for (const { keys, t } of headMap) {
-                      if (keys.some(k => plain.includes(k))) { cur = t; matched = true; break; }
+                    for (const {keys,t} of heads) {
+                      if (keys.some(k=>plain.includes(k))){ cur=t; matched=true; break; }
                     }
                     if (matched) continue;
                   }
                   if (cur) buf[cur].push(line);
                 }
-                return { s1:buf.s1.join('\n').trim(), s2:buf.s2.join('\n').trim(), s3:buf.s3.join('\n').trim(), s4:buf.s4.join('\n').trim() };
+                return Object.fromEntries(Object.entries(buf).map(([k,v])=>[k,v.join('\n').trim()]));
               };
 
-              const secs    = splitSections(displayResult);
-              const allEmpty = !secs.s1 && !secs.s2 && !secs.s3 && !secs.s4;
+              const secs     = splitSections(displayResult);
+              const allEmpty = !secs.s1&&!secs.s2&&!secs.s3&&!secs.s4&&!secs.s5;
+
               const R = (t) => (t||'').replace(/\*\*(.+?)\*\*/g,'<b>$1</b>').replace(/\n/g,'<br>') || '<span style="color:#9ca3af;font-style:italic;">無資料</span>';
+
               const buildList = (t) => {
                 if (!t||!t.trim()) return '<span style="color:#9ca3af;">—</span>';
                 const items = t.split('\n').filter(l=>l.trim()&&!/^[\s*]+$/.test(l))
-                  .map(l=>l.replace(/^[-•·✦\d]+[.、)]*\s*/,'').replace(/\*\*/g,'').trim()).filter(l=>l.length>3);
-                return items.length ? items.map(it=>`<div style="display:flex;gap:8px;margin:5px 0;"><span style="color:#15803d;font-weight:900;flex-shrink:0;">✦</span><span>${it}</span></div>`).join('') : R(t);
+                  .map(l=>l.replace(/^[-•·✦\d]+[.、)]*\s*/,'').replace(/\*\*/g,'').trim())
+                  .filter(l=>l.length>3);
+                return items.length
+                  ? items.map(it=>`<div style="display:flex;gap:8px;margin:5px 0;align-items:flex-start;"><span style="color:#15803d;font-weight:900;flex-shrink:0;">✦</span><span>${it}</span></div>`).join('')
+                  : R(t);
               };
 
-              // ── 橫條圖 ────────────────────────────────────────────────
+              // 調度建議：保留【部門】格式的縮排
+              const buildDispatch = (t) => {
+                if (!t||!t.trim()) return '<span style="color:#9ca3af;">—</span>';
+                return t.split('\n').map(line => {
+                  const clean = line.replace(/\*\*/g,'').trimEnd();
+                  if (/^【.+】/.test(clean))
+                    return `<div style="font-weight:800;color:#1e40af;margin:10px 0 4px;font-size:12.5px;">${clean}</div>`;
+                  if (/^[-·•]/.test(clean.trim()))
+                    return `<div style="display:flex;gap:8px;margin:3px 0;padding-left:12px;"><span style="color:#2563eb;flex-shrink:0;">▸</span><span>${clean.trim().slice(1).trim()}</span></div>`;
+                  return clean ? `<div style="margin:3px 0;padding-left:12px;color:#374151;">${clean}</div>` : '';
+                }).join('');
+              };
+
               const maxKm = t5.length ? t5[0].km : 1;
-              const BAR_BLUES = ['#1d4ed8','#3b82f6','#60a5fa','#93c5fd','#bfdbfe'];
-              const barRow = (plate, km, color, base) => {
-                const pct = Math.max(5, Math.round((km/(base||1))*100));
+              const BLUES = ['#1d4ed8','#3b82f6','#60a5fa','#93c5fd','#bfdbfe'];
+              const barRow = (plate,km,color,base) => {
+                const pct = Math.max(5,Math.round((km/(base||1))*100));
                 return `<div style="display:flex;align-items:center;gap:8px;margin:4px 0;">
-                  <span style="width:58px;font-size:11px;font-weight:700;color:#1e293b;flex-shrink:0;">${plate}</span>
+                  <span style="width:62px;font-size:11px;font-weight:700;color:#1e293b;flex-shrink:0;">${plate}</span>
                   <div style="flex:1;background:#e2e8f0;border-radius:4px;height:14px;overflow:hidden;">
                     <div style="width:${pct}%;height:14px;background:${color};border-radius:4px;"></div>
                   </div>
-                  <span style="width:68px;text-align:right;font-size:11px;font-weight:700;color:#1e293b;">${km.toLocaleString()} km</span>
+                  <span style="width:70px;text-align:right;font-size:11px;font-weight:700;color:#1e293b;">${km.toLocaleString()} km</span>
                 </div>`;
               };
 
-              // ── 分析區塊卡片 ─────────────────────────────────────────
-              const card = (ico, title, titleColor, bg, border, body) =>
+              const card = (ico,title,tc,bg,border,body) =>
                 `<div style="background:${bg};border-left:5px solid ${border};border-radius:10px;padding:14px 16px;margin-bottom:10px;break-inside:avoid;">
                   <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;">
                     <span style="font-size:18px;">${ico}</span>
-                    <b style="font-size:13.5px;color:${titleColor};">${title}</b>
+                    <b style="font-size:13.5px;color:${tc};">${title}</b>
                   </div>
                   <div style="font-size:12px;line-height:1.85;color:#374151;">${body}</div>
                 </div>`;
 
-              // ── 報告 HTML（全 inline style）──────────────────────────
-              const reportHTML = `
-<div id="pdf-report" style="width:794px;background:#fff;padding:30px 36px;font-family:'Microsoft JhengHei','PingFang TC',Arial,sans-serif;font-size:13px;color:#1f2937;box-sizing:border-box;">
+              const reportHTML = `<div id="pdf-report" style="width:760px;background:#fff;padding:28px 32px;font-family:'Microsoft JhengHei','PingFang TC',Arial,sans-serif;font-size:12.5px;color:#1f2937;box-sizing:border-box;">
 
-  <!-- 頁首 -->
-  <div style="background:linear-gradient(135deg,#4338ca,#7c3aed,#a855f7);border-radius:12px;padding:22px 28px 20px;margin-bottom:16px;position:relative;overflow:hidden;">
+  <div style="background:linear-gradient(135deg,#4338ca 0%,#7c3aed 55%,#a855f7 100%);border-radius:12px;padding:20px 26px 18px;margin-bottom:14px;position:relative;overflow:hidden;">
     <div style="position:absolute;right:-18px;top:-18px;width:100px;height:100px;background:rgba(255,255,255,0.12);border-radius:50%;"></div>
-    <div style="position:absolute;right:26px;top:16px;font-size:30px;">🤖</div>
-    <div style="color:#fff;font-size:20px;font-weight:800;letter-spacing:.5px;margin-bottom:3px;">AI 物流診斷報告</div>
+    <div style="position:absolute;right:26px;top:16px;font-size:28px;">🤖</div>
+    <div style="color:#fff;font-size:19px;font-weight:800;margin-bottom:3px;">AI 物流診斷報告</div>
     <div style="color:rgba(255,255,255,.82);font-size:11px;margin-bottom:9px;">車隊里程智慧分析系統 · 由 Claude AI 生成</div>
     <span style="display:inline-block;background:rgba(255,255,255,0.25);color:#fff;border-radius:20px;padding:3px 12px;font-size:10.5px;font-weight:700;">📅 ${label}</span>
   </div>
 
-  <!-- 元資料 4 格 -->
   <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-bottom:12px;">
-    ${[['🗂️','分析類型',`${stats.rangeTyp||'—'}（${stats.periods||1}月）`],['🏢','部門',`${(sd.label||'全部').split('｜')[0]}`],['🚛','有效車輛',`${stats.count||0} 輛`],['🕐','產生時間',savedAt]].map(([ico,lbl,val])=>
+    ${[['🗂️','分析類型',`${stats.rangeTyp||'—'}（${stats.periods||1}個月）`],['🏢','部門',`${(sd.label||'全部').split('｜')[0]}`],['🚛','有效車輛',`${stats.count||0} 輛`],['🕐','產生時間',savedAt]].map(([ico,lbl,val])=>
     `<div style="background:#f8fafc;border:1.5px solid #e2e8f0;border-radius:8px;padding:9px 11px;">
-      <div style="font-size:16px;margin-bottom:3px;">${ico}</div>
+      <div style="font-size:15px;margin-bottom:3px;">${ico}</div>
       <div style="font-size:9px;color:#94a3b8;text-transform:uppercase;font-weight:600;">${lbl}</div>
       <div style="font-size:12px;font-weight:800;color:#1e293b;margin-top:2px;">${val}</div>
     </div>`).join('')}
   </div>
 
-  <!-- KPI 4 格（彩色背景）-->
   <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-bottom:12px;">
     <div style="background:#eff6ff;border:1.5px solid #bfdbfe;border-radius:8px;padding:10px;text-align:center;">
-      <div style="font-size:20px;font-weight:800;color:#1d4ed8;line-height:1.1;">${stats.total?stats.total.toLocaleString():'—'}</div>
+      <div style="font-size:20px;font-weight:800;color:#1d4ed8;">${stats.total?stats.total.toLocaleString():'—'}</div>
       <div style="font-size:10px;color:#3b82f6;margin-top:3px;">📦 總里程 (km)</div>
     </div>
     <div style="background:#f0fdf4;border:1.5px solid #bbf7d0;border-radius:8px;padding:10px;text-align:center;">
-      <div style="font-size:20px;font-weight:800;color:#15803d;line-height:1.1;">${stats.avg?stats.avg.toLocaleString():'—'}</div>
+      <div style="font-size:20px;font-weight:800;color:#15803d;">${stats.avg?stats.avg.toLocaleString():'—'}</div>
       <div style="font-size:10px;color:#16a34a;margin-top:3px;">📊 平均/輛/月</div>
     </div>
     <div style="background:#fefce8;border:1.5px solid #fde68a;border-radius:8px;padding:10px;text-align:center;">
-      <div style="font-size:20px;font-weight:800;color:#92400e;line-height:1.1;">${stats.median?stats.median.toLocaleString():'—'}</div>
+      <div style="font-size:20px;font-weight:800;color:#92400e;">${stats.median?stats.median.toLocaleString():'—'}</div>
       <div style="font-size:10px;color:#b45309;margin-top:3px;">📐 中位數 (km)</div>
     </div>
     <div style="background:#fff1f2;border:1.5px solid #fecdd3;border-radius:8px;padding:10px;text-align:center;">
-      <div style="font-size:20px;font-weight:800;color:#be123c;line-height:1.1;">${stats.anomalyCount||0}</div>
+      <div style="font-size:20px;font-weight:800;color:#be123c;">${stats.anomalyCount||0}</div>
       <div style="font-size:10px;color:#e11d48;margin-top:3px;">⚠️ 異常高里程</div>
     </div>
   </div>
 
-  <!-- 車輛排行 -->
   <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:10px;">
     <div style="background:#f8fafc;border:1.5px solid #e2e8f0;border-radius:8px;padding:10px 12px;">
       <div style="font-size:11px;font-weight:700;color:#475569;margin-bottom:6px;">🔝 里程前 5 名</div>
-      ${t5.length ? t5.map((v,i)=>barRow(v.plate,v.km,BAR_BLUES[i],maxKm)).join('') : '<div style="color:#9ca3af;font-size:11px;">無資料</div>'}
+      ${t5.length?t5.map((v,i)=>barRow(v.plate,v.km,BLUES[i],maxKm)).join(''):'<div style="color:#9ca3af;font-size:11px;">無資料</div>'}
     </div>
     <div style="background:#f8fafc;border:1.5px solid #e2e8f0;border-radius:8px;padding:10px 12px;">
       <div style="font-size:11px;font-weight:700;color:#475569;margin-bottom:6px;">🔻 里程後 5 名</div>
-      ${b5.length ? b5.map((v)=>barRow(v.plate,v.km,'#9ca3af',maxKm)).join('') : '<div style="color:#9ca3af;font-size:11px;">無資料</div>'}
+      ${b5.length?b5.map(v=>barRow(v.plate,v.km,'#94a3b8',maxKm)).join(''):'<div style="color:#9ca3af;font-size:11px;">無資料</div>'}
     </div>
   </div>
 
-  <!-- 異常預警 -->
   ${anom.length>0?`<div style="background:#fff1f2;border:1.5px solid #fecdd3;border-left:5px solid #be123c;border-radius:8px;padding:10px 12px;margin-bottom:10px;">
-    <div style="display:flex;align-items:center;gap:6px;margin-bottom:6px;">
-      <span style="font-size:16px;">🚨</span>
-      <b style="color:#be123c;font-size:13px;">異常高里程預警（超過平均 200%）</b>
-    </div>
+    <div style="display:flex;align-items:center;gap:6px;margin-bottom:6px;"><span style="font-size:16px;">🚨</span><b style="color:#be123c;font-size:13px;">異常高里程預警（超過平均 200%）</b></div>
     <div>${anom.map(v=>`<span style="display:inline-block;background:#be123c;color:#fff;border-radius:4px;padding:2px 8px;font-size:10.5px;font-weight:700;margin:2px 3px 2px 0;">${v.plate} ${v.km.toLocaleString()} km</span>`).join('')}</div>
     <div style="font-size:11px;color:#9f1239;margin-top:5px;">建議立即確認車輛使用狀況、里程紀錄正確性及駕駛行為。</div>
   </div>`:''}
 
-  <!-- AI 分析四區塊 -->
   ${allEmpty
-    ? card('📋','完整 AI 診斷報告','#3730a3','#eef2ff','#4f46e5', R(displayResult))
+    ? card('📋','完整 AI 診斷報告','#3730a3','#eef2ff','#4f46e5',R(displayResult))
     : card('📋','整體狀況評估','#3730a3','#eef2ff','#4f46e5',R(secs.s1))
     + card('🔍','異常車輛分析','#c2410c','#fff7ed','#ea580c',R(secs.s2)||'<span style="color:#9ca3af;">本期無明顯異常車輛。</span>')
     + card('💡','管理建議','#15803d','#f0fdf4','#16a34a',buildList(secs.s3))
-    + card('🔮','下期預測','#7e22ce','#faf5ff','#9333ea',R(secs.s4))
+    + card('🔄','車輛調度建議（依部門）','#1e40af','#eff6ff','#2563eb',buildDispatch(secs.s4))
+    + card('🔮','下期預測','#7e22ce','#faf5ff','#9333ea',R(secs.s5))
   }
 
-  <!-- 頁尾 -->
   <div style="margin-top:14px;border-top:1px solid #e2e8f0;padding-top:8px;display:flex;justify-content:space-between;align-items:center;font-size:10px;color:#94a3b8;">
     <span>物流管理平台 · 車輛里程管理系統</span>
     <span style="background:#ede9fe;color:#5b21b6;border-radius:4px;padding:2px 9px;font-size:10px;font-weight:700;">🤖 Claude AI · Haiku 4.5</span>
   </div>
 </div>`;
 
-              // ── html2canvas 截圖 → 印圖片（100% 有色彩）─────────────
-              // 動態載入 html2canvas
-              const loadScript = (src) => new Promise((res, rej) => {
-                if (window.html2canvas) { res(); return; }
+              // ── 動態載入 html2canvas + jsPDF，產生彩色 PDF 下載 ───────
+              const loadScript = (src) => new Promise((res,rej) => {
+                const exist = document.querySelector(`script[src="${src}"]`);
+                if (exist) { res(); return; }
                 const s = document.createElement('script');
-                s.src = src; s.onload = res; s.onerror = rej;
+                s.src=src; s.onload=res; s.onerror=rej;
                 document.head.appendChild(s);
               });
 
               try {
-                // 建立暫時容器（在畫面外但 visible，html2canvas 才能截到正確樣式）
-                const container = document.createElement('div');
-                container.style.cssText = 'position:fixed;left:-9999px;top:0;z-index:-1;';
-                container.innerHTML = reportHTML;
-                document.body.appendChild(container);
+                // 先告知使用者正在處理
+                const btn = document.querySelector('[data-pdf-btn]');
+                if (btn) btn.textContent = '⏳ 產生中...';
 
                 await loadScript('https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js');
+                await loadScript('https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js');
 
-                const reportEl = container.querySelector('#pdf-report');
-                const canvas   = await window.html2canvas(reportEl, {
-                  scale: 2,          // 高解析度，印出清晰
+                // 建立離屏容器（固定寬度，讓 html2canvas 截圖穩定）
+                const wrap = document.createElement('div');
+                wrap.style.cssText = 'position:fixed;left:-9999px;top:0;width:820px;background:#fff;z-index:-1;';
+                wrap.innerHTML = reportHTML;
+                document.body.appendChild(wrap);
+
+                const el = wrap.querySelector('#pdf-report');
+                const canvas = await window.html2canvas(el, {
+                  scale: 2,
                   useCORS: true,
                   logging: false,
                   backgroundColor: '#ffffff',
-                  width: 794,
-                  windowWidth: 900,
+                  width: 760,
+                  windowWidth: 820,
                 });
-                document.body.removeChild(container);
+                document.body.removeChild(wrap);
 
-                const imgData = canvas.toDataURL('image/png');
-                const imgW    = canvas.width;
-                const imgH    = canvas.height;
+                // A4 尺寸：210 x 297 mm
+                const { jsPDF } = window.jspdf;
+                const pdf    = new jsPDF({ orientation:'portrait', unit:'mm', format:'a4' });
+                const pdfW   = pdf.internal.pageSize.getWidth();   // 210
+                const pdfH   = pdf.internal.pageSize.getHeight();  // 297
+                const imgW   = canvas.width;
+                const imgH   = canvas.height;
+                const ratio  = pdfW / (imgW / 2);   // canvas scale=2，所以除以2
+                const totalH = (imgH / 2) * ratio;  // 報告在 PDF 中的總高度 (mm)
 
-                // 開新視窗，圖片版本的報告 → 列印
-                const w = window.open('', '_blank', 'width=900,height=820');
-                if (!w) { alert('請允許彈出視窗以匯出 PDF'); return; }
-                w.document.open();
-                w.document.write(`<!DOCTYPE html>
-<html lang="zh-TW"><head><meta charset="UTF-8">
-<title>AI 物流診斷報告</title>
-<style>
-  @page { size: A4; margin: 0; }
-  body { margin: 0; padding: 0; background: #fff; }
-  img  { width: 100%; height: auto; display: block; page-break-inside: avoid; }
-  @media print {
-    body { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
-  }
-</style>
-</head><body>
-<img src="${imgData}" width="${imgW}" height="${imgH}" />
-</body></html>`);
-                w.document.close();
-                setTimeout(() => { w.focus(); w.print(); }, 500);
+                const imgData = canvas.toDataURL('image/jpeg', 0.97);
 
+                // 分頁處理：超過一頁則自動換頁
+                let posY = 0;
+                let page = 0;
+                while (posY < totalH) {
+                  if (page > 0) pdf.addPage();
+                  pdf.addImage(imgData, 'JPEG', 0, -posY, pdfW, totalH);
+                  posY += pdfH;
+                  page++;
+                }
+
+                const fname = 'AI診斷報告_' + (sd.label||'').replace(/[｜～\s\/]/g,'_') + '.pdf';
+                pdf.save(fname);
+
+                if (btn) btn.textContent = '📄 PDF 下載';
               } catch(err) {
                 console.error('[PDF]', err);
-                alert('PDF 截圖失敗，請確認網路連線（需載入 html2canvas）\n錯誤：' + err.message);
+                alert('PDF 產生失敗，請確認網路連線（需載入 CDN 套件）\n錯誤：' + err.message);
               }
             };
 
@@ -2330,9 +2374,9 @@ const MileageTool = ({ onBack, windowHeight }) => {
                         </span>
                       </div>
                       <div className="flex gap-2">
-                        <button onClick={handlePdfExport}
+                        <button onClick={handlePdfExport} data-pdf-btn
                           className="flex items-center gap-1.5 px-3 py-1.5 bg-rose-50 border border-rose-300 text-rose-700 rounded-lg text-xs font-bold hover:bg-rose-100 transition-all">
-                          📄 PDF 匯出
+                          📄 PDF 下載
                         </button>
                         <button onClick={handleTxtExport}
                           className="flex items-center gap-1.5 px-3 py-1.5 bg-emerald-50 border border-emerald-300 text-emerald-700 rounded-lg text-xs font-bold hover:bg-emerald-100 transition-all">
