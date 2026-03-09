@@ -49,91 +49,18 @@ const DEFAULT_VEHICLES = [
   { id:'v36',plate:'BQC-3973',name:'BQC-3973',deptId:'dept_sale',assignedTo:'',status:'active' },
 ];
 
-// ── 2025-12 / 2026-01 批次補登數據（來源：里程補上傳.xlsx）─────────────────
-const SEED_MONTHLY_RECORDS = [
-  { id:'seed_dec_01', vehicleId:'', vehiclePlate:'BKE-7387', reporterId:'system', reporterName:'系統匯入', proxyById:'', proxyByName:'', notes:'批次補登 2025/12-2026/01', retroactive:true, status:'submitted', period:'2025-12', odometerReading:325561, previousReading:null, monthlyMileage:null, submittedAt:'2026-03-09T00:00:00.000Z' },
-  { id:'seed_dec_02', vehicleId:'', vehiclePlate:'BMP-1612', reporterId:'system', reporterName:'系統匯入', proxyById:'', proxyByName:'', notes:'批次補登 2025/12-2026/01', retroactive:true, status:'submitted', period:'2025-12', odometerReading:330069, previousReading:null, monthlyMileage:null, submittedAt:'2026-03-09T00:00:00.000Z' },
-  { id:'seed_dec_03', vehicleId:'', vehiclePlate:'BMT-5733', reporterId:'system', reporterName:'系統匯入', proxyById:'', proxyByName:'', notes:'批次補登 2025/12-2026/01', retroactive:true, status:'submitted', period:'2025-12', odometerReading:144530, previousReading:null, monthlyMileage:null, submittedAt:'2026-03-09T00:00:00.000Z' },
-  { id:'seed_dec_04', vehicleId:'', vehiclePlate:'BMT-5803', reporterId:'system', reporterName:'系統匯入', proxyById:'', proxyByName:'', notes:'批次補登 2025/12-2026/01', retroactive:true, status:'submitted', period:'2025-12', odometerReading:135969, previousReading:null, monthlyMileage:null, submittedAt:'2026-03-09T00:00:00.000Z' },
-  { id:'seed_dec_05', vehicleId:'', vehiclePlate:'BMT-6092', reporterId:'system', reporterName:'系統匯入', proxyById:'', proxyByName:'', notes:'批次補登 2025/12-2026/01', retroactive:true, status:'submitted', period:'2025-12', odometerReading:285575, previousReading:null, monthlyMileage:null, submittedAt:'2026-03-09T00:00:00.000Z' },
-  { id:'seed_dec_06', vehicleId:'', vehiclePlate:'BQC-3661', reporterId:'system', reporterName:'系統匯入', proxyById:'', proxyByName:'', notes:'批次補登 2025/12-2026/01', retroactive:true, status:'submitted', period:'2025-12', odometerReading:188243, previousReading:null, monthlyMileage:null, submittedAt:'2026-03-09T00:00:00.000Z' },
-  { id:'seed_dec_07', vehicleId:'', vehiclePlate:'BQC-3793', reporterId:'system', reporterName:'系統匯入', proxyById:'', proxyByName:'', notes:'批次補登 2025/12-2026/01', retroactive:true, status:'submitted', period:'2025-12', odometerReading:102763, previousReading:null, monthlyMileage:null, submittedAt:'2026-03-09T00:00:00.000Z' },
-  { id:'seed_dec_08', vehicleId:'', vehiclePlate:'BQC-3973', reporterId:'system', reporterName:'系統匯入', proxyById:'', proxyByName:'', notes:'批次補登 2025/12-2026/01', retroactive:true, status:'submitted', period:'2025-12', odometerReading:111634, previousReading:null, monthlyMileage:null, submittedAt:'2026-03-09T00:00:00.000Z' },
-  { id:'seed_dec_09', vehicleId:'', vehiclePlate:'BQC-7176', reporterId:'system', reporterName:'系統匯入', proxyById:'', proxyByName:'', notes:'批次補登 2025/12-2026/01', retroactive:true, status:'submitted', period:'2025-12', odometerReading:182481, previousReading:null, monthlyMileage:null, submittedAt:'2026-03-09T00:00:00.000Z' },
-  { id:'seed_dec_10', vehicleId:'', vehiclePlate:'BSQ-7353', reporterId:'system', reporterName:'系統匯入', proxyById:'', proxyByName:'', notes:'批次補登 2025/12-2026/01', retroactive:true, status:'submitted', period:'2025-12', odometerReading:193874, previousReading:null, monthlyMileage:null, submittedAt:'2026-03-09T00:00:00.000Z' },
-  { id:'seed_dec_11', vehicleId:'', vehiclePlate:'BUA-3107', reporterId:'system', reporterName:'系統匯入', proxyById:'', proxyByName:'', notes:'批次補登 2025/12-2026/01', retroactive:true, status:'submitted', period:'2025-12', odometerReading:197536, previousReading:null, monthlyMileage:null, submittedAt:'2026-03-09T00:00:00.000Z' },
-  { id:'seed_dec_12', vehicleId:'', vehiclePlate:'BUA-3265', reporterId:'system', reporterName:'系統匯入', proxyById:'', proxyByName:'', notes:'批次補登 2025/12-2026/01', retroactive:true, status:'submitted', period:'2025-12', odometerReading:251404, previousReading:null, monthlyMileage:null, submittedAt:'2026-03-09T00:00:00.000Z' },
-  { id:'seed_dec_13', vehicleId:'', vehiclePlate:'BUA-3721', reporterId:'system', reporterName:'系統匯入', proxyById:'', proxyByName:'', notes:'批次補登 2025/12-2026/01', retroactive:true, status:'submitted', period:'2025-12', odometerReading:280118, previousReading:null, monthlyMileage:null, submittedAt:'2026-03-09T00:00:00.000Z' },
-  { id:'seed_dec_14', vehicleId:'', vehiclePlate:'BUB-0572', reporterId:'system', reporterName:'系統匯入', proxyById:'', proxyByName:'', notes:'批次補登 2025/12-2026/01', retroactive:true, status:'submitted', period:'2025-12', odometerReading:266082, previousReading:null, monthlyMileage:null, submittedAt:'2026-03-09T00:00:00.000Z' },
-  { id:'seed_dec_15', vehicleId:'', vehiclePlate:'BUB-1036', reporterId:'system', reporterName:'系統匯入', proxyById:'', proxyByName:'', notes:'批次補登 2025/12-2026/01', retroactive:true, status:'submitted', period:'2025-12', odometerReading:345494, previousReading:null, monthlyMileage:null, submittedAt:'2026-03-09T00:00:00.000Z' },
-  { id:'seed_dec_16', vehicleId:'', vehiclePlate:'BUB-1332', reporterId:'system', reporterName:'系統匯入', proxyById:'', proxyByName:'', notes:'批次補登 2025/12-2026/01', retroactive:true, status:'submitted', period:'2025-12', odometerReading:356804, previousReading:null, monthlyMileage:null, submittedAt:'2026-03-09T00:00:00.000Z' },
-  { id:'seed_dec_17', vehicleId:'', vehiclePlate:'BUB-1562', reporterId:'system', reporterName:'系統匯入', proxyById:'', proxyByName:'', notes:'批次補登 2025/12-2026/01', retroactive:true, status:'submitted', period:'2025-12', odometerReading:302706, previousReading:null, monthlyMileage:null, submittedAt:'2026-03-09T00:00:00.000Z' },
-  { id:'seed_dec_18', vehicleId:'', vehiclePlate:'BUC-6837', reporterId:'system', reporterName:'系統匯入', proxyById:'', proxyByName:'', notes:'批次補登 2025/12-2026/01', retroactive:true, status:'submitted', period:'2025-12', odometerReading:53572, previousReading:null, monthlyMileage:null, submittedAt:'2026-03-09T00:00:00.000Z' },
-  { id:'seed_dec_19', vehicleId:'', vehiclePlate:'BUC-6933', reporterId:'system', reporterName:'系統匯入', proxyById:'', proxyByName:'', notes:'批次補登 2025/12-2026/01', retroactive:true, status:'submitted', period:'2025-12', odometerReading:257408, previousReading:null, monthlyMileage:null, submittedAt:'2026-03-09T00:00:00.000Z' },
-  { id:'seed_dec_20', vehicleId:'', vehiclePlate:'BUC-7100', reporterId:'system', reporterName:'系統匯入', proxyById:'', proxyByName:'', notes:'批次補登 2025/12-2026/01', retroactive:true, status:'submitted', period:'2025-12', odometerReading:174298, previousReading:null, monthlyMileage:null, submittedAt:'2026-03-09T00:00:00.000Z' },
-  { id:'seed_dec_21', vehicleId:'', vehiclePlate:'BUF-7506', reporterId:'system', reporterName:'系統匯入', proxyById:'', proxyByName:'', notes:'批次補登 2025/12-2026/01', retroactive:true, status:'submitted', period:'2025-12', odometerReading:76128, previousReading:null, monthlyMileage:null, submittedAt:'2026-03-09T00:00:00.000Z' },
-  { id:'seed_dec_22', vehicleId:'', vehiclePlate:'BUF-7507', reporterId:'system', reporterName:'系統匯入', proxyById:'', proxyByName:'', notes:'批次補登 2025/12-2026/01', retroactive:true, status:'submitted', period:'2025-12', odometerReading:93171, previousReading:null, monthlyMileage:null, submittedAt:'2026-03-09T00:00:00.000Z' },
-  { id:'seed_dec_23', vehicleId:'', vehiclePlate:'BVY-0363', reporterId:'system', reporterName:'系統匯入', proxyById:'', proxyByName:'', notes:'批次補登 2025/12-2026/01', retroactive:true, status:'submitted', period:'2025-12', odometerReading:63747, previousReading:null, monthlyMileage:null, submittedAt:'2026-03-09T00:00:00.000Z' },
-  { id:'seed_dec_24', vehicleId:'', vehiclePlate:'BVY-3570', reporterId:'system', reporterName:'系統匯入', proxyById:'', proxyByName:'', notes:'批次補登 2025/12-2026/01', retroactive:true, status:'submitted', period:'2025-12', odometerReading:99550, previousReading:null, monthlyMileage:null, submittedAt:'2026-03-09T00:00:00.000Z' },
-  { id:'seed_dec_25', vehicleId:'', vehiclePlate:'BYV-2830', reporterId:'system', reporterName:'系統匯入', proxyById:'', proxyByName:'', notes:'批次補登 2025/12-2026/01', retroactive:true, status:'submitted', period:'2025-12', odometerReading:75058, previousReading:null, monthlyMileage:null, submittedAt:'2026-03-09T00:00:00.000Z' },
-  { id:'seed_dec_26', vehicleId:'', vehiclePlate:'BYV-2831', reporterId:'system', reporterName:'系統匯入', proxyById:'', proxyByName:'', notes:'批次補登 2025/12-2026/01', retroactive:true, status:'submitted', period:'2025-12', odometerReading:44585, previousReading:null, monthlyMileage:null, submittedAt:'2026-03-09T00:00:00.000Z' },
-  { id:'seed_dec_27', vehicleId:'', vehiclePlate:'BZH-3895', reporterId:'system', reporterName:'系統匯入', proxyById:'', proxyByName:'', notes:'批次補登 2025/12-2026/01', retroactive:true, status:'submitted', period:'2025-12', odometerReading:77839, previousReading:null, monthlyMileage:null, submittedAt:'2026-03-09T00:00:00.000Z' },
-  { id:'seed_dec_28', vehicleId:'', vehiclePlate:'BZH-3896', reporterId:'system', reporterName:'系統匯入', proxyById:'', proxyByName:'', notes:'批次補登 2025/12-2026/01', retroactive:true, status:'submitted', period:'2025-12', odometerReading:108845, previousReading:null, monthlyMileage:null, submittedAt:'2026-03-09T00:00:00.000Z' },
-  { id:'seed_dec_29', vehicleId:'', vehiclePlate:'BZH-3897', reporterId:'system', reporterName:'系統匯入', proxyById:'', proxyByName:'', notes:'批次補登 2025/12-2026/01', retroactive:true, status:'submitted', period:'2025-12', odometerReading:70460, previousReading:null, monthlyMileage:null, submittedAt:'2026-03-09T00:00:00.000Z' },
-  { id:'seed_dec_30', vehicleId:'', vehiclePlate:'BZH-7903', reporterId:'system', reporterName:'系統匯入', proxyById:'', proxyByName:'', notes:'批次補登 2025/12-2026/01', retroactive:true, status:'submitted', period:'2025-12', odometerReading:188081, previousReading:null, monthlyMileage:null, submittedAt:'2026-03-09T00:00:00.000Z' },
-  { id:'seed_dec_31', vehicleId:'', vehiclePlate:'BZH-7913', reporterId:'system', reporterName:'系統匯入', proxyById:'', proxyByName:'', notes:'批次補登 2025/12-2026/01', retroactive:true, status:'submitted', period:'2025-12', odometerReading:65990, previousReading:null, monthlyMileage:null, submittedAt:'2026-03-09T00:00:00.000Z' },
-  { id:'seed_dec_32', vehicleId:'', vehiclePlate:'BZH-8131', reporterId:'system', reporterName:'系統匯入', proxyById:'', proxyByName:'', notes:'批次補登 2025/12-2026/01', retroactive:true, status:'submitted', period:'2025-12', odometerReading:151151, previousReading:null, monthlyMileage:null, submittedAt:'2026-03-09T00:00:00.000Z' },
-  { id:'seed_dec_33', vehicleId:'', vehiclePlate:'BZH-8393', reporterId:'system', reporterName:'系統匯入', proxyById:'', proxyByName:'', notes:'批次補登 2025/12-2026/01', retroactive:true, status:'submitted', period:'2025-12', odometerReading:118469, previousReading:null, monthlyMileage:null, submittedAt:'2026-03-09T00:00:00.000Z' },
-  { id:'seed_dec_34', vehicleId:'', vehiclePlate:'BZH-9217', reporterId:'system', reporterName:'系統匯入', proxyById:'', proxyByName:'', notes:'批次補登 2025/12-2026/01', retroactive:true, status:'submitted', period:'2025-12', odometerReading:28106, previousReading:null, monthlyMileage:null, submittedAt:'2026-03-09T00:00:00.000Z' },
-  { id:'seed_dec_35', vehicleId:'', vehiclePlate:'BZH-9223', reporterId:'system', reporterName:'系統匯入', proxyById:'', proxyByName:'', notes:'批次補登 2025/12-2026/01', retroactive:true, status:'submitted', period:'2025-12', odometerReading:33715, previousReading:null, monthlyMileage:null, submittedAt:'2026-03-09T00:00:00.000Z' },
-  { id:'seed_jan_36', vehicleId:'', vehiclePlate:'BKE-7387', reporterId:'system', reporterName:'系統匯入', proxyById:'', proxyByName:'', notes:'批次補登 2025/12-2026/01', retroactive:true, status:'submitted', period:'2026-01', odometerReading:326874, previousReading:325561, monthlyMileage:1313, submittedAt:'2026-03-09T00:00:00.000Z' },
-  { id:'seed_jan_37', vehicleId:'', vehiclePlate:'BMP-1612', reporterId:'system', reporterName:'系統匯入', proxyById:'', proxyByName:'', notes:'批次補登 2025/12-2026/01', retroactive:true, status:'submitted', period:'2026-01', odometerReading:333899, previousReading:330069, monthlyMileage:3830, submittedAt:'2026-03-09T00:00:00.000Z' },
-  { id:'seed_jan_38', vehicleId:'', vehiclePlate:'BMT-5733', reporterId:'system', reporterName:'系統匯入', proxyById:'', proxyByName:'', notes:'批次補登 2025/12-2026/01', retroactive:true, status:'submitted', period:'2026-01', odometerReading:145736, previousReading:144530, monthlyMileage:1206, submittedAt:'2026-03-09T00:00:00.000Z' },
-  { id:'seed_jan_39', vehicleId:'', vehiclePlate:'BMT-5803', reporterId:'system', reporterName:'系統匯入', proxyById:'', proxyByName:'', notes:'批次補登 2025/12-2026/01', retroactive:true, status:'submitted', period:'2026-01', odometerReading:137370, previousReading:135969, monthlyMileage:1401, submittedAt:'2026-03-09T00:00:00.000Z' },
-  { id:'seed_jan_40', vehicleId:'', vehiclePlate:'BMT-6092', reporterId:'system', reporterName:'系統匯入', proxyById:'', proxyByName:'', notes:'批次補登 2025/12-2026/01', retroactive:true, status:'submitted', period:'2026-01', odometerReading:289145, previousReading:285575, monthlyMileage:3570, submittedAt:'2026-03-09T00:00:00.000Z' },
-  { id:'seed_jan_41', vehicleId:'', vehiclePlate:'BQC-3661', reporterId:'system', reporterName:'系統匯入', proxyById:'', proxyByName:'', notes:'批次補登 2025/12-2026/01', retroactive:true, status:'submitted', period:'2026-01', odometerReading:189930, previousReading:188243, monthlyMileage:1687, submittedAt:'2026-03-09T00:00:00.000Z' },
-  { id:'seed_jan_42', vehicleId:'', vehiclePlate:'BQC-3793', reporterId:'system', reporterName:'系統匯入', proxyById:'', proxyByName:'', notes:'批次補登 2025/12-2026/01', retroactive:true, status:'submitted', period:'2026-01', odometerReading:103506, previousReading:102763, monthlyMileage:743, submittedAt:'2026-03-09T00:00:00.000Z' },
-  { id:'seed_jan_43', vehicleId:'', vehiclePlate:'BQC-3973', reporterId:'system', reporterName:'系統匯入', proxyById:'', proxyByName:'', notes:'批次補登 2025/12-2026/01', retroactive:true, status:'submitted', period:'2026-01', odometerReading:113178, previousReading:111634, monthlyMileage:1544, submittedAt:'2026-03-09T00:00:00.000Z' },
-  { id:'seed_jan_44', vehicleId:'', vehiclePlate:'BQC-7176', reporterId:'system', reporterName:'系統匯入', proxyById:'', proxyByName:'', notes:'批次補登 2025/12-2026/01', retroactive:true, status:'submitted', period:'2026-01', odometerReading:184875, previousReading:182481, monthlyMileage:2394, submittedAt:'2026-03-09T00:00:00.000Z' },
-  { id:'seed_jan_45', vehicleId:'', vehiclePlate:'BSQ-7353', reporterId:'system', reporterName:'系統匯入', proxyById:'', proxyByName:'', notes:'批次補登 2025/12-2026/01', retroactive:true, status:'submitted', period:'2026-01', odometerReading:196410, previousReading:193874, monthlyMileage:2536, submittedAt:'2026-03-09T00:00:00.000Z' },
-  { id:'seed_jan_46', vehicleId:'', vehiclePlate:'BUA-3107', reporterId:'system', reporterName:'系統匯入', proxyById:'', proxyByName:'', notes:'批次補登 2025/12-2026/01', retroactive:true, status:'submitted', period:'2026-01', odometerReading:200991, previousReading:197536, monthlyMileage:3455, submittedAt:'2026-03-09T00:00:00.000Z' },
-  { id:'seed_jan_47', vehicleId:'', vehiclePlate:'BUA-3265', reporterId:'system', reporterName:'系統匯入', proxyById:'', proxyByName:'', notes:'批次補登 2025/12-2026/01', retroactive:true, status:'submitted', period:'2026-01', odometerReading:255075, previousReading:251404, monthlyMileage:3671, submittedAt:'2026-03-09T00:00:00.000Z' },
-  { id:'seed_jan_48', vehicleId:'', vehiclePlate:'BUA-3721', reporterId:'system', reporterName:'系統匯入', proxyById:'', proxyByName:'', notes:'批次補登 2025/12-2026/01', retroactive:true, status:'submitted', period:'2026-01', odometerReading:284936, previousReading:280118, monthlyMileage:4818, submittedAt:'2026-03-09T00:00:00.000Z' },
-  { id:'seed_jan_49', vehicleId:'', vehiclePlate:'BUB-0572', reporterId:'system', reporterName:'系統匯入', proxyById:'', proxyByName:'', notes:'批次補登 2025/12-2026/01', retroactive:true, status:'submitted', period:'2026-01', odometerReading:270997, previousReading:266082, monthlyMileage:4915, submittedAt:'2026-03-09T00:00:00.000Z' },
-  { id:'seed_jan_50', vehicleId:'', vehiclePlate:'BUB-1036', reporterId:'system', reporterName:'系統匯入', proxyById:'', proxyByName:'', notes:'批次補登 2025/12-2026/01', retroactive:true, status:'submitted', period:'2026-01', odometerReading:351458, previousReading:345494, monthlyMileage:5964, submittedAt:'2026-03-09T00:00:00.000Z' },
-  { id:'seed_jan_51', vehicleId:'', vehiclePlate:'BUB-1332', reporterId:'system', reporterName:'系統匯入', proxyById:'', proxyByName:'', notes:'批次補登 2025/12-2026/01', retroactive:true, status:'submitted', period:'2026-01', odometerReading:358733, previousReading:356804, monthlyMileage:1929, submittedAt:'2026-03-09T00:00:00.000Z' },
-  { id:'seed_jan_52', vehicleId:'', vehiclePlate:'BUB-1562', reporterId:'system', reporterName:'系統匯入', proxyById:'', proxyByName:'', notes:'批次補登 2025/12-2026/01', retroactive:true, status:'submitted', period:'2026-01', odometerReading:307740, previousReading:302706, monthlyMileage:5034, submittedAt:'2026-03-09T00:00:00.000Z' },
-  { id:'seed_jan_53', vehicleId:'', vehiclePlate:'BUC-6837', reporterId:'system', reporterName:'系統匯入', proxyById:'', proxyByName:'', notes:'批次補登 2025/12-2026/01', retroactive:true, status:'submitted', period:'2026-01', odometerReading:54363, previousReading:53572, monthlyMileage:791, submittedAt:'2026-03-09T00:00:00.000Z' },
-  { id:'seed_jan_54', vehicleId:'', vehiclePlate:'BUC-6933', reporterId:'system', reporterName:'系統匯入', proxyById:'', proxyByName:'', notes:'批次補登 2025/12-2026/01', retroactive:true, status:'submitted', period:'2026-01', odometerReading:261514, previousReading:257408, monthlyMileage:4106, submittedAt:'2026-03-09T00:00:00.000Z' },
-  { id:'seed_jan_55', vehicleId:'', vehiclePlate:'BUC-7100', reporterId:'system', reporterName:'系統匯入', proxyById:'', proxyByName:'', notes:'批次補登 2025/12-2026/01', retroactive:true, status:'submitted', period:'2026-01', odometerReading:176937, previousReading:174298, monthlyMileage:2639, submittedAt:'2026-03-09T00:00:00.000Z' },
-  { id:'seed_jan_56', vehicleId:'', vehiclePlate:'BUF-7506', reporterId:'system', reporterName:'系統匯入', proxyById:'', proxyByName:'', notes:'批次補登 2025/12-2026/01', retroactive:true, status:'submitted', period:'2026-01', odometerReading:80187, previousReading:76128, monthlyMileage:4059, submittedAt:'2026-03-09T00:00:00.000Z' },
-  { id:'seed_jan_57', vehicleId:'', vehiclePlate:'BUF-7507', reporterId:'system', reporterName:'系統匯入', proxyById:'', proxyByName:'', notes:'批次補登 2025/12-2026/01', retroactive:true, status:'submitted', period:'2026-01', odometerReading:98952, previousReading:93171, monthlyMileage:5781, submittedAt:'2026-03-09T00:00:00.000Z' },
-  { id:'seed_jan_58', vehicleId:'', vehiclePlate:'BVY-0363', reporterId:'system', reporterName:'系統匯入', proxyById:'', proxyByName:'', notes:'批次補登 2025/12-2026/01', retroactive:true, status:'submitted', period:'2026-01', odometerReading:68463, previousReading:63747, monthlyMileage:4716, submittedAt:'2026-03-09T00:00:00.000Z' },
-  { id:'seed_jan_59', vehicleId:'', vehiclePlate:'BVY-3570', reporterId:'system', reporterName:'系統匯入', proxyById:'', proxyByName:'', notes:'批次補登 2025/12-2026/01', retroactive:true, status:'submitted', period:'2026-01', odometerReading:101858, previousReading:99550, monthlyMileage:2308, submittedAt:'2026-03-09T00:00:00.000Z' },
-  { id:'seed_jan_60', vehicleId:'', vehiclePlate:'BYV-2830', reporterId:'system', reporterName:'系統匯入', proxyById:'', proxyByName:'', notes:'批次補登 2025/12-2026/01', retroactive:true, status:'submitted', period:'2026-01', odometerReading:82068, previousReading:75058, monthlyMileage:7010, submittedAt:'2026-03-09T00:00:00.000Z' },
-  { id:'seed_jan_61', vehicleId:'', vehiclePlate:'BYV-2831', reporterId:'system', reporterName:'系統匯入', proxyById:'', proxyByName:'', notes:'批次補登 2025/12-2026/01', retroactive:true, status:'submitted', period:'2026-01', odometerReading:48939, previousReading:44585, monthlyMileage:4354, submittedAt:'2026-03-09T00:00:00.000Z' },
-  { id:'seed_jan_62', vehicleId:'', vehiclePlate:'BZH-3895', reporterId:'system', reporterName:'系統匯入', proxyById:'', proxyByName:'', notes:'批次補登 2025/12-2026/01', retroactive:true, status:'submitted', period:'2026-01', odometerReading:79340, previousReading:77839, monthlyMileage:1501, submittedAt:'2026-03-09T00:00:00.000Z' },
-  { id:'seed_jan_63', vehicleId:'', vehiclePlate:'BZH-3896', reporterId:'system', reporterName:'系統匯入', proxyById:'', proxyByName:'', notes:'批次補登 2025/12-2026/01', retroactive:true, status:'submitted', period:'2026-01', odometerReading:111107, previousReading:108845, monthlyMileage:2262, submittedAt:'2026-03-09T00:00:00.000Z' },
-  { id:'seed_jan_64', vehicleId:'', vehiclePlate:'BZH-3897', reporterId:'system', reporterName:'系統匯入', proxyById:'', proxyByName:'', notes:'批次補登 2025/12-2026/01', retroactive:true, status:'submitted', period:'2026-01', odometerReading:71685, previousReading:70460, monthlyMileage:1225, submittedAt:'2026-03-09T00:00:00.000Z' },
-  { id:'seed_jan_65', vehicleId:'', vehiclePlate:'BZH-7903', reporterId:'system', reporterName:'系統匯入', proxyById:'', proxyByName:'', notes:'批次補登 2025/12-2026/01', retroactive:true, status:'submitted', period:'2026-01', odometerReading:192480, previousReading:188081, monthlyMileage:4399, submittedAt:'2026-03-09T00:00:00.000Z' },
-  { id:'seed_jan_66', vehicleId:'', vehiclePlate:'BZH-7913', reporterId:'system', reporterName:'系統匯入', proxyById:'', proxyByName:'', notes:'批次補登 2025/12-2026/01', retroactive:true, status:'submitted', period:'2026-01', odometerReading:67151, previousReading:65990, monthlyMileage:1161, submittedAt:'2026-03-09T00:00:00.000Z' },
-  { id:'seed_jan_67', vehicleId:'', vehiclePlate:'BZH-8131', reporterId:'system', reporterName:'系統匯入', proxyById:'', proxyByName:'', notes:'批次補登 2025/12-2026/01', retroactive:true, status:'submitted', period:'2026-01', odometerReading:155125, previousReading:151151, monthlyMileage:3974, submittedAt:'2026-03-09T00:00:00.000Z' },
-  { id:'seed_jan_68', vehicleId:'', vehiclePlate:'BZH-8393', reporterId:'system', reporterName:'系統匯入', proxyById:'', proxyByName:'', notes:'批次補登 2025/12-2026/01', retroactive:true, status:'submitted', period:'2026-01', odometerReading:121225, previousReading:118469, monthlyMileage:2756, submittedAt:'2026-03-09T00:00:00.000Z' },
-  { id:'seed_jan_69', vehicleId:'', vehiclePlate:'BZH-9217', reporterId:'system', reporterName:'系統匯入', proxyById:'', proxyByName:'', notes:'批次補登 2025/12-2026/01', retroactive:true, status:'submitted', period:'2026-01', odometerReading:34932, previousReading:28106, monthlyMileage:6826, submittedAt:'2026-03-09T00:00:00.000Z' },
-  { id:'seed_jan_70', vehicleId:'', vehiclePlate:'BZH-9223', reporterId:'system', reporterName:'系統匯入', proxyById:'', proxyByName:'', notes:'批次補登 2025/12-2026/01', retroactive:true, status:'submitted', period:'2026-01', odometerReading:33715, previousReading:33715, monthlyMileage:0, submittedAt:'2026-03-09T00:00:00.000Z' },
-];
-
-// 2026 年 2 月回報里程（作為各車輛已知基準值）
-const FEB_MILEAGE = {
-  'BMQ-6180':321243,'BMT-6092':291555,'BSQ-7353':198144,'BUB-0572':273964,
-  'BUB-1036':355468,'BUB-1332':359884,'BUB-1562':310872,'BZH-7903':195169,
-  'BZH-8131':157607,'BZH-8393':122864,'BUF-7506':82482,'BUF-7507':102753,
-  'BVY-0363':71616,'BYV-2830':86531,'BYV-2831':51688,'BZH-9217':38779,
-  'BZH-9223':33715,'BKE-7387':327615,'BMP-1612':336583,'BQC-3793':103949,
-  'BQC-7176':186551,'BUA-3107':202919,'BUA-3265':257677,'BUA-3721':288001,
-  'BUC-6837':54956,'BUC-6933':264241,'BUC-7100':178060,'BVY-3570':103128,
-  'BZH-3897':72524,'BZH-3896':113016,'BZH-3895':80826,'BZH-7913':67859,
-  'BMT-5733':146226,'BMT-5803':137606,'BQC-3661':191364,'BQC-3973':115342,
+// ── 起始里程基準（來源：起始里程數據上傳.xlsx，期別：2025-12）──────────────────
+const BASELINE_PERIOD = '2025-12';
+const BASELINE_MILEAGE = {
+  'BKE-7387':325561,  'BMP-1612':330069,  'BMQ-6180':314385,  'BMT-5733':144530,
+  'BMT-5803':135969,  'BMT-6092':285575,  'BQC-3661':188243,  'BQC-3793':102763,
+  'BQC-3973':111634,  'BQC-7176':182481,  'BSQ-7353':193874,  'BUA-3107':197536,
+  'BUA-3265':251404,  'BUA-3721':280118,  'BUB-0572':266082,  'BUB-1036':345494,
+  'BUB-1332':356804,  'BUB-1562':302706,  'BUC-6837':53572,  'BUC-6933':257408,
+  'BUC-7100':174298,  'BUF-7506':76128,  'BUF-7507':93171,  'BVY-0363':63747,
+  'BVY-3570':99550,  'BYV-2830':75058,  'BYV-2831':44585,  'BZH-3895':77839,
+  'BZH-3896':108845,  'BZH-3897':70460,  'BZH-7903':188081,  'BZH-7913':65990,
+  'BZH-8131':151151,  'BZH-8393':118469,  'BZH-9217':28106,  'BZH-9223':33715,
 };
 
 const DEFAULT_PERSONNEL = [
@@ -322,7 +249,7 @@ const MileageTool = ({ onBack, windowHeight }) => {
   const [departments, setDepartments] = useState(DEFAULT_DEPARTMENTS);
   const [vehicles, setVehicles] = useState(DEFAULT_VEHICLES);
   const [personnel, setPersonnel] = useState(DEFAULT_PERSONNEL);
-  const [monthlyRecords, setMonthlyRecords] = useState(SEED_MONTHLY_RECORDS);
+  const [monthlyRecords, setMonthlyRecords] = useState([]);
   const [adhocRecords, setAdhocRecords] = useState([]);
   const [dataLoading, setDataLoading] = useState(false);
   const [syncStatus, setSyncStatus] = useState('');
@@ -402,12 +329,7 @@ const MileageTool = ({ onBack, windowHeight }) => {
       if (depts) setDepartments(depts);
       if (vehs) setVehicles(vehs);
       if (pers) setPersonnel(pers);
-      if (monthly) {
-        // 合併：保留 seed 中 Firestore 沒有的期別（避免批次補登被覆蓋）
-        const firestoreIds = new Set(monthly.map(r => `${r.vehiclePlate}_${r.period}`));
-        const seedOnly = SEED_MONTHLY_RECORDS.filter(r => !firestoreIds.has(`${r.vehiclePlate}_${r.period}`));
-        setMonthlyRecords([...seedOnly, ...monthly]);
-      }
+      if (monthly) setMonthlyRecords(monthly);
       if (adhoc) setAdhocRecords(adhoc);
       setDataLoading(false);
     };
@@ -441,7 +363,7 @@ const MileageTool = ({ onBack, windowHeight }) => {
     if (rec) return rec.odometerReading;
     // 2026-02 回報數據：僅在前一期恰好是 2026-02 時作為回退值
     // 補登 2026-01 → 前一期 = 2025-12 → 不觸發此分支（正確回傳 null）
-    if (prev === '2026-02') return FEB_MILEAGE[vehiclePlate] || null;
+    if (prev === BASELINE_PERIOD) return BASELINE_MILEAGE[vehiclePlate] ?? null;
     return null;
   };
 
@@ -457,10 +379,10 @@ const MileageTool = ({ onBack, windowHeight }) => {
 
     // 將 2026-02 回報數據納入衝突分析，讓補登 2025-12、2026-01 時
     // 能正確偵測「超越後期（OVERFLOW）」衝突
-    const febReading = FEB_MILEAGE[veh.plate];
+    const febReading = BASELINE_MILEAGE[veh.plate];
     const hasFebInRecords = relevantRecords.some(r => r.period === '2026-02');
     const allRecords = (febReading && !hasFebInRecords)
-      ? [...relevantRecords, { id: '__seed_feb__', vehiclePlate: veh.plate, period: '2026-02', odometerReading: febReading, retroactive: false, notes: '（2026/02 回報數據）' }]
+      ? [...relevantRecords, { id: '__seed_baseline__', vehiclePlate: veh.plate, period: BASELINE_PERIOD, odometerReading: febReading, retroactive: false, notes: '（起始基準數據）' }]
       : relevantRecords;
 
     if (allRecords.length === 0) return null;
@@ -475,7 +397,7 @@ const MileageTool = ({ onBack, windowHeight }) => {
     // From trip/adhoc records
     adhocRecords.filter(r => r.vehiclePlate === vehiclePlate).forEach(r => { if (r.endMileage) readings.push(r.endMileage); });
     // From seed data
-    if (FEB_MILEAGE[vehiclePlate]) readings.push(FEB_MILEAGE[vehiclePlate]);
+    if (BASELINE_MILEAGE[vehiclePlate]) readings.push(BASELINE_MILEAGE[vehiclePlate]);
     return readings.length > 0 ? Math.max(...readings) : null;
   };
 
@@ -1145,7 +1067,7 @@ const MileageTool = ({ onBack, windowHeight }) => {
                     <th className="text-left px-4 py-3 font-bold text-gray-600">部門</th>
                     <th className="text-left px-4 py-3 font-bold text-gray-600">負責人</th>
                     <th className="text-center px-4 py-3 font-bold text-gray-600">狀態</th>
-                    <th className="text-right px-4 py-3 font-bold text-gray-600">2026/02 回報里程</th>
+                    <th className="text-right px-4 py-3 font-bold text-gray-600">起始基準里程</th>
                     <th className="text-center px-4 py-3 font-bold text-gray-600">操作</th>
                   </tr>
                 </thead>
@@ -1160,7 +1082,7 @@ const MileageTool = ({ onBack, windowHeight }) => {
                           {v.status === 'active' ? '使用中' : v.status}
                         </span>
                       </td>
-                      <td className="px-4 py-3 text-right font-mono text-gray-500">{fmtNum(FEB_MILEAGE[v.plate])}</td>
+                      <td className="px-4 py-3 text-right font-mono text-gray-500">{fmtNum(BASELINE_MILEAGE[v.plate])}</td>
                       <td className="px-4 py-3 text-center">
                         <button onClick={() => { setEditItem({ ...v }); setShowModal('vehicle'); }}
                           className="text-[10px] px-2 py-1 text-blue-600 hover:bg-blue-50 rounded font-bold">編輯</button>
@@ -1394,8 +1316,8 @@ const MileageTool = ({ onBack, windowHeight }) => {
                         {c.record && (
                           <div className="mt-1.5 bg-white rounded px-2 py-1 text-gray-500 text-xs">
                             現有記錄：{c.record.period} · {fmtNum(c.record.odometerReading)} km
-                            {c.record.id === '__seed_feb__' && <span className="ml-1 text-blue-500">（2026/02 回報數據）</span>}
-                            {c.record.retroactive && c.record.id !== '__seed_feb__' && <span className="ml-1 text-amber-500">（補登）</span>}
+                            {c.record.id === '__seed_baseline__' && <span className="ml-1 text-blue-500">（起始基準數據）</span>}
+                            {c.record.retroactive && c.record.id !== '__seed_baseline__' && <span className="ml-1 text-amber-500">（補登）</span>}
                           </div>
                         )}
                       </div>
