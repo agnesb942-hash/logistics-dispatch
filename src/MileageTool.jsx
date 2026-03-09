@@ -610,6 +610,10 @@ const MileageTool = ({ onBack, windowHeight }) => {
   const [aiLoading, setAiLoading] = useState(false);
   const [aiDept, setAiDept] = useState('all');
   const [aiPeriod, setAiPeriod] = useState('');
+  const [aiRange, setAiRange] = useState('month');  // month|quarter|year|custom
+  const [aiFrom, setAiFrom] = useState('');
+  const [aiTo, setAiTo] = useState('');
+  const [aiSavedResult, setAiSavedResult] = useState(null); // { result, label, savedAt }
 
   // ── Firestore CRUD ──────────────────────────────────────────────
   const saveCollection = async (collName, data) => {
@@ -658,6 +662,14 @@ const MileageTool = ({ onBack, windowHeight }) => {
         setMonthlyRecords([...seedOnly, ...monthly]);
       }
       if (adhoc) setAdhocRecords(adhoc);
+      // 載入已儲存的 AI 診斷結果
+      try {
+        const fb2 = await initFirebase();
+        if (fb2) {
+          const snap = await fb2.getDoc(fb2.doc(fb2.db, 'mileage_config', 'ai_last_result'));
+          if (snap.exists()) setAiSavedResult(snap.data());
+        }
+      } catch(e2) { console.warn('[AI] load saved result', e2); }
       } catch(e) { console.error('[MileageTool] initial load error:', e); }
       setDataLoading(false);
     };
@@ -1146,6 +1158,27 @@ const MileageTool = ({ onBack, windowHeight }) => {
     }
     return [cur];
   }, [dashRange, dashFrom, dashTo, selectedPeriod, monthlyRecords]);
+  // ── AI 診斷週期計算 ──────────────────────────────────────────────
+  const aiPeriods = useMemo(() => {
+    const base = aiPeriod || selectedPeriod || getTaiwanPeriod();
+    const [y, m] = base.split('-').map(Number);
+    const all = [...new Set(monthlyRecords.map(r => r.period))].sort();
+    if (aiRange === 'month') return [base];
+    if (aiRange === 'quarter') {
+      const qStart = Math.floor((m - 1) / 3) * 3 + 1;
+      return [0, 1, 2].map(i => `${y}-${String(qStart + i).padStart(2, '0')}`).filter(p => all.includes(p));
+    }
+    if (aiRange === 'year') return all.filter(p => p.startsWith(String(y)));
+    if (aiRange === 'custom' && aiFrom && aiTo) return all.filter(p => p >= aiFrom && p <= aiTo);
+    return [base];
+  }, [aiRange, aiPeriod, aiFrom, aiTo, selectedPeriod, monthlyRecords]);
+
+  const aiRangeLabel = useMemo(() => {
+    if (!aiPeriods || aiPeriods.length === 0) return '—';
+    if (aiPeriods.length === 1) return aiPeriods[0];
+    return aiPeriods[0] + ' ～ ' + aiPeriods[aiPeriods.length - 1];
+  }, [aiPeriods]);
+
 
   const dashRecords = useMemo(() =>
     monthlyRecords.filter(r =>
@@ -1336,7 +1369,7 @@ const MileageTool = ({ onBack, windowHeight }) => {
       </div>
 
       {/* ── Main Content ── */}
-      <div className="flex-1 bg-gray-50 overflow-y-auto">
+      <div className="flex-1 bg-gray-50 overflow-y-auto min-h-0">
         <div className="p-3 lg:p-6 max-w-6xl mx-auto space-y-4 lg:space-y-6">
 
           {/* ═══ DASHBOARD ═══ */}
@@ -1892,33 +1925,33 @@ const MileageTool = ({ onBack, windowHeight }) => {
           {activeSection === 'ai' && (() => {
             const runAiAnalysis = async () => {
               setAiLoading(true); setAiAnalysis('');
-              const targetPeriod = aiPeriod || selectedPeriod;
               const deptFilter = aiDept === 'all' ? null : aiDept;
               const filteredRecs = monthlyRecords.filter(r =>
-                r.period === targetPeriod &&
+                aiPeriods.includes(r.period) &&
                 (!deptFilter || vehicles.find(v => v.plate === r.vehiclePlate)?.deptId === deptFilter)
               );
-              const recWithKm = filteredRecs.filter(r => (r.monthlyMileage||0) > 0);
-              const kms = recWithKm.map(r => r.monthlyMileage).sort((a,b)=>a-b);
-              const avg = kms.length ? Math.round(kms.reduce((s,v)=>s+v,0)/kms.length) : 0;
-              const total = kms.reduce((s,v)=>s+v,0);
-              const deptLabel = aiDept === 'all' ? '全部部門' : departments.find(d=>d.id===aiDept)?.name || aiDept;
-              const top5 = [...recWithKm].sort((a,b)=>(b.monthlyMileage||0)-(a.monthlyMileage||0)).slice(0,5);
-              const bottom5 = [...recWithKm].sort((a,b)=>(a.monthlyMileage||0)-(b.monthlyMileage||0)).slice(0,5);
+              const recWithKm = filteredRecs.filter(r => (r.monthlyMileage || 0) > 0);
+              const kms = recWithKm.map(r => r.monthlyMileage).sort((a, b) => a - b);
+              const avg = kms.length ? Math.round(kms.reduce((s, v) => s + v, 0) / kms.length) : 0;
+              const total = kms.reduce((s, v) => s + v, 0);
+              const deptLabel = aiDept === 'all' ? '全部部門' : (departments.find(d => d.id === aiDept)?.name || aiDept);
+              const top5 = [...recWithKm].sort((a, b) => (b.monthlyMileage || 0) - (a.monthlyMileage || 0)).slice(0, 5);
+              const bottom5 = [...recWithKm].sort((a, b) => (a.monthlyMileage || 0) - (b.monthlyMileage || 0)).slice(0, 5);
               const anomalies = recWithKm.filter(r => r.monthlyMileage > avg * 2.0);
+              const rangeTypeLabel = aiRange === 'month' ? '月報' : aiRange === 'quarter' ? '季報' : aiRange === 'year' ? '年報' : '自訂區間';
               const prompt = `你是一位專業的物流車隊管理顧問，請根據以下里程數據進行專業診斷分析，並以繁體中文（台灣用語）回覆。
 
 【資料範圍】
-- 期別：${targetPeriod}
+- 分析類型：${rangeTypeLabel}（${aiRangeLabel}，共 ${aiPeriods.length} 個月）
 - 部門：${deptLabel}
 - 有效回報車輛數：${recWithKm.length} 輛
 
 【關鍵指標】
-- 總月增幅里程：${total.toLocaleString()} km
-- 平均月增幅：${avg.toLocaleString()} km/輛
-- 最高 5 輛（車牌 里程）：${top5.map(r=>r.vehiclePlate+' '+r.monthlyMileage+'km').join('、')}
-- 最低 5 輛（車牌 里程）：${bottom5.map(r=>r.vehiclePlate+' '+r.monthlyMileage+'km').join('、')}
-- 異常高里程車輛（>平均 200%）：${anomalies.length > 0 ? anomalies.map(r=>r.vehiclePlate+' '+r.monthlyMileage+'km').join('、') : '無'}
+- 期間總里程：${total.toLocaleString()} km
+- 平均里程/輛/月：${avg.toLocaleString()} km
+- 最高 5 輛（車牌 里程）：${top5.map(r => r.vehiclePlate + ' ' + r.monthlyMileage + 'km').join('、')}
+- 最低 5 輛（車牌 里程）：${bottom5.map(r => r.vehiclePlate + ' ' + r.monthlyMileage + 'km').join('、')}
+- 異常高里程車輛（>平均 200%）：${anomalies.length > 0 ? anomalies.map(r => r.vehiclePlate + ' ' + r.monthlyMileage + 'km').join('、') : '無'}
 
 【請依序提供以下分析】：
 1. **整體狀況評估**：本期車隊運作總體評估（100字以內）
@@ -1926,7 +1959,6 @@ const MileageTool = ({ onBack, windowHeight }) => {
 3. **管理建議**：至少 3 條具體可執行的管理改善建議
 4. **下期預測**：根據趨勢，下期需注意的重點`;
               try {
-                // 透過 Vercel Serverless Proxy 呼叫（API Key 安全存放於後端環境變數）
                 const res = await fetch('/api/ai-diagnose', {
                   method: 'POST',
                   headers: { 'Content-Type': 'application/json' },
@@ -1936,51 +1968,129 @@ const MileageTool = ({ onBack, windowHeight }) => {
                 if (!res.ok) {
                   setAiAnalysis('❌ ' + (data.error || '分析失敗，請稍後再試'));
                 } else {
-                  setAiAnalysis(data.result || '（AI 未回傳結果）');
+                  const resultText = data.result || '（AI 未回傳結果）';
+                  setAiAnalysis(resultText);
+                  // 儲存到 Firestore，重新登入後仍可查看
+                  const savedData = {
+                    result: resultText,
+                    label: `${deptLabel}｜${aiRangeLabel}`,
+                    savedAt: new Date().toISOString(),
+                  };
+                  setAiSavedResult(savedData);
+                  try {
+                    const fb = await initFirebase();
+                    if (fb) {
+                      await fb.setDoc(fb.doc(fb.db, 'mileage_config', 'ai_last_result'), savedData);
+                    }
+                  } catch(saveErr) { console.warn('[AI] save result failed', saveErr); }
                 }
               } catch(e) {
                 setAiAnalysis('❌ 網路錯誤：' + e.message);
               }
               setAiLoading(false);
             };
+
+            const displayResult = aiAnalysis || (aiSavedResult ? aiSavedResult.result : '');
+            const isSavedResult = !aiAnalysis && !!aiSavedResult;
+
+            const handleExport = () => {
+              if (!displayResult) return;
+              const label = aiSavedResult?.label || aiRangeLabel;
+              const savedAt = aiSavedResult?.savedAt ? new Date(aiSavedResult.savedAt).toLocaleString('zh-TW') : '';
+              const blob = new Blob([
+                `AI 物流診斷報告\n` +
+                `分析範圍：${label}\n` +
+                `產生時間：${savedAt}\n` +
+                `${'─'.repeat(40)}\n\n` +
+                displayResult
+              ], { type: 'text/plain;charset=utf-8' });
+              const url = URL.createObjectURL(blob);
+              const a = document.createElement('a');
+              a.href = url;
+              a.download = `AI診斷報告_${label.replace(/[｜～\s]/g, '_')}.txt`;
+              a.click();
+              URL.revokeObjectURL(url);
+            };
+
             return (
-              <div className="space-y-4 pb-10">
+              <div className="space-y-4 pb-12">
                 <h2 className="text-lg font-bold text-gray-800">🤖 AI 物流診斷分析</h2>
 
-                {/* 設定區 */}
+                {/* ── 設定區 ── */}
                 <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-5 space-y-4">
                   <div className="font-bold text-sm text-gray-700">⚙️ 分析設定</div>
-                  <div className="grid grid-cols-2 gap-4">
-                    <div>
-                      <label className="text-xs font-bold text-gray-500 block mb-1.5">分析期別</label>
-                      <input type="month" value={aiPeriod || selectedPeriod} onChange={e => setAiPeriod(e.target.value)}
-                        className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm outline-none focus:border-indigo-400" />
+
+                  {/* 週期範圍切換（與儀表板同款） */}
+                  <div>
+                    <label className="text-xs font-bold text-gray-500 block mb-2">分析週期</label>
+                    <div className="flex items-center gap-2 flex-wrap">
+                      {[['month','本月'],['quarter','本季'],['year','本年'],['custom','自訂']].map(([v,l]) => (
+                        <button key={v} onClick={() => setAiRange(v)}
+                          className={'px-3 py-1.5 rounded-lg text-xs font-bold border transition-all ' +
+                            (aiRange === v ? 'bg-blue-600 text-white border-blue-600' : 'bg-white text-gray-500 border-gray-200 hover:border-blue-300')}>
+                          {l}
+                        </button>
+                      ))}
+                      {aiRange === 'custom' && <>
+                        <input type="month" value={aiFrom} onChange={e => setAiFrom(e.target.value)}
+                          className="border border-gray-300 rounded-lg px-2 py-1 text-xs" />
+                        <span className="text-gray-400 text-xs">～</span>
+                        <input type="month" value={aiTo} onChange={e => setAiTo(e.target.value)}
+                          className="border border-gray-300 rounded-lg px-2 py-1 text-xs" />
+                      </>}
                     </div>
-                    <div>
-                      <label className="text-xs font-bold text-gray-500 block mb-1.5">部門</label>
-                      <select value={aiDept} onChange={e => setAiDept(e.target.value)}
-                        className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm outline-none focus:border-indigo-400">
-                        <option value="all">全部部門</option>
-                        {departments.map(d => <option key={d.id} value={d.id}>{d.name}</option>)}
-                      </select>
+                    {aiRange !== 'custom' && (
+                      <div className="mt-2 flex items-center gap-2">
+                        <span className="text-xs text-gray-500">基準期別：</span>
+                        <input type="month" value={aiPeriod || selectedPeriod}
+                          onChange={e => setAiPeriod(e.target.value)}
+                          className="border border-gray-300 rounded-lg px-2 py-1 text-xs" />
+                      </div>
+                    )}
+                    <div className="mt-1.5 text-[11px] text-indigo-500 font-bold">
+                      📅 分析範圍：{aiRangeLabel}（{aiPeriods.length} 個月）
                     </div>
                   </div>
+
+                  {/* 部門 */}
+                  <div>
+                    <label className="text-xs font-bold text-gray-500 block mb-1.5">部門篩選</label>
+                    <select value={aiDept} onChange={e => setAiDept(e.target.value)}
+                      className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm outline-none focus:border-indigo-400">
+                      <option value="all">全部部門</option>
+                      {departments.map(d => <option key={d.id} value={d.id}>{d.name}</option>)}
+                    </select>
+                  </div>
+
                   <button onClick={runAiAnalysis} disabled={aiLoading}
                     className="w-full py-3 bg-gradient-to-r from-indigo-500 to-purple-600 text-white font-bold rounded-xl text-sm hover:from-indigo-600 hover:to-purple-700 disabled:opacity-50 transition-all shadow-md">
                     {aiLoading ? '⏳ AI 分析中（約 10 秒）...' : '🚀 開始 AI 診斷分析'}
                   </button>
                 </div>
 
-                {/* 分析結果 */}
-                {aiAnalysis && (
+                {/* ── 診斷結果 ── */}
+                {displayResult && (
                   <div className="bg-white rounded-xl border border-indigo-200 shadow-sm p-5">
-                    <div className="flex items-center gap-2 mb-4">
-                      <span className="text-lg">🤖</span>
-                      <div className="font-bold text-gray-800">AI 診斷報告</div>
-                      <span className="text-[10px] bg-indigo-100 text-indigo-700 px-2 py-0.5 rounded-full">Claude Sonnet</span>
+                    <div className="flex items-center justify-between mb-4 flex-wrap gap-2">
+                      <div className="flex items-center gap-2">
+                        <span className="text-lg">🤖</span>
+                        <div className="font-bold text-gray-800">AI 診斷報告</div>
+                        {isSavedResult && (
+                          <span className="text-[10px] bg-amber-100 text-amber-700 px-2 py-0.5 rounded-full">
+                            上次結果 · {new Date(aiSavedResult.savedAt).toLocaleString('zh-TW', {month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit'})}
+                          </span>
+                        )}
+                        <span className="text-[10px] bg-indigo-100 text-indigo-700 px-2 py-0.5 rounded-full">
+                          {aiSavedResult?.label || aiRangeLabel}
+                        </span>
+                      </div>
+                      <button onClick={handleExport}
+                        className="flex items-center gap-1.5 px-3 py-1.5 bg-emerald-50 border border-emerald-300 text-emerald-700 rounded-lg text-xs font-bold hover:bg-emerald-100 transition-all">
+                        ⬇️ 匯出報告
+                      </button>
                     </div>
-                    <div className="text-sm text-gray-700 leading-relaxed whitespace-pre-wrap overflow-y-auto max-h-[60vh]">
-                      {aiAnalysis}
+                    <div className="text-sm text-gray-700 leading-relaxed whitespace-pre-wrap">
+                      {displayResult}
                     </div>
                   </div>
                 )}
