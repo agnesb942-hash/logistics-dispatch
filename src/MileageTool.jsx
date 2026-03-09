@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
+import { LineChart, Line, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, Cell } from 'recharts';
 
 // ═══════════════════════════════════════════════════════════════════════
 // 車輛里程管理系統 — Phase 1 MVP
@@ -681,27 +682,149 @@ const MileageTool = ({ onBack, windowHeight }) => {
   };
 
   // ── Export CSV ──────────────────────────────────────────────────
-  const exportCSV = (type) => {
-    const BOM = '\uFEFF';
-    let headers, rows;
-    if (type === 'monthly') {
-      headers = ['期別','車牌','累計里程','上期里程','本月里程','回報人','代填人','狀態','備註','回報時間'];
-      rows = monthlyRecords.filter(r => filterDept === 'all' || vehicles.find(v => v.plate === r.vehiclePlate)?.deptId === filterDept)
-        .sort((a, b) => a.period.localeCompare(b.period) || a.vehiclePlate.localeCompare(b.vehiclePlate))
-        .map(r => [r.period, r.vehiclePlate, r.odometerReading, r.previousReading ?? '', r.monthlyMileage ?? '', r.reporterName, r.proxyByName || '', r.status === 'approved' ? '已審核' : r.status === 'rejected' ? '退回' : '待審', r.notes || '', r.submittedAt || '']);
-    } else {
-      headers = ['日期','車牌','使用人','代填人','起始里程','結束里程','區間里程','事由','狀態','備註'];
-      rows = adhocRecords.map(r => [r.date, r.vehiclePlate, r.userName, r.proxyByName || '', r.startMileage, r.endMileage, r.tripMileage, r.purpose, r.status === 'approved' ? '已審核' : '待審', r.notes || '']);
+  // ── Export States ───────────────────────────────────────────────
+  const [exportType, setExportType] = useState('monthly'); // monthly | adhoc
+  const [exportRange, setExportRange] = useState('month');  // month | quarter | year | custom
+  const [exportFrom, setExportFrom] = useState('');
+  const [exportTo, setExportTo] = useState('');
+
+  const getExportPeriods = useCallback(() => {
+    const all = [...new Set([
+      ...monthlyRecords.map(r => r.period),
+      ...adhocRecords.map(r => r.date?.slice(0,7)).filter(Boolean)
+    ])].sort();
+    if (!all.length) return [];
+    const latest = all[all.length - 1];
+    const [y, m] = latest.split('-').map(Number);
+
+    if (exportRange === 'month') {
+      return [latest];
+    } else if (exportRange === 'quarter') {
+      const q = Math.floor((m - 1) / 3);
+      return [0,1,2].map(i => {
+        const mm = q * 3 + 1 + i;
+        return `${y}-${String(mm).padStart(2,'0')}`;
+      }).filter(p => all.includes(p) || monthlyRecords.some(r => r.period === p));
+    } else if (exportRange === 'year') {
+      return all.filter(p => p.startsWith(String(y)));
+    } else if (exportRange === 'custom' && exportFrom && exportTo) {
+      return all.filter(p => p >= exportFrom && p <= exportTo);
     }
-    const csv = [headers.join(','), ...rows.map(r => r.map(c => `"${String(c).replace(/"/g, '""')}"`).join(','))].join('\n');
+    return all;
+  }, [exportRange, exportFrom, exportTo, monthlyRecords, adhocRecords]);
+
+  const buildExportRows = useCallback((type) => {
+    const periods = getExportPeriods();
+    if (type === 'monthly') {
+      const recs = monthlyRecords
+        .filter(r => periods.includes(r.period) &&
+          (filterDept === 'all' || vehicles.find(v => v.plate === r.vehiclePlate)?.deptId === filterDept))
+        .sort((a, b) => a.period.localeCompare(b.period) || a.vehiclePlate.localeCompare(b.vehiclePlate));
+      return {
+        headers: ['期別','部門','車牌','累計里程(km)','上期里程(km)','月增幅(km)','回報人','代填人','狀態','備註','回報時間'],
+        rows: recs.map(r => [
+          r.period,
+          vehicles.find(v => v.plate === r.vehiclePlate) ? getDeptName(vehicles.find(v => v.plate === r.vehiclePlate).deptId) : '',
+          r.vehiclePlate, r.odometerReading, r.previousReading ?? '', r.monthlyMileage ?? '',
+          r.reporterName, r.proxyByName || '',
+          r.status === 'approved' ? '已審核' : r.status === 'rejected' ? '退回' : '待審',
+          r.notes || '', r.submittedAt?.slice(0,10) || ''
+        ]),
+        summary: {
+          total: recs.reduce((s, r) => s + (r.monthlyMileage || 0), 0),
+          avg: recs.filter(r => r.monthlyMileage > 0).length
+            ? Math.round(recs.reduce((s, r) => s + (r.monthlyMileage || 0), 0) / recs.filter(r => r.monthlyMileage > 0).length)
+            : 0,
+          count: recs.length
+        }
+      };
+    } else {
+      const recs = adhocRecords
+        .filter(r => periods.includes(r.date?.slice(0,7)) &&
+          (filterDept === 'all' || vehicles.find(v => v.plate === r.vehiclePlate)?.deptId === filterDept))
+        .sort((a, b) => a.date?.localeCompare(b.date));
+      return {
+        headers: ['日期','部門','車牌','使用人','代填人','起始里程(km)','結束里程(km)','區間里程(km)','事由','狀態','備註'],
+        rows: recs.map(r => [
+          r.date,
+          vehicles.find(v => v.plate === r.vehiclePlate) ? getDeptName(vehicles.find(v => v.plate === r.vehiclePlate).deptId) : '',
+          r.vehiclePlate, r.userName, r.proxyByName || '',
+          r.startMileage, r.endMileage, r.tripMileage, r.purpose,
+          r.status === 'approved' ? '已審核' : '待審', r.notes || ''
+        ]),
+        summary: {
+          total: recs.reduce((s, r) => s + (r.tripMileage || 0), 0),
+          count: recs.length
+        }
+      };
+    }
+  }, [getExportPeriods, monthlyRecords, adhocRecords, filterDept, vehicles]);
+
+  const exportCSV = (type) => {
+    const { headers, rows } = buildExportRows(type);
+    const BOM = '\uFEFF';
+    const csv = [headers.join(','), ...rows.map(r => r.map(c => `"${String(c ?? '').replace(/"/g, '""')}"`).join(','))].join('\n');
     const blob = new Blob([BOM + csv], { type: 'text/csv;charset=utf-8;' });
     const link = document.createElement('a');
     link.href = URL.createObjectURL(blob);
-    link.download = `${type === 'monthly' ? '月報里程' : '用車紀錄'}_${new Date().toISOString().slice(0, 10)}.csv`;
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
+    link.download = `${type === 'monthly' ? '月報里程' : '用車紀錄'}_${exportRange}_${new Date().toISOString().slice(0,10)}.csv`;
+    document.body.appendChild(link); link.click(); document.body.removeChild(link);
   };
+
+  const exportXLSX = async (type) => {
+    // 動態載入 SheetJS（避免打包體積問題）
+    let XLSX;
+    try {
+      XLSX = await import('https://cdn.sheetjs.com/xlsx-0.20.0/package/xlsx.mjs');
+    } catch {
+      alert('無法載入 Excel 模組，請確認網路連線後再試。');
+      return;
+    }
+    const { headers, rows, summary } = buildExportRows(type);
+    const wsData = [headers, ...rows, [], ['── 統計摘要 ──']];
+    if (type === 'monthly') {
+      wsData.push(['總里程合計', summary.total + ' km'], ['車均月增幅', summary.avg + ' km'], ['回報筆數', summary.count]);
+    } else {
+      wsData.push(['用車總里程', summary.total + ' km'], ['紀錄筆數', summary.count]);
+    }
+    const wb = XLSX.utils.book_new();
+    const ws = XLSX.utils.aoa_to_sheet(wsData);
+    ws['!cols'] = headers.map((_, i) => ({ wch: i < 2 ? 10 : i < 4 ? 20 : 14 }));
+    XLSX.utils.book_append_sheet(wb, ws, type === 'monthly' ? '月報里程' : '用車紀錄');
+    XLSX.writeFile(wb, `${type === 'monthly' ? '月報里程' : '用車紀錄'}_${exportRange}_${new Date().toISOString().slice(0,10)}.xlsx`);
+  };
+
+  const exportPDF = (type) => {
+    const { headers, rows, summary } = buildExportRows(type);
+    const title = type === 'monthly' ? '月報里程報表' : '用車紀錄報表';
+    const rangeLabel = { month: '本月', quarter: '本季', year: '本年', custom: '自訂區間' }[exportRange];
+    const html = \`<!DOCTYPE html><html><head><meta charset="utf-8"><title>\${title}</title>
+<style>
+  body { font-family: 'Microsoft JhengHei', Arial, sans-serif; font-size: 11px; margin: 20px; }
+  h2 { font-size: 15px; margin-bottom: 4px; }
+  .meta { color: #666; font-size: 10px; margin-bottom: 14px; }
+  table { width: 100%; border-collapse: collapse; }
+  th { background: #1e293b; color: #fff; padding: 5px 7px; text-align: left; font-size: 10px; }
+  td { border-bottom: 1px solid #e2e8f0; padding: 4px 7px; }
+  tr:nth-child(even) td { background: #f8fafc; }
+  .summary { margin-top: 14px; background: #f1f5f9; padding: 10px 14px; border-radius: 6px; font-size: 11px; }
+  @media print { button { display: none; } }
+</style></head><body>
+<h2>\${title}</h2>
+<div class="meta">範圍：\${rangeLabel}｜匯出時間：\${new Date().toLocaleString('zh-TW')}</div>
+<table><thead><tr>\${headers.map(h => \`<th>\${h}</th>\`).join('')}</tr></thead>
+<tbody>\${rows.map(r => \`<tr>\${r.map(c => \`<td>\${c ?? ''}</td>\`).join('')}</tr>\`).join('')}</tbody></table>
+<div class="summary">\${type === 'monthly'
+  ? \`總里程合計：\${summary.total.toLocaleString()} km｜車均月增幅：\${summary.avg.toLocaleString()} km｜回報筆數：\${summary.count}\`
+  : \`用車總里程：\${summary.total.toLocaleString()} km｜紀錄筆數：\${summary.count}\`
+}</div>
+</body></html>\`;
+    const w = window.open('', '_blank');
+    w.document.write(html);
+    w.document.close();
+    setTimeout(() => w.print(), 500);
+  };
+
 
   // ── Computed Stats ──────────────────────────────────────────────
   const periodRecords = useMemo(() =>
@@ -714,6 +837,7 @@ const MileageTool = ({ onBack, windowHeight }) => {
   }, [vehicles, periodRecords, filterDept]);
 
   // ── Reconciliation: odometer diff vs trip sum ───────────────────
+  // 勾稽：僅供參考，差異屬正常（用車紀錄為選填，不強制等於月增幅）
   const reconciliation = useMemo(() => {
     return periodRecords.map(rec => {
       const tripSum = adhocRecords
@@ -721,9 +845,40 @@ const MileageTool = ({ onBack, windowHeight }) => {
         .reduce((s, r) => s + (r.tripMileage || 0), 0);
       const odometerDiff = rec.monthlyMileage || 0;
       const gap = odometerDiff - tripSum;
-      return { plate: rec.vehiclePlate, odometerDiff, tripSum, gap, hasGap: gap !== 0 };
+      return { plate: rec.vehiclePlate, odometerDiff, tripSum, gap };
     });
   }, [periodRecords, adhocRecords, selectedPeriod]);
+
+  // ── 儀表板圖表資料 ────────────────────────────────────────────────
+  const chartData = useMemo(() => {
+    // 月趨勢：最近 6 個月所有車輛加總月增幅
+    const periods = [];
+    const base = selectedPeriod || '2026-02';
+    let [y, m] = base.split('-').map(Number);
+    for (let i = 5; i >= 0; i--) {
+      let mm = m - i; let yy = y;
+      if (mm <= 0) { mm += 12; yy -= 1; }
+      periods.push(`${yy}-${String(mm).padStart(2,'0')}`);
+    }
+    const trendData = periods.map(p => {
+      const recs = monthlyRecords.filter(r => r.period === p &&
+        (filterDept === 'all' || vehicles.find(v => v.plate === r.vehiclePlate)?.deptId === filterDept));
+      const total = recs.reduce((s, r) => s + (r.monthlyMileage || 0), 0);
+      const avg = recs.filter(r => (r.monthlyMileage || 0) > 0).length > 0
+        ? Math.round(total / recs.filter(r => (r.monthlyMileage || 0) > 0).length) : 0;
+      return { period: p.slice(5) + '月', total, avg, count: recs.length };
+    });
+
+    // 當期各車里程（前10高）
+    const vehicleData = [...periodRecords]
+      .filter(r => (r.monthlyMileage || 0) > 0 &&
+        (filterDept === 'all' || vehicles.find(v => v.plate === r.vehiclePlate)?.deptId === filterDept))
+      .sort((a, b) => (b.monthlyMileage || 0) - (a.monthlyMileage || 0))
+      .slice(0, 10)
+      .map(r => ({ plate: r.vehiclePlate.replace(/^B/, ''), km: r.monthlyMileage || 0 }));
+
+    return { trendData, vehicleData };
+  }, [monthlyRecords, periodRecords, selectedPeriod, filterDept, vehicles]);
 
   const statusMap = { submitted: { label: '待審核', color: 'bg-amber-100 text-amber-700' }, approved: { label: '已審核', color: 'bg-green-100 text-green-700' }, rejected: { label: '已退回', color: 'bg-red-100 text-red-700' } };
 
@@ -951,28 +1106,68 @@ const MileageTool = ({ onBack, windowHeight }) => {
 
             {/* Quick Actions */}
 
-            {/* Reconciliation: 勾稽比對 */}
-            {isAdmin && reconciliation.length > 0 && (
-              <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-4 space-y-3">
-                <div className="text-sm font-bold text-gray-700">🔍 勾稽比對（{selectedPeriod}）</div>
-                <div className="text-[10px] text-gray-400 mb-2">里程表差值 vs 用車紀錄加總，有差異代表有未回報的用車紀錄</div>
+
+            {/* ── 趨勢圖：最近 6 個月月增幅 ── */}
+            {chartData.trendData.some(d => d.total > 0) && (
+              <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-4">
+                <div className="text-sm font-bold text-gray-700 mb-3">📈 月增幅趨勢（近 6 個月）</div>
+                <ResponsiveContainer width="100%" height={180}>
+                  <LineChart data={chartData.trendData} margin={{ top: 5, right: 10, left: 0, bottom: 0 }}>
+                    <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
+                    <XAxis dataKey="period" tick={{ fontSize: 10 }} />
+                    <YAxis tick={{ fontSize: 10 }} tickFormatter={v => v >= 1000 ? (v/1000).toFixed(0)+'k' : v} width={36} />
+                    <Tooltip formatter={(v, n) => [fmtNum(v) + ' km', n === 'total' ? '總里程' : '車均里程']} labelStyle={{ fontSize: 11 }} />
+                    <Legend iconSize={10} wrapperStyle={{ fontSize: 11 }} />
+                    <Line type="monotone" dataKey="total" name="總里程" stroke="#10b981" strokeWidth={2} dot={{ r: 3 }} />
+                    <Line type="monotone" dataKey="avg" name="車均里程" stroke="#6366f1" strokeWidth={2} dot={{ r: 3 }} strokeDasharray="4 2" />
+                  </LineChart>
+                </ResponsiveContainer>
+              </div>
+            )}
+
+            {/* ── 當期各車里程 Top 10 ── */}
+            {chartData.vehicleData.length > 0 && (
+              <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-4">
+                <div className="text-sm font-bold text-gray-700 mb-3">🚗 本期里程 Top 10（{selectedPeriod}）</div>
+                <ResponsiveContainer width="100%" height={200}>
+                  <BarChart data={chartData.vehicleData} margin={{ top: 5, right: 10, left: 0, bottom: 20 }}>
+                    <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
+                    <XAxis dataKey="plate" tick={{ fontSize: 9 }} angle={-35} textAnchor="end" interval={0} />
+                    <YAxis tick={{ fontSize: 10 }} tickFormatter={v => v >= 1000 ? (v/1000).toFixed(0)+'k' : v} width={36} />
+                    <Tooltip formatter={v => [fmtNum(v) + ' km', '月增幅']} />
+                    <Bar dataKey="km" name="月增幅" radius={[3,3,0,0]}>
+                      {chartData.vehicleData.map((_, i) => (
+                        <Cell key={i} fill={i < 3 ? '#10b981' : '#6366f1'} fillOpacity={0.85} />
+                      ))}
+                    </Bar>
+                  </BarChart>
+                </ResponsiveContainer>
+              </div>
+            )}
+
+            {/* 勾稽比對：僅管理者可見，標示為「參考資訊」而非異常警告 */}
+            {isAdmin && reconciliation.filter(r => r.tripSum > 0).length > 0 && (
+              <div className="bg-slate-50 border border-slate-200 rounded-xl p-4 space-y-2">
+                <div className="flex items-center gap-2">
+                  <span className="text-sm font-bold text-slate-600">🔍 里程勾稽參考（{selectedPeriod}）</span>
+                  <span className="text-[10px] bg-slate-200 text-slate-500 px-2 py-0.5 rounded-full">僅限管理者</span>
+                </div>
+                <div className="text-[10px] text-slate-400">月增幅 vs 用車紀錄里程加總。用車紀錄屬選填，差異屬正常現象，此表僅供參考。</div>
                 <div className="overflow-x-auto">
                   <table className="w-full text-xs">
-                    <thead><tr className="border-b border-gray-200 bg-gray-50">
-                      <th className="text-left px-3 py-2 font-bold text-gray-600">車牌</th>
-                      <th className="text-right px-3 py-2 font-bold text-gray-600">里程表差值</th>
-                      <th className="text-right px-3 py-2 font-bold text-gray-600">用車紀錄加總</th>
-                      <th className="text-right px-3 py-2 font-bold text-gray-600">差異</th>
+                    <thead><tr className="border-b border-slate-200">
+                      <th className="text-left px-3 py-2 font-bold text-slate-500">車牌</th>
+                      <th className="text-right px-3 py-2 font-bold text-slate-500">月增幅</th>
+                      <th className="text-right px-3 py-2 font-bold text-slate-500">用車里程加總</th>
+                      <th className="text-right px-3 py-2 font-bold text-slate-500">差值</th>
                     </tr></thead>
                     <tbody>
-                      {reconciliation.map(r => (
-                        <tr key={r.plate} className={`border-b border-gray-100 ${r.hasGap ? 'bg-red-50' : ''}`}>
-                          <td className="px-3 py-2 font-bold">{r.plate}</td>
-                          <td className="px-3 py-2 text-right font-mono">{fmtNum(r.odometerDiff)}</td>
-                          <td className="px-3 py-2 text-right font-mono">{fmtNum(r.tripSum)}</td>
-                          <td className={`px-3 py-2 text-right font-mono font-bold ${r.hasGap ? 'text-red-600' : 'text-green-600'}`}>
-                            {r.hasGap ? `⚠️ ${fmtNum(r.gap)}` : '✓ 吻合'}
-                          </td>
+                      {reconciliation.filter(r => r.tripSum > 0).map(r => (
+                        <tr key={r.plate} className="border-b border-slate-100">
+                          <td className="px-3 py-2 font-bold text-slate-700">{r.plate}</td>
+                          <td className="px-3 py-2 text-right font-mono text-slate-600">{fmtNum(r.odometerDiff)}</td>
+                          <td className="px-3 py-2 text-right font-mono text-slate-600">{fmtNum(r.tripSum)}</td>
+                          <td className="px-3 py-2 text-right font-mono text-slate-400">{r.gap > 0 ? '+' : ''}{fmtNum(r.gap)}</td>
                         </tr>
                       ))}
                     </tbody>
@@ -1299,19 +1494,85 @@ const MileageTool = ({ onBack, windowHeight }) => {
           {/* ═══ EXPORT ═══ */}
           {activeSection === 'export' && <>
             <h2 className="text-lg font-bold text-gray-800">匯出報表</h2>
-            <div className="grid grid-cols-2 gap-4">
-              <div className="bg-white rounded-xl p-5 border border-gray-200 shadow-sm space-y-3">
-                <div className="text-sm font-bold text-gray-800">📋 月報里程</div>
-                <p className="text-xs text-gray-500">匯出所有月報里程紀錄，含審核狀態</p>
-                <button onClick={() => exportCSV('monthly')}
-                  className="w-full py-2 bg-emerald-500 text-white rounded-lg text-xs font-bold hover:bg-emerald-600">下載 CSV</button>
+
+            {/* 資料類型 + 時間範圍 */}
+            <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-5 space-y-4">
+              <div className="font-bold text-sm text-gray-700">⚙️ 匯出設定</div>
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="text-xs font-bold text-gray-500 block mb-1.5">資料類型</label>
+                  <div className="flex gap-2">
+                    {[['monthly','📋 月報里程'],['adhoc','🚗 用車紀錄']].map(([v,l]) => (
+                      <button key={v} onClick={() => setExportType(v)}
+                        className={`flex-1 py-2 rounded-lg text-xs font-bold border transition-all ${exportType === v ? 'bg-emerald-500 text-white border-emerald-500' : 'bg-white text-gray-600 border-gray-200 hover:border-emerald-300'}`}>
+                        {l}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+                <div>
+                  <label className="text-xs font-bold text-gray-500 block mb-1.5">時間範圍</label>
+                  <div className="grid grid-cols-4 gap-1">
+                    {[['month','本月'],['quarter','本季'],['year','本年'],['custom','自訂']].map(([v,l]) => (
+                      <button key={v} onClick={() => setExportRange(v)}
+                        className={`py-2 rounded-lg text-[10px] font-bold border transition-all ${exportRange === v ? 'bg-indigo-500 text-white border-indigo-500' : 'bg-white text-gray-500 border-gray-200 hover:border-indigo-300'}`}>
+                        {l}
+                      </button>
+                    ))}
+                  </div>
+                </div>
               </div>
-              <div className="bg-white rounded-xl p-5 border border-gray-200 shadow-sm space-y-3">
-                <div className="text-sm font-bold text-gray-800">🚗 用車紀錄</div>
-                <p className="text-xs text-gray-500">匯出所有用車紀錄紀錄</p>
-                <button onClick={() => exportCSV('adhoc')}
-                  className="w-full py-2 bg-purple-500 text-white rounded-lg text-xs font-bold hover:bg-purple-600">下載 CSV</button>
-              </div>
+              {exportRange === 'custom' && (
+                <div className="flex items-center gap-3">
+                  <div>
+                    <label className="text-xs font-bold text-gray-500 block mb-1">起始期別</label>
+                    <input type="month" value={exportFrom} onChange={e => setExportFrom(e.target.value)}
+                      className="border border-gray-300 rounded-lg px-3 py-1.5 text-xs outline-none focus:border-indigo-400" />
+                  </div>
+                  <div className="mt-4 text-gray-400">～</div>
+                  <div>
+                    <label className="text-xs font-bold text-gray-500 block mb-1">結束期別</label>
+                    <input type="month" value={exportTo} onChange={e => setExportTo(e.target.value)}
+                      className="border border-gray-300 rounded-lg px-3 py-1.5 text-xs outline-none focus:border-indigo-400" />
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* 統計摘要預覽 */}
+            {(() => {
+              const { summary } = buildExportRows(exportType);
+              return (
+                <div className="bg-slate-50 border border-slate-200 rounded-xl p-4 text-xs text-slate-600 flex flex-wrap gap-6">
+                  <span>📊 期別：<strong>{getExportPeriods().join('、') || '—'}</strong></span>
+                  <span>筆數：<strong>{summary.count}</strong></span>
+                  {exportType === 'monthly' && <span>總里程：<strong>{fmtNum(summary.total)} km</strong></span>}
+                  {exportType === 'monthly' && <span>車均：<strong>{fmtNum(summary.avg)} km</strong></span>}
+                  {exportType === 'adhoc' && <span>用車總里程：<strong>{fmtNum(summary.total)} km</strong></span>}
+                </div>
+              );
+            })()}
+
+            {/* 匯出格式按鈕 */}
+            <div className="grid grid-cols-3 gap-4">
+              <button onClick={() => exportXLSX(exportType)}
+                className="flex flex-col items-center gap-2 bg-white border border-gray-200 rounded-xl p-5 hover:border-green-400 hover:shadow-md transition-all group">
+                <span className="text-2xl">📗</span>
+                <span className="text-sm font-bold text-gray-700 group-hover:text-green-600">Excel (.xlsx)</span>
+                <span className="text-[10px] text-gray-400">含統計摘要、可直接用試算表開啟</span>
+              </button>
+              <button onClick={() => exportPDF(exportType)}
+                className="flex flex-col items-center gap-2 bg-white border border-gray-200 rounded-xl p-5 hover:border-red-400 hover:shadow-md transition-all group">
+                <span className="text-2xl">📕</span>
+                <span className="text-sm font-bold text-gray-700 group-hover:text-red-600">PDF 列印</span>
+                <span className="text-[10px] text-gray-400">開啟瀏覽器列印視窗，可存 PDF</span>
+              </button>
+              <button onClick={() => exportCSV(exportType)}
+                className="flex flex-col items-center gap-2 bg-white border border-gray-200 rounded-xl p-5 hover:border-blue-400 hover:shadow-md transition-all group">
+                <span className="text-2xl">📄</span>
+                <span className="text-sm font-bold text-gray-700 group-hover:text-blue-600">CSV 純文字</span>
+                <span className="text-[10px] text-gray-400">通用格式，適合進一步處理</span>
+              </button>
             </div>
           </>}
 
