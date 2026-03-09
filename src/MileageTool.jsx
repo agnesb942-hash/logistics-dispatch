@@ -1935,31 +1935,46 @@ const MileageTool = ({ onBack, windowHeight }) => {
                 (!deptFilter || (vehicles.find(v => v.plate === r.vehiclePlate) || {}).deptId === deptFilter)
               );
               const recWithKm = filteredRecs.filter(r => (r.monthlyMileage || 0) > 0);
-              const kms       = recWithKm.map(r => r.monthlyMileage).sort((a,b) => a - b);
-              const avg       = kms.length ? Math.round(kms.reduce((s,v)=>s+v,0)/kms.length) : 0;
-              const total     = kms.reduce((s,v)=>s+v, 0);
-              const median    = kms.length ? kms[Math.floor(kms.length/2)] : 0;
+
+              // ── 依車牌加總里程（多月份時同一台車有多筆，必須合併）──
+              const plateMap = {};
+              recWithKm.forEach(r => {
+                if (!plateMap[r.vehiclePlate]) plateMap[r.vehiclePlate] = 0;
+                plateMap[r.vehiclePlate] += r.monthlyMileage;
+              });
+              // 每台車的「期間累計里程」清單（唯一車輛）
+              const vehicleTotals = Object.entries(plateMap)
+                .map(([plate, km]) => ({ vehiclePlate: plate, monthlyMileage: km }));
+
+              const uniqueVehicleCount = vehicleTotals.length;
+              const periods            = aiPeriods.length;
+              // 平均＝期間總里程 ÷ 車輛數（而非月份記錄筆數）
+              const total   = vehicleTotals.reduce((s,v)=>s+v.monthlyMileage, 0);
+              const kms     = vehicleTotals.map(v=>v.monthlyMileage).sort((a,b)=>a-b);
+              const avg     = uniqueVehicleCount ? Math.round(total / uniqueVehicleCount) : 0;
+              const median  = kms.length ? kms[Math.floor(kms.length/2)] : 0;
               const deptLabel = aiDept==='all' ? '全部部門' : ((departments.find(d=>d.id===aiDept)||{name:aiDept}).name);
-              const top5      = [...recWithKm].sort((a,b)=>(b.monthlyMileage||0)-(a.monthlyMileage||0)).slice(0,5);
-              const bottom5   = [...recWithKm].sort((a,b)=>(a.monthlyMileage||0)-(b.monthlyMileage||0)).slice(0,5);
-              const anomalies = recWithKm.filter(r => r.monthlyMileage > avg * 2.0);
+              // top5/bottom5 依每台車的累計里程排序
+              const top5      = [...vehicleTotals].sort((a,b)=>b.monthlyMileage-a.monthlyMileage).slice(0,5);
+              const bottom5   = [...vehicleTotals].sort((a,b)=>a.monthlyMileage-b.monthlyMileage).slice(0,5);
+              const anomalies = vehicleTotals.filter(r => r.monthlyMileage > avg * 2.0);
               const rangeTyp  = aiRange==='month'?'月報':aiRange==='quarter'?'季報':aiRange==='year'?'年報':'自訂區間';
 
-              // ── 依部門整理車輛里程（供調度建議用）──────────────────
+              // ── 依部門整理車輛里程（供調度建議用，已合併多月）───────
               const deptGroups = {};
-              recWithKm.forEach(r => {
-                const veh    = vehicles.find(v => v.plate === r.vehiclePlate);
-                const dId    = veh ? veh.deptId : 'unknown';
-                const dName  = (departments.find(d=>d.id===dId)||{name:dId}).name;
+              vehicleTotals.forEach(r => {
+                const veh   = vehicles.find(v => v.plate === r.vehiclePlate);
+                const dId   = veh ? veh.deptId : 'unknown';
+                const dName = (departments.find(d=>d.id===dId)||{name:dId}).name;
                 if (!deptGroups[dName]) deptGroups[dName] = [];
                 deptGroups[dName].push({ plate: r.vehiclePlate, km: r.monthlyMileage });
               });
               const deptDispatchLines = Object.entries(deptGroups).map(([dName, recs]) => {
-                const sorted  = [...recs].sort((a,b)=>b.km-a.km);
-                const dAvg    = Math.round(sorted.reduce((s,r)=>s+r.km,0)/sorted.length);
-                const high    = sorted.slice(0, Math.ceil(sorted.length/3));
-                const low     = sorted.slice(-Math.ceil(sorted.length/3));
-                return `【${dName}】共${sorted.length}輛，部門平均${dAvg}km\n` +
+                const sorted = [...recs].sort((a,b)=>b.km-a.km);
+                const dAvg   = Math.round(sorted.reduce((s,r)=>s+r.km,0)/sorted.length);
+                const high   = sorted.slice(0, Math.ceil(sorted.length/3));
+                const low    = sorted.slice(-Math.ceil(sorted.length/3));
+                return `【${dName}】共${sorted.length}輛，部門期間平均${dAvg}km\n` +
                   `  高里程（建議調出）：${high.map(r=>r.plate+' '+r.km+'km').join('、')}\n` +
                   `  低里程（建議補入）：${low.map(r=>r.plate+' '+r.km+'km').join('、')}`;
               }).join('\n');
@@ -1969,7 +1984,7 @@ const MileageTool = ({ onBack, windowHeight }) => {
 【資料範圍】
 - 分析類型：${rangeTyp}（${aiRangeLabel}，共 ${aiPeriods.length} 個月）
 - 部門：${deptLabel}
-- 有效回報車輛數：${recWithKm.length} 輛
+- 有效車輛數（不重複）：${uniqueVehicleCount} 輛（分析期間 ${periods} 個月）
 
 【關鍵指標】
 - 期間總里程：${total.toLocaleString()} km
@@ -2020,7 +2035,7 @@ ${deptDispatchLines}
                     result: resultText,
                     label:  deptLabel + '｜' + aiRangeLabel,
                     savedAt: new Date().toISOString(),
-                    stats:  { total, avg, median, count: recWithKm.length, anomalyCount: anomalies.length, rangeTyp, periods: aiPeriods.length },
+                    stats:  { total, avg, median, count: uniqueVehicleCount, anomalyCount: anomalies.length, rangeTyp, periods: aiPeriods.length },
                     top5:    top5.map(r=>({plate:r.vehiclePlate, km:r.monthlyMileage})),
                     bottom5: bottom5.map(r=>({plate:r.vehiclePlate, km:r.monthlyMileage})),
                     anomalies: anomalies.map(r=>({plate:r.vehiclePlate, km:r.monthlyMileage})),
