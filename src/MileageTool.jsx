@@ -2010,7 +2010,7 @@ const MileageTool = ({ onBack, windowHeight }) => {
             const isSavedResult = !aiAnalysis && !!aiSavedResult;
 
             // ── PDF 匯出：完整視覺版 ──────────────────────────────────
-            const handlePdfExport = () => {
+            const handlePdfExport = async () => {
               if (!displayResult) return;
               const sd      = aiSavedResult || {};
               const label   = sd.label   || aiRangeLabel;
@@ -2020,275 +2020,204 @@ const MileageTool = ({ onBack, windowHeight }) => {
               const b5      = sd.bottom5 || [];
               const anom    = sd.anomalies || [];
 
-              // ── 強健的 section 解析：支援 AI 各種輸出格式 ──────────────
-              const parseSection = (text, keywords, nextKeywords) => {
-                // 嘗試多種標題 pattern
-                const titlePat = keywords.map(k =>
-                  new RegExp(
-                    '(?:\\d+\\.?\\s*)?(?:\\*{1,2})?(?:整體狀況評估|異常車輛分析|管理建議|下期預測|'.replace('整體狀況評估', k) + k + ')(?:\\*{1,2})?[：:*\\s]*([\\s\\S]*?)(?=' +
-                    nextKeywords.map(n => '(?:\\d+\\.?\\s*)?(?:\\*{1,2})?' + n).join('|') +
-                    '|$)',
-                    'i'
-                  )
-                );
-                for (const pat of titlePat) {
-                  const m = text.match(pat);
-                  if (m && m[1] && m[1].trim().length > 10) return m[1].trim();
-                }
-                return '';
-              };
-
-              // 簡化版：用行分割，找標題行後取內容
-              const splitByHeading = (text) => {
+              // ── 解析四個分析區塊 ──────────────────────────────────────
+              const splitSections = (text) => {
                 const lines = text.split('\n');
-                const sections = { s1:'', s2:'', s3:'', s4:'' };
-                let cur = null;
-                const headMap = {
-                  '整體狀況評估': 's1', '整体状况': 's1', '整體': 's1', 'overall': 's1',
-                  '異常車輛分析': 's2', '異常': 's2', 'anomal': 's2',
-                  '管理建議': 's3', '建議': 's3', 'suggest': 's3', 'recommend': 's3',
-                  '下期預測': 's4', '預測': 's4', 'forecast': 's4',
-                };
                 const buf = { s1:[], s2:[], s3:[], s4:[] };
-                lines.forEach(line => {
-                  const clean = line.replace(/\*+/g,'').replace(/^\d+\.\s*/,'').trim().toLowerCase();
-                  for (const [k, v] of Object.entries(headMap)) {
-                    if (clean.includes(k.toLowerCase()) && clean.length < 25) { cur = v; return; }
+                let cur = null;
+                const headMap = [
+                  { keys:['整體狀況評估','整體狀況','整體評估'], t:'s1' },
+                  { keys:['異常車輛分析','異常車輛','異常分析'], t:'s2' },
+                  { keys:['管理建議','管理改善建議'],             t:'s3' },
+                  { keys:['下期預測','下期展望'],                 t:'s4' },
+                ];
+                for (const line of lines) {
+                  const plain = line.replace(/\*+/g,'').replace(/^\d+[.、)]\s*/,'').trim();
+                  if (plain.length > 0 && plain.length < 22) {
+                    let matched = false;
+                    for (const { keys, t } of headMap) {
+                      if (keys.some(k => plain.includes(k))) { cur = t; matched = true; break; }
+                    }
+                    if (matched) continue;
                   }
                   if (cur) buf[cur].push(line);
-                });
-                Object.keys(buf).forEach(k => { sections[k] = buf[k].join('\n').trim(); });
-                return sections;
+                }
+                return { s1:buf.s1.join('\n').trim(), s2:buf.s2.join('\n').trim(), s3:buf.s3.join('\n').trim(), s4:buf.s4.join('\n').trim() };
               };
 
-              const secs = splitByHeading(displayResult);
-              const sec1 = secs.s1 || displayResult.slice(0, Math.min(500, displayResult.length/4));
-              const sec2 = secs.s2 || '';
-              const sec3 = secs.s3 || '';
-              const sec4 = secs.s4 || '';
-              // 若全部空白，把全文放在 sec1
-              const fullFallback = !sec1 && !sec2 && !sec3 && !sec4;
-
-              // 渲染：** → <strong>，換行 → <br>，- 開頭 → 條列
-              const renderText = (text) => {
-                if (!text) return '<span style="color:#94a3b8;">（無資料）</span>';
-                return text
-                  .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
-                  .replace(/\n/g, '<br>');
+              const secs    = splitSections(displayResult);
+              const allEmpty = !secs.s1 && !secs.s2 && !secs.s3 && !secs.s4;
+              const R = (t) => (t||'').replace(/\*\*(.+?)\*\*/g,'<b>$1</b>').replace(/\n/g,'<br>') || '<span style="color:#9ca3af;font-style:italic;">無資料</span>';
+              const buildList = (t) => {
+                if (!t||!t.trim()) return '<span style="color:#9ca3af;">—</span>';
+                const items = t.split('\n').filter(l=>l.trim()&&!/^[\s*]+$/.test(l))
+                  .map(l=>l.replace(/^[-•·✦\d]+[.、)]*\s*/,'').replace(/\*\*/g,'').trim()).filter(l=>l.length>3);
+                return items.length ? items.map(it=>`<div style="display:flex;gap:8px;margin:5px 0;"><span style="color:#15803d;font-weight:900;flex-shrink:0;">✦</span><span>${it}</span></div>`).join('') : R(t);
               };
 
-              // 管理建議 → <li>
-              const buildSuggestions = (text) => {
-                if (!text) return '';
-                const lines = text.split('\n').filter(l => l.trim() && !/^[\s*]+$/.test(l));
-                const items = lines.map(l => {
-                  const clean = l.replace(/^[-•·✦\d]+[.、)．]?\s*/, '').replace(/\*\*/g,'').trim();
-                  return clean.length > 3 ? `<li style="margin:5px 0;padding-left:20px;position:relative;"><span style="position:absolute;left:0;color:#16a34a;font-weight:700;">✦</span>${clean}</li>` : '';
-                }).filter(Boolean);
-                return items.length ? `<ul style="margin:0;padding:0;list-style:none;">${items.join('')}</ul>` : renderText(text);
-              };
-
-              // 車輛橫條圖
-              const maxKm  = t5.length ? t5[0].km : 1;
-              const maxKm2 = b5.length ? b5[0].km : 1;
-              const barRow = (plate, km, color, base) =>
-                `<div style="display:flex;align-items:center;gap:8px;margin:5px 0;">
-                  <div style="width:58px;font-size:11px;font-weight:700;color:#374151;flex-shrink:0;">${plate}</div>
-                  <div style="flex:1;background:#e2e8f0;border-radius:4px;overflow:hidden;height:14px;">
-                    <div style="width:${Math.round((km/(base||1))*100)}%;background:${color} !important;height:100%;border-radius:4px;-webkit-print-color-adjust:exact;print-color-adjust:exact;"></div>
+              // ── 橫條圖 ────────────────────────────────────────────────
+              const maxKm = t5.length ? t5[0].km : 1;
+              const BAR_BLUES = ['#1d4ed8','#3b82f6','#60a5fa','#93c5fd','#bfdbfe'];
+              const barRow = (plate, km, color, base) => {
+                const pct = Math.max(5, Math.round((km/(base||1))*100));
+                return `<div style="display:flex;align-items:center;gap:8px;margin:4px 0;">
+                  <span style="width:58px;font-size:11px;font-weight:700;color:#1e293b;flex-shrink:0;">${plate}</span>
+                  <div style="flex:1;background:#e2e8f0;border-radius:4px;height:14px;overflow:hidden;">
+                    <div style="width:${pct}%;height:14px;background:${color};border-radius:4px;"></div>
                   </div>
-                  <div style="width:66px;text-align:right;font-size:11px;font-weight:700;color:#1e293b;">${km.toLocaleString()} km</div>
+                  <span style="width:68px;text-align:right;font-size:11px;font-weight:700;color:#1e293b;">${km.toLocaleString()} km</span>
+                </div>`;
+              };
+
+              // ── 分析區塊卡片 ─────────────────────────────────────────
+              const card = (ico, title, titleColor, bg, border, body) =>
+                `<div style="background:${bg};border-left:5px solid ${border};border-radius:10px;padding:14px 16px;margin-bottom:10px;break-inside:avoid;">
+                  <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;">
+                    <span style="font-size:18px;">${ico}</span>
+                    <b style="font-size:13.5px;color:${titleColor};">${title}</b>
+                  </div>
+                  <div style="font-size:12px;line-height:1.85;color:#374151;">${body}</div>
                 </div>`;
 
-              const html = `<!DOCTYPE html>
+              // ── 報告 HTML（全 inline style）──────────────────────────
+              const reportHTML = `
+<div id="pdf-report" style="width:794px;background:#fff;padding:30px 36px;font-family:'Microsoft JhengHei','PingFang TC',Arial,sans-serif;font-size:13px;color:#1f2937;box-sizing:border-box;">
+
+  <!-- 頁首 -->
+  <div style="background:linear-gradient(135deg,#4338ca,#7c3aed,#a855f7);border-radius:12px;padding:22px 28px 20px;margin-bottom:16px;position:relative;overflow:hidden;">
+    <div style="position:absolute;right:-18px;top:-18px;width:100px;height:100px;background:rgba(255,255,255,0.12);border-radius:50%;"></div>
+    <div style="position:absolute;right:26px;top:16px;font-size:30px;">🤖</div>
+    <div style="color:#fff;font-size:20px;font-weight:800;letter-spacing:.5px;margin-bottom:3px;">AI 物流診斷報告</div>
+    <div style="color:rgba(255,255,255,.82);font-size:11px;margin-bottom:9px;">車隊里程智慧分析系統 · 由 Claude AI 生成</div>
+    <span style="display:inline-block;background:rgba(255,255,255,0.25);color:#fff;border-radius:20px;padding:3px 12px;font-size:10.5px;font-weight:700;">📅 ${label}</span>
+  </div>
+
+  <!-- 元資料 4 格 -->
+  <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-bottom:12px;">
+    ${[['🗂️','分析類型',`${stats.rangeTyp||'—'}（${stats.periods||1}月）`],['🏢','部門',`${(sd.label||'全部').split('｜')[0]}`],['🚛','有效車輛',`${stats.count||0} 輛`],['🕐','產生時間',savedAt]].map(([ico,lbl,val])=>
+    `<div style="background:#f8fafc;border:1.5px solid #e2e8f0;border-radius:8px;padding:9px 11px;">
+      <div style="font-size:16px;margin-bottom:3px;">${ico}</div>
+      <div style="font-size:9px;color:#94a3b8;text-transform:uppercase;font-weight:600;">${lbl}</div>
+      <div style="font-size:12px;font-weight:800;color:#1e293b;margin-top:2px;">${val}</div>
+    </div>`).join('')}
+  </div>
+
+  <!-- KPI 4 格（彩色背景）-->
+  <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-bottom:12px;">
+    <div style="background:#eff6ff;border:1.5px solid #bfdbfe;border-radius:8px;padding:10px;text-align:center;">
+      <div style="font-size:20px;font-weight:800;color:#1d4ed8;line-height:1.1;">${stats.total?stats.total.toLocaleString():'—'}</div>
+      <div style="font-size:10px;color:#3b82f6;margin-top:3px;">📦 總里程 (km)</div>
+    </div>
+    <div style="background:#f0fdf4;border:1.5px solid #bbf7d0;border-radius:8px;padding:10px;text-align:center;">
+      <div style="font-size:20px;font-weight:800;color:#15803d;line-height:1.1;">${stats.avg?stats.avg.toLocaleString():'—'}</div>
+      <div style="font-size:10px;color:#16a34a;margin-top:3px;">📊 平均/輛/月</div>
+    </div>
+    <div style="background:#fefce8;border:1.5px solid #fde68a;border-radius:8px;padding:10px;text-align:center;">
+      <div style="font-size:20px;font-weight:800;color:#92400e;line-height:1.1;">${stats.median?stats.median.toLocaleString():'—'}</div>
+      <div style="font-size:10px;color:#b45309;margin-top:3px;">📐 中位數 (km)</div>
+    </div>
+    <div style="background:#fff1f2;border:1.5px solid #fecdd3;border-radius:8px;padding:10px;text-align:center;">
+      <div style="font-size:20px;font-weight:800;color:#be123c;line-height:1.1;">${stats.anomalyCount||0}</div>
+      <div style="font-size:10px;color:#e11d48;margin-top:3px;">⚠️ 異常高里程</div>
+    </div>
+  </div>
+
+  <!-- 車輛排行 -->
+  <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:10px;">
+    <div style="background:#f8fafc;border:1.5px solid #e2e8f0;border-radius:8px;padding:10px 12px;">
+      <div style="font-size:11px;font-weight:700;color:#475569;margin-bottom:6px;">🔝 里程前 5 名</div>
+      ${t5.length ? t5.map((v,i)=>barRow(v.plate,v.km,BAR_BLUES[i],maxKm)).join('') : '<div style="color:#9ca3af;font-size:11px;">無資料</div>'}
+    </div>
+    <div style="background:#f8fafc;border:1.5px solid #e2e8f0;border-radius:8px;padding:10px 12px;">
+      <div style="font-size:11px;font-weight:700;color:#475569;margin-bottom:6px;">🔻 里程後 5 名</div>
+      ${b5.length ? b5.map((v)=>barRow(v.plate,v.km,'#9ca3af',maxKm)).join('') : '<div style="color:#9ca3af;font-size:11px;">無資料</div>'}
+    </div>
+  </div>
+
+  <!-- 異常預警 -->
+  ${anom.length>0?`<div style="background:#fff1f2;border:1.5px solid #fecdd3;border-left:5px solid #be123c;border-radius:8px;padding:10px 12px;margin-bottom:10px;">
+    <div style="display:flex;align-items:center;gap:6px;margin-bottom:6px;">
+      <span style="font-size:16px;">🚨</span>
+      <b style="color:#be123c;font-size:13px;">異常高里程預警（超過平均 200%）</b>
+    </div>
+    <div>${anom.map(v=>`<span style="display:inline-block;background:#be123c;color:#fff;border-radius:4px;padding:2px 8px;font-size:10.5px;font-weight:700;margin:2px 3px 2px 0;">${v.plate} ${v.km.toLocaleString()} km</span>`).join('')}</div>
+    <div style="font-size:11px;color:#9f1239;margin-top:5px;">建議立即確認車輛使用狀況、里程紀錄正確性及駕駛行為。</div>
+  </div>`:''}
+
+  <!-- AI 分析四區塊 -->
+  ${allEmpty
+    ? card('📋','完整 AI 診斷報告','#3730a3','#eef2ff','#4f46e5', R(displayResult))
+    : card('📋','整體狀況評估','#3730a3','#eef2ff','#4f46e5',R(secs.s1))
+    + card('🔍','異常車輛分析','#c2410c','#fff7ed','#ea580c',R(secs.s2)||'<span style="color:#9ca3af;">本期無明顯異常車輛。</span>')
+    + card('💡','管理建議','#15803d','#f0fdf4','#16a34a',buildList(secs.s3))
+    + card('🔮','下期預測','#7e22ce','#faf5ff','#9333ea',R(secs.s4))
+  }
+
+  <!-- 頁尾 -->
+  <div style="margin-top:14px;border-top:1px solid #e2e8f0;padding-top:8px;display:flex;justify-content:space-between;align-items:center;font-size:10px;color:#94a3b8;">
+    <span>物流管理平台 · 車輛里程管理系統</span>
+    <span style="background:#ede9fe;color:#5b21b6;border-radius:4px;padding:2px 9px;font-size:10px;font-weight:700;">🤖 Claude AI · Haiku 4.5</span>
+  </div>
+</div>`;
+
+              // ── html2canvas 截圖 → 印圖片（100% 有色彩）─────────────
+              // 動態載入 html2canvas
+              const loadScript = (src) => new Promise((res, rej) => {
+                if (window.html2canvas) { res(); return; }
+                const s = document.createElement('script');
+                s.src = src; s.onload = res; s.onerror = rej;
+                document.head.appendChild(s);
+              });
+
+              try {
+                // 建立暫時容器（在畫面外但 visible，html2canvas 才能截到正確樣式）
+                const container = document.createElement('div');
+                container.style.cssText = 'position:fixed;left:-9999px;top:0;z-index:-1;';
+                container.innerHTML = reportHTML;
+                document.body.appendChild(container);
+
+                await loadScript('https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js');
+
+                const reportEl = container.querySelector('#pdf-report');
+                const canvas   = await window.html2canvas(reportEl, {
+                  scale: 2,          // 高解析度，印出清晰
+                  useCORS: true,
+                  logging: false,
+                  backgroundColor: '#ffffff',
+                  width: 794,
+                  windowWidth: 900,
+                });
+                document.body.removeChild(container);
+
+                const imgData = canvas.toDataURL('image/png');
+                const imgW    = canvas.width;
+                const imgH    = canvas.height;
+
+                // 開新視窗，圖片版本的報告 → 列印
+                const w = window.open('', '_blank', 'width=900,height=820');
+                if (!w) { alert('請允許彈出視窗以匯出 PDF'); return; }
+                w.document.open();
+                w.document.write(`<!DOCTYPE html>
 <html lang="zh-TW"><head><meta charset="UTF-8">
 <title>AI 物流診斷報告</title>
 <style>
-@page { size: A4; margin: 13mm 15mm; }
-*, *::before, *::after {
-  box-sizing: border-box;
-  -webkit-print-color-adjust: exact !important;
-  print-color-adjust: exact !important;
-  color-adjust: exact !important;
-}
-body {
-  font-family: "Microsoft JhengHei","PingFang TC","Noto Sans TC",sans-serif;
-  color: #1f2937; margin: 0; background: #fff; font-size: 12.5px;
-  -webkit-print-color-adjust: exact !important;
-  print-color-adjust: exact !important;
-}
+  @page { size: A4; margin: 0; }
+  body { margin: 0; padding: 0; background: #fff; }
+  img  { width: 100%; height: auto; display: block; page-break-inside: avoid; }
+  @media print {
+    body { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  }
+</style>
+</head><body>
+<img src="${imgData}" width="${imgW}" height="${imgH}" />
+</body></html>`);
+                w.document.close();
+                setTimeout(() => { w.focus(); w.print(); }, 500);
 
-/* ── 頁首 ── */
-.hdr {
-  background: linear-gradient(135deg, #4338ca 0%, #7c3aed 60%, #a855f7 100%) !important;
-  color: #fff !important;
-  padding: 20px 26px 18px;
-  border-radius: 10px;
-  margin-bottom: 14px;
-  position: relative;
-  overflow: hidden;
-  -webkit-print-color-adjust: exact !important;
-  print-color-adjust: exact !important;
-}
-.hdr-circle {
-  position: absolute; right: -25px; top: -25px;
-  width: 120px; height: 120px; border-radius: 50%;
-  background: rgba(255,255,255,0.1) !important;
-}
-.hdr-logo { position: absolute; right: 26px; top: 18px; font-size: 26px; opacity: .9; }
-.hdr h1   { margin: 0 0 2px; font-size: 19px; font-weight: 800; letter-spacing: .5px; color:#fff !important; }
-.hdr .sub { font-size: 11px; opacity: .82; margin: 0; color:#fff !important; }
-.hdr .tag {
-  display: inline-block;
-  background: rgba(255,255,255,0.22) !important;
-  border-radius: 20px; padding: 2px 10px;
-  font-size: 10px; font-weight: 700; margin-top: 8px; color:#fff !important;
-  -webkit-print-color-adjust: exact !important;
-}
-
-/* ── 元資料列 ── */
-.meta-row { display: grid; grid-template-columns: repeat(4,1fr); gap: 7px; margin-bottom: 12px; }
-.mc {
-  background: #f8fafc !important; border: 1.5px solid #e2e8f0; border-radius: 8px; padding: 9px 11px;
-  -webkit-print-color-adjust: exact !important;
-}
-.mc .icon { font-size: 15px; margin-bottom: 2px; }
-.mc .lbl  { font-size: 9px; color: #94a3b8; text-transform: uppercase; letter-spacing: .4px; font-weight: 600; }
-.mc .val  { font-size: 12.5px; font-weight: 800; color: #1e293b; margin-top: 1px; }
-
-/* ── KPI ── */
-.kpi-row { display: grid; grid-template-columns: repeat(4,1fr); gap: 7px; margin-bottom: 12px; }
-.kpi { border-radius: 8px; padding: 9px 10px; text-align: center; -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
-.kpi .num  { font-size: 19px; font-weight: 800; line-height: 1.1; }
-.kpi .unit { font-size: 10px; margin-top: 2px; opacity: .75; }
-.kpi-total { background: #eff6ff !important; border: 1.5px solid #bfdbfe; }
-.kpi-total .num { color: #1d4ed8 !important; }
-.kpi-avg   { background: #f0fdf4 !important; border: 1.5px solid #bbf7d0; }
-.kpi-avg .num   { color: #15803d !important; }
-.kpi-med   { background: #fefce8 !important; border: 1.5px solid #fef08a; }
-.kpi-med .num   { color: #854d0e !important; }
-.kpi-anom  { background: #fff1f2 !important; border: 1.5px solid #fecdd3; }
-.kpi-anom .num  { color: #be123c !important; }
-
-/* ── 車輛排行 ── */
-.veh-section { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 10px; }
-.veh-card { background: #f8fafc !important; border: 1.5px solid #e2e8f0; border-radius: 8px; padding: 9px 11px; -webkit-print-color-adjust: exact !important; }
-.veh-card .title { font-size: 11px; font-weight: 700; color: #64748b; margin-bottom: 5px; }
-
-/* ── 異常預警 ── */
-.anom-card { background: #fff1f2 !important; border: 1.5px solid #fecdd3; border-radius: 8px; padding: 9px 11px; margin-bottom: 10px; -webkit-print-color-adjust: exact !important; }
-.anom-badge {
-  display: inline-block;
-  background: #be123c !important; color: #fff !important;
-  border-radius: 4px; padding: 2px 7px; font-size: 10px; font-weight: 700;
-  margin: 2px 4px 2px 0;
-  -webkit-print-color-adjust: exact !important;
-}
-
-/* ── 分析區塊 ── */
-.sc { border-radius: 9px; padding: 12px 14px; margin-bottom: 10px; page-break-inside: avoid; -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
-.sc-ov { background: #eef2ff !important; border-left: 4px solid #4f46e5 !important; }
-.sc-an { background: #fff7ed !important; border-left: 4px solid #ea580c !important; }
-.sc-sg { background: #f0fdf4 !important; border-left: 4px solid #16a34a !important; }
-.sc-fc { background: #faf5ff !important; border-left: 4px solid #9333ea !important; }
-.sc-title { display: flex; align-items: center; gap: 7px; margin-bottom: 7px; }
-.sc-title .ico { font-size: 17px; }
-.sc-title .txt { font-size: 13.5px; font-weight: 800; }
-.sc-body { font-size: 12px; line-height: 1.85; color: #374151; }
-
-/* ── 頁尾 ── */
-.footer {
-  margin-top: 14px; border-top: 1px solid #e2e8f0; padding-top: 7px;
-  display: flex; justify-content: space-between; align-items: center;
-  font-size: 10px; color: #94a3b8;
-}
-.footer .badge {
-  background: #ede9fe !important; color: #5b21b6 !important;
-  border-radius: 4px; padding: 2px 8px; font-size: 10px; font-weight: 700;
-  -webkit-print-color-adjust: exact !important;
-}
-</style></head><body>
-
-<div class="hdr">
-  <div class="hdr-circle"></div>
-  <div class="hdr-logo">🤖</div>
-  <h1>AI 物流診斷報告</h1>
-  <p class="sub">車隊里程智慧分析系統 · 由 Claude AI 生成</p>
-  <div class="tag">📅 ${label}</div>
-</div>
-
-<div class="meta-row">
-  <div class="mc"><div class="icon">🗂️</div><div class="lbl">分析類型</div><div class="val">${stats.rangeTyp||'—'}（${stats.periods||1}個月）</div></div>
-  <div class="mc"><div class="icon">🏢</div><div class="lbl">部門</div><div class="val">${(sd.label||'全部').split('｜')[0]}</div></div>
-  <div class="mc"><div class="icon">🚛</div><div class="lbl">有效回報車輛</div><div class="val">${stats.count||0} 輛</div></div>
-  <div class="mc"><div class="icon">🕐</div><div class="lbl">報告產生時間</div><div class="val">${savedAt}</div></div>
-</div>
-
-<div class="kpi-row">
-  <div class="kpi kpi-total"><div class="num">${stats.total?stats.total.toLocaleString():'—'}</div><div class="unit">📦 期間總里程 (km)</div></div>
-  <div class="kpi kpi-avg"><div class="num">${stats.avg?stats.avg.toLocaleString():'—'}</div><div class="unit">📊 平均里程/輛/月</div></div>
-  <div class="kpi kpi-med"><div class="num">${stats.median?stats.median.toLocaleString():'—'}</div><div class="unit">📐 中位數 (km)</div></div>
-  <div class="kpi kpi-anom"><div class="num">${stats.anomalyCount||0}</div><div class="unit">⚠️ 異常高里程車輛</div></div>
-</div>
-
-<div class="veh-section">
-  <div class="veh-card">
-    <div class="title">🔝 里程前 5 名</div>
-    ${t5.map((v,i)=>barRow(v.plate,v.km,i===0?'#1d4ed8':i===1?'#3b82f6':'#93c5fd',maxKm)).join('')}
-    ${t5.length===0?'<div style="color:#94a3b8;font-size:11px;">無資料</div>':''}
-  </div>
-  <div class="veh-card">
-    <div class="title">🔻 里程後 5 名</div>
-    ${b5.map(v=>barRow(v.plate,v.km,'#94a3b8',maxKm)).join('')}
-    ${b5.length===0?'<div style="color:#94a3b8;font-size:11px;">無資料</div>':''}
-  </div>
-</div>
-
-${anom.length>0?`
-<div class="anom-card">
-  <div class="sc-title"><span class="ico">🚨</span><span class="txt" style="color:#be123c;">異常高里程預警（超過平均 200%）</span></div>
-  <div>${anom.map(v=>`<span class="anom-badge">${v.plate} ${v.km.toLocaleString()} km</span>`).join('')}</div>
-  <div style="font-size:11px;color:#9f1239;margin-top:5px;">⚠️ 建議立即確認車輛使用狀況、里程紀錄正確性及駕駛行為。</div>
-</div>`:''}
-
-${fullFallback ? `
-<div class="sc sc-ov">
-  <div class="sc-title"><span class="ico">📋</span><span class="txt" style="color:#3730a3;">完整 AI 診斷報告</span></div>
-  <div class="sc-body">${renderText(displayResult)}</div>
-</div>` : `
-<div class="sc sc-ov">
-  <div class="sc-title"><span class="ico">📋</span><span class="txt" style="color:#3730a3;">整體狀況評估</span></div>
-  <div class="sc-body">${renderText(sec1)}</div>
-</div>
-
-<div class="sc sc-an">
-  <div class="sc-title"><span class="ico">🔍</span><span class="txt" style="color:#c2410c;">異常車輛分析</span></div>
-  <div class="sc-body">${renderText(sec2)||'<span style="color:#94a3b8;">本期無異常車輛。</span>'}</div>
-</div>
-
-<div class="sc sc-sg">
-  <div class="sc-title"><span class="ico">💡</span><span class="txt" style="color:#15803d;">管理建議</span></div>
-  <div class="sc-body">${buildSuggestions(sec3)||renderText(sec3)||'<span style="color:#94a3b8;">—</span>'}</div>
-</div>
-
-<div class="sc sc-fc">
-  <div class="sc-title"><span class="ico">🔮</span><span class="txt" style="color:#7e22ce;">下期預測</span></div>
-  <div class="sc-body">${renderText(sec4)||'<span style="color:#94a3b8;">—</span>'}</div>
-</div>`}
-
-<div class="footer">
-  <span>物流管理平台 · 車輛里程管理系統</span>
-  <span class="badge">🤖 Claude AI · Haiku 4.5</span>
-</div>
-
-</body></html>`;
-
-              const w = window.open('', '_blank', 'width=960,height=820');
-              if (!w) { alert('請允許彈出視窗以匯出 PDF'); return; }
-              w.document.open();
-              w.document.write(html);
-              w.document.close();
-              setTimeout(() => { w.focus(); w.print(); }, 800);
+              } catch(err) {
+                console.error('[PDF]', err);
+                alert('PDF 截圖失敗，請確認網路連線（需載入 html2canvas）\n錯誤：' + err.message);
+              }
             };
 
             // ── TXT 匯出 ──────────────────────────────────────────────
