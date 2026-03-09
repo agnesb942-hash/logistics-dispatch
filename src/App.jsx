@@ -1888,7 +1888,7 @@ const App = () => {
       + '<div style="position:absolute;bottom:24px;right:24px;width:60px;height:60px;border-bottom:2px solid rgba(0,200,255,0.4);border-right:2px solid rgba(0,200,255,0.4)"></div>'
       + '<div style="text-align:center;margin-bottom:56px;position:relative;z-index:1;width:90vw;max-width:1160px">'
         + '<div style="width:100%;margin-bottom:20px">' + logoImg + '</div>'
-        + '<div style="font-size:32px;font-weight:700;letter-spacing:8px;color:#ffffff;margin-bottom:10px;text-shadow:0 0 20px rgba(0,200,255,0.4)">物流管理平台</div>'
+        + '<div style="font-size:40px;font-weight:800;letter-spacing:6px;color:#ffffff;margin-bottom:10px;text-shadow:0 0 20px rgba(0,200,255,0.4)">物流管理平台</div>'
         + '<div style="width:100%;height:1px;background:linear-gradient(90deg,transparent,rgba(0,200,255,0.3),transparent);margin:0 auto 14px"></div>'
         + '<div style="font-size:11px;letter-spacing:6px;color:rgba(0,200,255,0.5);text-transform:uppercase">Logistics · Dispatch · System</div>'
       + '</div>'
