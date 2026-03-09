@@ -4,10 +4,6 @@
 //
 // 環境變數設定（Vercel Dashboard → Settings → Environment Variables）：
 //   ANTHROPIC_API_KEY = sk-ant-xxxxxxxxxxxxxxxxxx
-//
-// 前端呼叫：POST /api/ai-diagnose
-// Body: { prompt: string }
-// Response: { result: string } 或 { error: string }
 
 export default async function handler(req, res) {
   if (req.method !== 'POST') {
@@ -22,8 +18,9 @@ export default async function handler(req, res) {
     return res.status(400).json({ error: '缺少 prompt 參數' });
   }
 
-  if (prompt.length > 4000) {
-    return res.status(400).json({ error: 'Prompt 超過長度限制（4000 字元）' });
+  // 提高 prompt 上限至 8000 字元（部門分析 prompt 較長）
+  if (prompt.length > 8000) {
+    return res.status(400).json({ error: 'Prompt 超過長度限制（8000 字元）' });
   }
 
   const apiKey = process.env.ANTHROPIC_API_KEY;
@@ -42,7 +39,7 @@ export default async function handler(req, res) {
       },
       body: JSON.stringify({
         model: 'claude-haiku-4-5-20251001',
-        max_tokens: 1200,
+        max_tokens: 4000,   // 從 1200 提升至 4000，支援多部門完整分析
         messages: [
           { role: 'user', content: prompt }
         ],
