@@ -614,6 +614,7 @@ const MileageTool = ({ onBack, windowHeight }) => {
   const [aiFrom, setAiFrom] = useState('');
   const [aiTo, setAiTo] = useState('');
   const [aiSavedResult, setAiSavedResult] = useState(null); // { result, label, savedAt }
+  const [aiUsageCount, setAiUsageCount] = useState(0); // 歷史診斷次數（Firestore 累計）
 
   // ── Firestore CRUD ──────────────────────────────────────────────
   const saveCollection = async (collName, data) => {
@@ -668,6 +669,8 @@ const MileageTool = ({ onBack, windowHeight }) => {
         if (fb2) {
           const snap = await fb2.getDoc(fb2.doc(fb2.db, 'mileage_config', 'ai_last_result'));
           if (snap.exists()) setAiSavedResult(snap.data());
+          const usageSnap = await fb2.getDoc(fb2.doc(fb2.db, 'mileage_config', 'ai_usage'));
+          if (usageSnap.exists()) setAiUsageCount(usageSnap.data().count || 0);
         }
       } catch(e2) { console.warn('[AI] load saved result', e2); }
       } catch(e) { console.error('[MileageTool] initial load error:', e); }
@@ -1369,7 +1372,7 @@ const MileageTool = ({ onBack, windowHeight }) => {
       </div>
 
       {/* ── Main Content ── */}
-      <div className="flex-1 bg-gray-50 overflow-y-auto min-h-0">
+      <div className="flex-1 min-h-0 bg-gray-50 overflow-y-auto">
         <div className="p-3 lg:p-6 max-w-6xl mx-auto space-y-4 lg:space-y-6">
 
           {/* ═══ DASHBOARD ═══ */}
@@ -1917,117 +1920,148 @@ const MileageTool = ({ onBack, windowHeight }) => {
             </>);
           })()}
 
-        </div>
-      </div>
-
-      {/* ═══ MODALS ═══ */}
 
           {activeSection === 'ai' && (() => {
+
+            const COST_PER_CALL = 0.002;
+            const estimatedTotal = (aiUsageCount * COST_PER_CALL).toFixed(3);
+
+            // PDF 匯出（print-to-PDF，瀏覽器原生支援中文）
+            const handlePdfExport = () => {
+              if (!displayResult) return;
+              const label   = aiSavedResult ? aiSavedResult.label : aiRangeLabel;
+              const savedAt = aiSavedResult ? new Date(aiSavedResult.savedAt).toLocaleString('zh-TW') : new Date().toLocaleString('zh-TW');
+              const deptName = aiDept === 'all' ? '全部部門' : (departments.find(d => d.id === aiDept) || {name: aiDept}).name;
+              const formatReport = (text) =>
+                text
+                  .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
+                  .replace(/^(\d+\.\s.+)$/gm, '<h3 style="color:#4f46e5;margin:16px 0 6px;font-size:15px;page-break-inside:avoid;">$1</h3>')
+                  .replace(/^[-]\s(.+)$/gm, '<li style="margin:4px 0;color:#374151;list-style:disc inside;">$1</li>')
+                  .replace(/\n{2,}/g, '</p><p style="margin:8px 0;color:#374151;line-height:1.85;">')
+                  .replace(/^/, '<p style="margin:8px 0;color:#374151;line-height:1.85;">')
+                  .replace(/$/, '</p>');
+              const html = '<!DOCTYPE html><html lang="zh-TW"><head><meta charset="UTF-8"><title>AI\u7269\u6d41\u8a3a\u65b7\u5831\u544a</title>'
+                + '<style>@page{size:A4;margin:20mm 18mm}body{font-family:"Microsoft JhengHei","PingFang TC",sans-serif;color:#1f2937;margin:0;padding:0}'
+                + '.hdr{background:linear-gradient(135deg,#4f46e5,#7c3aed);color:#fff;padding:28px 32px;border-radius:8px;margin-bottom:20px}'
+                + '.hdr h1{margin:0 0 4px;font-size:22px;letter-spacing:1px}.hdr .sub{font-size:12px;opacity:.8}'
+                + '.meta{display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;margin-bottom:20px}'
+                + '.mc{background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;padding:12px 16px}'
+                + '.mc .icon{font-size:18px;margin-bottom:4px}.mc .label{font-size:10px;color:#64748b;text-transform:uppercase}'
+                + '.mc .val{font-size:14px;font-weight:700;color:#1e293b;margin-top:2px}'
+                + 'hr{border:none;border-top:2px solid #e2e8f0;margin:16px 0}'
+                + '.body{font-size:13px;line-height:1.9}'
+                + '.foot{margin-top:28px;border-top:1px solid #e2e8f0;padding-top:10px;font-size:11px;color:#94a3b8;display:flex;justify-content:space-between}'
+                + '.badge{background:#ede9fe;color:#5b21b6;border-radius:4px;padding:2px 8px;font-size:11px;font-weight:700}'
+                + '@media print{body{-webkit-print-color-adjust:exact;print-color-adjust:exact}}</style></head><body>'
+                + '<div class="hdr"><h1>\ud83e\udd16 AI \u7269\u6d41\u8a3a\u65b7\u5831\u544a</h1><div class="sub">\u8eca\u968a\u91cc\u7a0b\u667a\u6167\u5206\u6790\u00b7\u7531 Claude AI \u751f\u6210</div></div>'
+                + '<div class="meta">'
+                + '<div class="mc"><div class="icon">\ud83d\udcc5</div><div class="label">\u5206\u6790\u7bc4\u570d</div><div class="val">' + label + '</div></div>'
+                + '<div class="mc"><div class="icon">\ud83c\udfe2</div><div class="label">\u90e8\u9580</div><div class="val">' + deptName + '</div></div>'
+                + '<div class="mc"><div class="icon">\ud83d\udd50</div><div class="label">\u7522\u751f\u6642\u9593</div><div class="val">' + savedAt + '</div></div>'
+                + '</div><hr/>'
+                + '<div class="body">' + formatReport(displayResult) + '</div>'
+                + '<div class="foot"><span>\u7269\u6d41\u7ba1\u7406\u5e73\u53f0\u00b7\u8eca\u8f1b\u91cc\u7a0b\u7ba1\u7406\u7cfb\u7d71</span><span class="badge">Claude AI\u00b7Haiku 4.5</span></div>'
+                + '</body></html>';
+              const w = window.open('', '_blank', 'width=920,height=720');
+              w.document.write(html);
+              w.document.close();
+              w.onload = () => { w.focus(); w.print(); };
+            };
+
+            // TXT 匯出
+            const handleTxtExport = () => {
+              if (!displayResult) return;
+              const label = aiSavedResult ? aiSavedResult.label : aiRangeLabel;
+              const savedAt = aiSavedResult ? new Date(aiSavedResult.savedAt).toLocaleString('zh-TW') : '';
+              const blob = new Blob([
+                'AI \u7269\u6d41\u8a3a\u65b7\u5831\u544a\n\u5206\u6790\u7bc4\u570d\uff1a' + label + '\n\u7522\u751f\u6642\u9593\uff1a' + savedAt + '\n' + '\u2500'.repeat(40) + '\n\n' + displayResult
+              ], { type: 'text/plain;charset=utf-8' });
+              const url = URL.createObjectURL(blob);
+              const a = document.createElement('a');
+              a.href = url; a.download = 'AI\u8a3a\u65b7\u5831\u544a_' + label.replace(/[\uff5c\uff5e\s]/g,'_') + '.txt'; a.click();
+              URL.revokeObjectURL(url);
+            };
+
+            // 執行 AI 診斷
             const runAiAnalysis = async () => {
               setAiLoading(true); setAiAnalysis('');
               const deptFilter = aiDept === 'all' ? null : aiDept;
               const filteredRecs = monthlyRecords.filter(r =>
                 aiPeriods.includes(r.period) &&
-                (!deptFilter || vehicles.find(v => v.plate === r.vehiclePlate)?.deptId === deptFilter)
+                (!deptFilter || vehicles.find(v => v.plate === r.vehiclePlate) && vehicles.find(v => v.plate === r.vehiclePlate).deptId === deptFilter)
               );
               const recWithKm = filteredRecs.filter(r => (r.monthlyMileage || 0) > 0);
               const kms = recWithKm.map(r => r.monthlyMileage).sort((a, b) => a - b);
               const avg = kms.length ? Math.round(kms.reduce((s, v) => s + v, 0) / kms.length) : 0;
               const total = kms.reduce((s, v) => s + v, 0);
-              const deptLabel = aiDept === 'all' ? '全部部門' : (departments.find(d => d.id === aiDept)?.name || aiDept);
-              const top5 = [...recWithKm].sort((a, b) => (b.monthlyMileage || 0) - (a.monthlyMileage || 0)).slice(0, 5);
-              const bottom5 = [...recWithKm].sort((a, b) => (a.monthlyMileage || 0) - (b.monthlyMileage || 0)).slice(0, 5);
+              const deptLabel = aiDept === 'all' ? '\u5168\u90e8\u90e8\u9580' : ((departments.find(d => d.id === aiDept) || {name: aiDept}).name);
+              const top5    = [...recWithKm].sort((a,b)=>(b.monthlyMileage||0)-(a.monthlyMileage||0)).slice(0,5);
+              const bottom5 = [...recWithKm].sort((a,b)=>(a.monthlyMileage||0)-(b.monthlyMileage||0)).slice(0,5);
               const anomalies = recWithKm.filter(r => r.monthlyMileage > avg * 2.0);
-              const rangeTypeLabel = aiRange === 'month' ? '月報' : aiRange === 'quarter' ? '季報' : aiRange === 'year' ? '年報' : '自訂區間';
-              const prompt = `你是一位專業的物流車隊管理顧問，請根據以下里程數據進行專業診斷分析，並以繁體中文（台灣用語）回覆。
-
-【資料範圍】
-- 分析類型：${rangeTypeLabel}（${aiRangeLabel}，共 ${aiPeriods.length} 個月）
-- 部門：${deptLabel}
-- 有效回報車輛數：${recWithKm.length} 輛
-
-【關鍵指標】
-- 期間總里程：${total.toLocaleString()} km
-- 平均里程/輛/月：${avg.toLocaleString()} km
-- 最高 5 輛（車牌 里程）：${top5.map(r => r.vehiclePlate + ' ' + r.monthlyMileage + 'km').join('、')}
-- 最低 5 輛（車牌 里程）：${bottom5.map(r => r.vehiclePlate + ' ' + r.monthlyMileage + 'km').join('、')}
-- 異常高里程車輛（>平均 200%）：${anomalies.length > 0 ? anomalies.map(r => r.vehiclePlate + ' ' + r.monthlyMileage + 'km').join('、') : '無'}
-
-【請依序提供以下分析】：
-1. **整體狀況評估**：本期車隊運作總體評估（100字以內）
-2. **異常車輛分析**：針對高里程與低里程車輛的可能成因與風險提示
-3. **管理建議**：至少 3 條具體可執行的管理改善建議
-4. **下期預測**：根據趨勢，下期需注意的重點`;
+              const rangeTyp = aiRange === 'month' ? '\u6708\u5831' : aiRange === 'quarter' ? '\u5b63\u5831' : aiRange === 'year' ? '\u5e74\u5831' : '\u81ea\u8a02\u5340\u9593';
+              const prompt = '\u4f60\u662f\u4e00\u4f4d\u5c08\u696d\u7684\u7269\u6d41\u8eca\u968a\u7ba1\u7406\u9867\u554f\uff0c\u8acb\u6839\u64da\u4ee5\u4e0b\u91cc\u7a0b\u6578\u64da\u9032\u884c\u5c08\u696d\u8a3a\u65b7\u5206\u6790\uff0c\u4e26\u4ee5\u7e41\u9ad4\u4e2d\u6587\uff08\u53f0\u7063\u7528\u8a9e\uff09\u56de\u8986\u3002\n\n\u3010\u8cc7\u6599\u7bc4\u570d\u3011\n- \u5206\u6790\u985e\u578b\uff1a' + rangeTyp + '\uff08' + aiRangeLabel + '\uff0c\u5171 ' + aiPeriods.length + ' \u500b\u6708\uff09\n- \u90e8\u9580\uff1a' + deptLabel + '\n- \u6709\u6548\u56de\u5831\u8eca\u8f1b\u6578\uff1a' + recWithKm.length + ' \u8f1b\n\n\u3010\u95dc\u9375\u6307\u6a19\u3011\n- \u671f\u9593\u7e3d\u91cc\u7a0b\uff1a' + total.toLocaleString() + ' km\n- \u5e73\u5747\u91cc\u7a0b/\u8f1b/\u6708\uff1a' + avg.toLocaleString() + ' km\n- \u6700\u9ad8 5 \u8f1b\uff1a' + top5.map(r=>r.vehiclePlate+' '+r.monthlyMileage+'km').join('\u3001') + '\n- \u6700\u4f4e 5 \u8f1b\uff1a' + bottom5.map(r=>r.vehiclePlate+' '+r.monthlyMileage+'km').join('\u3001') + '\n- \u7570\u5e38\u8eca\u8f1b\uff08>\u5e73\u5747 200%\uff09\uff1a' + (anomalies.length > 0 ? anomalies.map(r=>r.vehiclePlate+' '+r.monthlyMileage+'km').join('\u3001') : '\u7121') + '\n\n\u3010\u8acb\u4f9d\u5e8f\u63d0\u4f9b\u4ee5\u4e0b\u5206\u6790\u3011\uff1a\n1. **\u6574\u9ad4\u72c0\u6cc1\u8a55\u4f30**\uff1a\u672c\u671f\u8eca\u968a\u904b\u4f5c\u7e3d\u9ad4\u8a55\u4f30\uff08100\u5b57\u4ee5\u5167\uff09\n2. **\u7570\u5e38\u8eca\u8f1b\u5206\u6790**\uff1a\u9488\u5c0d\u9ad8\u91cc\u7a0b\u8207\u4f4e\u91cc\u7a0b\u8eca\u8f1b\u7684\u53ef\u80fd\u6210\u56e0\u8207\u98a8\u9669\u63d0\u793a\n3. **\u7ba1\u7406\u5efa\u8b70**\uff1a\u81f3\u5c11 3 \u6689\u5177\u9ad4\u53ef\u57f7\u884c\u7684\u7ba1\u7406\u6539\u5584\u5efa\u8b70\n4. **\u4e0b\u671f\u9810\u6e2c**\uff1a\u6839\u64da\u8da8\u52e2\uff0c\u4e0b\u671f\u9700\u6ce8\u610f\u7684\u91cd\u9ede';
               try {
-                const res = await fetch('/api/ai-diagnose', {
-                  method: 'POST',
-                  headers: { 'Content-Type': 'application/json' },
-                  body: JSON.stringify({ prompt })
-                });
+                const res  = await fetch('/api/ai-diagnose', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ prompt }) });
                 const data = await res.json();
                 if (!res.ok) {
-                  setAiAnalysis('❌ ' + (data.error || '分析失敗，請稍後再試'));
+                  setAiAnalysis('\u274c ' + (data.error || '\u5206\u6790\u5931\u6557\uff0c\u8acb\u7a0d\u5f8c\u518d\u8a66'));
                 } else {
-                  const resultText = data.result || '（AI 未回傳結果）';
+                  const resultText = data.result || '\uff08AI \u672a\u56de\u50b3\u7d50\u679c\uff09';
                   setAiAnalysis(resultText);
-                  // 儲存到 Firestore，重新登入後仍可查看
-                  const savedData = {
-                    result: resultText,
-                    label: `${deptLabel}｜${aiRangeLabel}`,
-                    savedAt: new Date().toISOString(),
-                  };
+                  const newCount  = aiUsageCount + 1;
+                  setAiUsageCount(newCount);
+                  const savedData = { result: resultText, label: deptLabel + '\uff5c' + aiRangeLabel, savedAt: new Date().toISOString() };
                   setAiSavedResult(savedData);
                   try {
                     const fb = await initFirebase();
                     if (fb) {
                       await fb.setDoc(fb.doc(fb.db, 'mileage_config', 'ai_last_result'), savedData);
+                      await fb.setDoc(fb.doc(fb.db, 'mileage_config', 'ai_usage'), { count: newCount, updatedAt: new Date().toISOString() });
                     }
-                  } catch(saveErr) { console.warn('[AI] save result failed', saveErr); }
+                  } catch(_e) { console.warn('[AI] save failed', _e); }
                 }
-              } catch(e) {
-                setAiAnalysis('❌ 網路錯誤：' + e.message);
-              }
+              } catch(e) { setAiAnalysis('\u274c \u7db2\u8def\u932f\u8aa4\uff1a' + e.message); }
               setAiLoading(false);
             };
 
-            const displayResult = aiAnalysis || (aiSavedResult ? aiSavedResult.result : '');
-            const isSavedResult = !aiAnalysis && !!aiSavedResult;
-
-            const handleExport = () => {
-              if (!displayResult) return;
-              const label = aiSavedResult?.label || aiRangeLabel;
-              const savedAt = aiSavedResult?.savedAt ? new Date(aiSavedResult.savedAt).toLocaleString('zh-TW') : '';
-              const blob = new Blob([
-                `AI 物流診斷報告\n` +
-                `分析範圍：${label}\n` +
-                `產生時間：${savedAt}\n` +
-                `${'─'.repeat(40)}\n\n` +
-                displayResult
-              ], { type: 'text/plain;charset=utf-8' });
-              const url = URL.createObjectURL(blob);
-              const a = document.createElement('a');
-              a.href = url;
-              a.download = `AI診斷報告_${label.replace(/[｜～\s]/g, '_')}.txt`;
-              a.click();
-              URL.revokeObjectURL(url);
-            };
+            const displayResult  = aiAnalysis || (aiSavedResult ? aiSavedResult.result : '');
+            const isSavedResult  = !aiAnalysis && !!aiSavedResult;
 
             return (
               <div className="space-y-4 pb-12">
-                <h2 className="text-lg font-bold text-gray-800">🤖 AI 物流診斷分析</h2>
+                <h2 className="text-lg font-bold text-gray-800">{'\ud83e\udd16'} AI {'\u7269\u6d41\u8a3a\u65b7\u5206\u6790'}</h2>
 
-                {/* ── 設定區 ── */}
+                {/* 費用 / 使用狀況 */}
+                <div className="grid grid-cols-3 gap-3">
+                  <div className="bg-white border border-gray-200 rounded-xl p-3 shadow-sm">
+                    <div className="text-[10px] text-gray-400 mb-1">{'\ud83d\udcca'} {'\u7d2f\u8a08\u8a3a\u65b7\u6b21\u6578'}</div>
+                    <div className="text-xl font-bold text-indigo-600">{aiUsageCount}</div>
+                    <div className="text-[10px] text-gray-400 mt-0.5">{'\u6b21'}</div>
+                  </div>
+                  <div className="bg-white border border-gray-200 rounded-xl p-3 shadow-sm">
+                    <div className="text-[10px] text-gray-400 mb-1">{'\ud83d\udcb0'} {'\u4f30\u8a08\u7d2f\u8a08\u8cbb\u7528'}</div>
+                    <div className="text-xl font-bold text-emerald-600">$ {estimatedTotal}</div>
+                    <div className="text-[10px] text-gray-400 mt-0.5">USD{'\uff08\u2248 $0.002/\u6b21\uff09'}</div>
+                  </div>
+                  <div className="bg-white border border-gray-200 rounded-xl p-3 shadow-sm flex flex-col justify-between">
+                    <div className="text-[10px] text-gray-400 mb-1">{'\ud83d\udd11'} {'\u5e33\u6236\u9918\u984d'}</div>
+                    <a href="https://console.anthropic.com/settings/billing" target="_blank" rel="noreferrer"
+                      className="text-xs font-bold text-indigo-500 hover:text-indigo-700 underline leading-tight">
+                      {'\u524d\u5f80 Anthropic \u4e3b\u63a7\u53f0'}
+                    </a>
+                    <div className="text-[10px] text-gray-400 mt-0.5">{'\u67e5\u770b\u5be6\u969b\u9918\u984d'}</div>
+                  </div>
+                </div>
+
+                {/* 分析設定 */}
                 <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-5 space-y-4">
-                  <div className="font-bold text-sm text-gray-700">⚙️ 分析設定</div>
-
-                  {/* 週期範圍切換（與儀表板同款） */}
+                  <div className="font-bold text-sm text-gray-700">{'\u2699\ufe0f'} {'\u5206\u6790\u8a2d\u5b9a'}</div>
                   <div>
-                    <label className="text-xs font-bold text-gray-500 block mb-2">分析週期</label>
+                    <label className="text-xs font-bold text-gray-500 block mb-2">{'\u5206\u6790\u9031\u671f'}</label>
                     <div className="flex items-center gap-2 flex-wrap">
-                      {[['month','本月'],['quarter','本季'],['year','本年'],['custom','自訂']].map(([v,l]) => (
+                      {[['month','\u672c\u6708'],['quarter','\u672c\u5b63'],['year','\u672c\u5e74'],['custom','\u81ea\u8a02']].map(([v,l]) => (
                         <button key={v} onClick={() => setAiRange(v)}
-                          className={'px-3 py-1.5 rounded-lg text-xs font-bold border transition-all ' +
-                            (aiRange === v ? 'bg-blue-600 text-white border-blue-600' : 'bg-white text-gray-500 border-gray-200 hover:border-blue-300')}>
+                          className={'px-3 py-1.5 rounded-lg text-xs font-bold border transition-all ' + (aiRange === v ? 'bg-blue-600 text-white border-blue-600' : 'bg-white text-gray-500 border-gray-200 hover:border-blue-300')}>
                           {l}
                         </button>
                       ))}
@@ -2041,53 +2075,55 @@ const MileageTool = ({ onBack, windowHeight }) => {
                     </div>
                     {aiRange !== 'custom' && (
                       <div className="mt-2 flex items-center gap-2">
-                        <span className="text-xs text-gray-500">基準期別：</span>
-                        <input type="month" value={aiPeriod || selectedPeriod}
-                          onChange={e => setAiPeriod(e.target.value)}
+                        <span className="text-xs text-gray-500">{'\u57fa\u6e96\u671f\u5225\uff1a'}</span>
+                        <input type="month" value={aiPeriod || selectedPeriod} onChange={e => setAiPeriod(e.target.value)}
                           className="border border-gray-300 rounded-lg px-2 py-1 text-xs" />
                       </div>
                     )}
                     <div className="mt-1.5 text-[11px] text-indigo-500 font-bold">
-                      📅 分析範圍：{aiRangeLabel}（{aiPeriods.length} 個月）
+                      {'\ud83d\udcc5'} {'\u5206\u6790\u7bc4\u570d\uff1a'}{aiRangeLabel}{'\uff08'}{aiPeriods.length}{' \u500b\u6708\uff09'}
                     </div>
                   </div>
-
-                  {/* 部門 */}
                   <div>
-                    <label className="text-xs font-bold text-gray-500 block mb-1.5">部門篩選</label>
+                    <label className="text-xs font-bold text-gray-500 block mb-1.5">{'\u90e8\u9580\u7be9\u9078'}</label>
                     <select value={aiDept} onChange={e => setAiDept(e.target.value)}
                       className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm outline-none focus:border-indigo-400">
-                      <option value="all">全部部門</option>
+                      <option value="all">{'\u5168\u90e8\u90e8\u9580'}</option>
                       {departments.map(d => <option key={d.id} value={d.id}>{d.name}</option>)}
                     </select>
                   </div>
-
                   <button onClick={runAiAnalysis} disabled={aiLoading}
                     className="w-full py-3 bg-gradient-to-r from-indigo-500 to-purple-600 text-white font-bold rounded-xl text-sm hover:from-indigo-600 hover:to-purple-700 disabled:opacity-50 transition-all shadow-md">
-                    {aiLoading ? '⏳ AI 分析中（約 10 秒）...' : '🚀 開始 AI 診斷分析'}
+                    {aiLoading ? '\u23f3 AI \u5206\u6790\u4e2d\uff08\u7d04 10 \u79d2\uff09...' : '\ud83d\ude80 \u958b\u59cb AI \u8a3a\u65b7\u5206\u6790'}
                   </button>
                 </div>
 
-                {/* ── 診斷結果 ── */}
+                {/* 診斷結果 */}
                 {displayResult && (
                   <div className="bg-white rounded-xl border border-indigo-200 shadow-sm p-5">
                     <div className="flex items-center justify-between mb-4 flex-wrap gap-2">
-                      <div className="flex items-center gap-2">
-                        <span className="text-lg">🤖</span>
-                        <div className="font-bold text-gray-800">AI 診斷報告</div>
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <span className="text-lg">{'\ud83e\udd16'}</span>
+                        <div className="font-bold text-gray-800">AI {'\u8a3a\u65b7\u5831\u544a'}</div>
                         {isSavedResult && (
-                          <span className="text-[10px] bg-amber-100 text-amber-700 px-2 py-0.5 rounded-full">
-                            上次結果 · {new Date(aiSavedResult.savedAt).toLocaleString('zh-TW', {month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit'})}
+                          <span className="text-[10px] bg-amber-100 text-amber-700 px-2 py-0.5 rounded-full font-bold">
+                            {'\ud83d\udccc'} {'\u4e0a\u6b21\u7d50\u679c \u00b7'} {new Date(aiSavedResult.savedAt).toLocaleString('zh-TW',{month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit'})}
                           </span>
                         )}
                         <span className="text-[10px] bg-indigo-100 text-indigo-700 px-2 py-0.5 rounded-full">
-                          {aiSavedResult?.label || aiRangeLabel}
+                          {aiSavedResult ? aiSavedResult.label : aiRangeLabel}
                         </span>
                       </div>
-                      <button onClick={handleExport}
-                        className="flex items-center gap-1.5 px-3 py-1.5 bg-emerald-50 border border-emerald-300 text-emerald-700 rounded-lg text-xs font-bold hover:bg-emerald-100 transition-all">
-                        ⬇️ 匯出報告
-                      </button>
+                      <div className="flex gap-2">
+                        <button onClick={handlePdfExport}
+                          className="flex items-center gap-1.5 px-3 py-1.5 bg-rose-50 border border-rose-300 text-rose-700 rounded-lg text-xs font-bold hover:bg-rose-100 transition-all">
+                          {'\ud83d\udcc4 PDF \u532f\u51fa'}
+                        </button>
+                        <button onClick={handleTxtExport}
+                          className="flex items-center gap-1.5 px-3 py-1.5 bg-emerald-50 border border-emerald-300 text-emerald-700 rounded-lg text-xs font-bold hover:bg-emerald-100 transition-all">
+                          {'\u2b07\ufe0f TXT \u532f\u51fa'}
+                        </button>
+                      </div>
                     </div>
                     <div className="text-sm text-gray-700 leading-relaxed whitespace-pre-wrap">
                       {displayResult}
@@ -2097,6 +2133,12 @@ const MileageTool = ({ onBack, windowHeight }) => {
               </div>
             );
           })()}
+
+        </div>
+      </div>
+
+      {/* ═══ MODALS ═══ */}
+
 
       {showModal === 'monthly' && (
         <div className="fixed inset-0 bg-black bg-opacity-40 backdrop-blur-sm z-[9999] flex items-center justify-center p-4" onClick={() => { setShowModal(null); setConflictOverrideMode(false); setEditingRecord(null); }}>
