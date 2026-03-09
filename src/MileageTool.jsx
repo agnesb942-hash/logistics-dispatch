@@ -138,6 +138,99 @@ const getPrevPeriod = (period) => {
 };
 const fmtNum = (n) => n == null ? '—' : Number(n).toLocaleString();
 
+const SPIKE_KM_PER_MONTH = 10000; // 單月均值超過此數值視為異常跳躍（軟警告）
+
+const monthDiffPeriod = (from, to) => {
+  const [fy, fm] = from.split('-').map(Number);
+  const [ty, tm] = to.split('-').map(Number);
+  return (ty - fy) * 12 + (tm - fm);
+};
+
+// 核心衝突偵測：分析補登/新增里程是否與現有記錄邏輯衝突
+// 回傳 { conflicts, warnings, canOverride, canSubmitWithWarning }
+const analyzeConflict = (monthlyRecords, vehiclePlate, period, odometer) => {
+  const sorted = monthlyRecords
+    .filter(r => r.vehiclePlate === vehiclePlate)
+    .sort((a, b) => a.period.localeCompare(b.period));
+
+  const conflicts = [];
+  const warnings = [];
+
+  // 1. 完全重複（同期同值）
+  const exactSame = sorted.find(r => r.period === period && r.odometerReading === odometer);
+  if (exactSame) {
+    return {
+      conflicts: [{ type: 'DUPLICATE_SAME', msg: `此期別已存在完全相同的里程數據（${fmtNum(odometer)} km），無需重複建立。`, record: exactSame }],
+      warnings: [],
+      canOverride: false,
+      canSubmitWithWarning: false,
+    };
+  }
+
+  // 2. 期別衝突（同期不同值）→ 可選擇覆蓋
+  const samePeriod = sorted.find(r => r.period === period && r.odometerReading !== odometer);
+  if (samePeriod) {
+    const diff = odometer - samePeriod.odometerReading;
+    conflicts.push({
+      type: 'PERIOD_CONFLICT',
+      msg: `此期別已有不同的里程數據：現有 ${fmtNum(samePeriod.odometerReading)} km，新值 ${fmtNum(odometer)} km（差異 ${diff > 0 ? '+' : ''}${fmtNum(diff)} km）。`,
+      record: samePeriod,
+    });
+  }
+
+  const others = sorted.filter(r => r.period !== period);
+  const prev = [...others].reverse().find(r => r.period < period);
+  const next = others.find(r => r.period > period);
+
+  // 3. 里程倒退（< 前一期）→ 邏輯錯誤，阻擋
+  if (prev && odometer < prev.odometerReading) {
+    conflicts.push({
+      type: 'REGRESSION',
+      msg: `里程倒退：前一期（${prev.period}）為 ${fmtNum(prev.odometerReading)} km，本次輸入 ${fmtNum(odometer)} km，倒退 ${fmtNum(prev.odometerReading - odometer)} km。里程表為累計值，不應減少。`,
+      record: prev,
+    });
+  }
+
+  // 4. 超越後期（> 後一期）→ 邏輯錯誤，阻擋
+  if (next && odometer > next.odometerReading) {
+    conflicts.push({
+      type: 'OVERFLOW',
+      msg: `超越後期：後一期（${next.period}）僅 ${fmtNum(next.odometerReading)} km，本次輸入 ${fmtNum(odometer)} km，超出 ${fmtNum(odometer - next.odometerReading)} km。補登里程不應高於已知的後期數據。`,
+      record: next,
+    });
+  }
+
+  // 5. 異常跳躍（軟警告）
+  if (prev && !conflicts.some(c => c.type === 'REGRESSION')) {
+    const gap = monthDiffPeriod(prev.period, period);
+    const km = odometer - prev.odometerReading;
+    if (gap > 0 && km / gap > SPIKE_KM_PER_MONTH) {
+      warnings.push({
+        type: 'SPIKE',
+        msg: `與前一期（${prev.period}）相差 ${gap} 個月，增加 ${fmtNum(km)} km（平均 ${fmtNum(Math.round(km / gap))} km/月），超過異常閾值 ${fmtNum(SPIKE_KM_PER_MONTH)} km/月，建議確認數值是否正確。`,
+      });
+    }
+  }
+  if (next && !conflicts.some(c => c.type === 'OVERFLOW')) {
+    const gap = monthDiffPeriod(period, next.period);
+    const km = next.odometerReading - odometer;
+    if (gap > 0 && km / gap > SPIKE_KM_PER_MONTH) {
+      warnings.push({
+        type: 'SPIKE_NEXT',
+        msg: `與後一期（${next.period}）相差 ${gap} 個月，增加 ${fmtNum(km)} km（平均 ${fmtNum(Math.round(km / gap))} km/月），超過異常閾值，建議確認後期數據是否準確。`,
+      });
+    }
+  }
+
+  return {
+    conflicts,
+    warnings,
+    // 只有「期別衝突」可以由使用者選擇覆蓋；「倒退」和「超越」屬邏輯錯誤，直接阻擋
+    canOverride: conflicts.length > 0 && conflicts.every(c => c.type === 'PERIOD_CONFLICT'),
+    canSubmitWithWarning: conflicts.length === 0 && warnings.length > 0,
+  };
+};
+
 // ═══════════════════════════════════════════════════════════════════════
 // Main Component
 // ═══════════════════════════════════════════════════════════════════════
@@ -173,6 +266,9 @@ const MileageTool = ({ onBack, windowHeight }) => {
   const [reportNotes, setReportNotes] = useState('');
   const [reportPeriod, setReportPeriod] = useState(getTaiwanPeriod());
   const [reportProxy, setReportProxy] = useState(''); // 代填：實際回報人 ID
+
+  // ── 衝突分析 state ────────────────────────────────────────────────
+  const [conflictOverrideMode, setConflictOverrideMode] = useState(false); // 等待二次確認覆蓋
   // Adhoc form
   const [adhocVehicle, setAdhocVehicle] = useState('');
   const [adhocDate, setAdhocDate] = useState(new Date().toISOString().slice(0, 10));
@@ -259,6 +355,19 @@ const MileageTool = ({ onBack, windowHeight }) => {
     return null;
   };
 
+  // ── 即時衝突分析（月報表單）─────────────────────────────────────
+  const conflictAnalysis = useMemo(() => {
+    if (!reportVehicle || !reportPeriod || !reportReading) return null;
+    const reading = parseInt(reportReading);
+    if (isNaN(reading) || reading <= 0) return null;
+    const veh = vehicles.find(v => v.id === reportVehicle);
+    if (!veh) return null;
+    // 排除 FEB seed：僅分析 monthlyRecords 中的記錄
+    const relevantRecords = monthlyRecords.filter(r => r.vehiclePlate === veh.plate);
+    if (relevantRecords.length === 0) return null;
+    return analyzeConflict(relevantRecords, veh.plate, reportPeriod, reading);
+  }, [reportVehicle, reportPeriod, reportReading, monthlyRecords, vehicles]);
+
   // ── Get last known mileage for a vehicle (from all sources) ─────
   const getLastKnownMileage = (vehiclePlate) => {
     const readings = [];
@@ -272,43 +381,68 @@ const MileageTool = ({ onBack, windowHeight }) => {
   };
 
   // ── Submit monthly report ───────────────────────────────────────
-  const handleSubmitMonthly = () => {
+  const handleSubmitMonthly = (forceOverride = false) => {
     if (!reportVehicle || !reportReading) return;
     const reading = parseInt(reportReading);
     if (isNaN(reading) || reading < 0) return;
 
     const veh = vehicles.find(v => v.id === reportVehicle);
     if (!veh) return;
+
+    // ── 衝突判斷 ─────────────────────────────────────────────────
+    if (conflictAnalysis && conflictAnalysis.conflicts.length > 0) {
+      if (!conflictAnalysis.canOverride) {
+        // 邏輯錯誤（倒退 / 超越後期）→ 完全阻擋，不應到達此處（按鈕已 disabled）
+        return;
+      }
+      if (!forceOverride) {
+        // 期別衝突，等待使用者在 UI 確認覆蓋
+        setConflictOverrideMode(true);
+        return;
+      }
+      // 使用者確認覆蓋：先移除舊記錄
+      const filtered = monthlyRecords.filter(r => !(r.vehiclePlate === veh.plate && r.period === reportPeriod));
+      const prevReading = getPrevReading(veh.plate, reportPeriod);
+      const monthlyMileage = prevReading != null ? reading - prevReading : null;
+      const actualPerson = reportProxy ? personnel.find(p => p.id === reportProxy) : currentUser;
+      const record = {
+        id: `mr_${Date.now()}`,
+        vehicleId: veh.id, vehiclePlate: veh.plate,
+        reporterId: actualPerson?.id || currentUser.id,
+        reporterName: actualPerson?.name || currentUser.name,
+        proxyById: reportProxy ? currentUser.id : '',
+        proxyByName: reportProxy ? currentUser.name : '',
+        period: reportPeriod, odometerReading: reading,
+        previousReading: prevReading, monthlyMileage,
+        notes: reportNotes || '（補登：覆蓋前期衝突數據）',
+        retroactive: reportPeriod < getTaiwanPeriod(),
+        status: 'submitted', submittedAt: new Date().toISOString(),
+      };
+      autoSave('monthly_records', [...filtered, record], setMonthlyRecords);
+      setReportVehicle(''); setReportReading(''); setReportNotes(''); setReportProxy('');
+      setConflictOverrideMode(false);
+      setShowModal(null);
+      return;
+    }
+
+    // ── 無衝突（或僅有軟警告）正常送出 ──────────────────────────
     const prevReading = getPrevReading(veh.plate, reportPeriod);
     const monthlyMileage = prevReading != null ? reading - prevReading : null;
 
-    // Anomaly check
-    if (monthlyMileage != null && monthlyMileage < 0) {
-      alert(`錯誤：累計里程 ${fmtNum(reading)} 小於上期 ${fmtNum(prevReading)}，里程表不可能倒退，請重新確認數值。`);
-      return;
-    }
-    if (monthlyMileage != null && monthlyMileage > 10000) {
-      if (!window.confirm(`本月行駛里程 ${fmtNum(monthlyMileage)} km 異常偏高，是否確認送出？`)) return;
-    }
-
-    // Check if already reported
     const actualPerson = reportProxy ? personnel.find(p => p.id === reportProxy) : currentUser;
     const existingIdx = monthlyRecords.findIndex(r => r.vehiclePlate === veh.plate && r.period === reportPeriod);
     const record = {
       id: existingIdx >= 0 ? monthlyRecords[existingIdx].id : `mr_${Date.now()}`,
-      vehicleId: veh.id,
-      vehiclePlate: veh.plate,
+      vehicleId: veh.id, vehiclePlate: veh.plate,
       reporterId: actualPerson?.id || currentUser.id,
       reporterName: actualPerson?.name || currentUser.name,
       proxyById: reportProxy ? currentUser.id : '',
       proxyByName: reportProxy ? currentUser.name : '',
-      period: reportPeriod,
-      odometerReading: reading,
-      previousReading: prevReading,
-      monthlyMileage,
+      period: reportPeriod, odometerReading: reading,
+      previousReading: prevReading, monthlyMileage,
       notes: reportNotes,
-      status: 'submitted',
-      submittedAt: new Date().toISOString(),
+      retroactive: reportPeriod < getTaiwanPeriod(),
+      status: 'submitted', submittedAt: new Date().toISOString(),
     };
 
     let newRecords;
@@ -319,10 +453,8 @@ const MileageTool = ({ onBack, windowHeight }) => {
       newRecords = [...monthlyRecords, record];
     }
     autoSave('monthly_records', newRecords, setMonthlyRecords);
-    setReportVehicle('');
-    setReportReading('');
-    setReportNotes('');
-    setReportProxy('');
+    setReportVehicle(''); setReportReading(''); setReportNotes(''); setReportProxy('');
+    setConflictOverrideMode(false);
     setShowModal(null);
   };
 
@@ -976,18 +1108,27 @@ const MileageTool = ({ onBack, windowHeight }) => {
 
       {/* ═══ MODALS ═══ */}
       {showModal === 'monthly' && (
-        <div className="fixed inset-0 bg-black bg-opacity-40 backdrop-blur-sm z-[9999] flex items-center justify-center p-4" onClick={() => setShowModal(null)}>
+        <div className="fixed inset-0 bg-black bg-opacity-40 backdrop-blur-sm z-[9999] flex items-center justify-center p-4" onClick={() => { setShowModal(null); setConflictOverrideMode(false); }}>
           <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md p-4 lg:p-6 space-y-3 lg:space-y-4 max-h-[90vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
-            <h3 className="text-base font-bold text-gray-800">📋 回報月里程</h3>
+            <div className="flex items-center justify-between">
+              <h3 className="text-base font-bold text-gray-800">📋 回報月里程</h3>
+              {reportPeriod < getTaiwanPeriod() && (
+                <span className="text-xs bg-amber-100 text-amber-700 border border-amber-300 rounded-full px-2.5 py-0.5 font-bold">補登前期</span>
+              )}
+            </div>
+
             <div className="space-y-3">
+              {/* 期別 */}
               <div>
                 <label className="text-xs font-bold text-gray-500 block mb-1">期別</label>
-                <input type="month" value={reportPeriod} onChange={e => setReportPeriod(e.target.value)}
+                <input type="month" value={reportPeriod} onChange={e => { setReportPeriod(e.target.value); setConflictOverrideMode(false); }}
                   className="w-full border border-gray-300 rounded-lg p-2 text-sm focus:border-emerald-500 outline-none" />
               </div>
+
+              {/* 車輛 */}
               <div>
                 <label className="text-xs font-bold text-gray-500 block mb-1">車輛 *</label>
-                <select value={reportVehicle} onChange={e => setReportVehicle(e.target.value)}
+                <select value={reportVehicle} onChange={e => { setReportVehicle(e.target.value); setConflictOverrideMode(false); }}
                   className="w-full border border-gray-300 rounded-lg p-2 text-sm focus:border-emerald-500 outline-none">
                   <option value="">選擇車輛</option>
                   {vehicles.filter(v => v.status === 'active').map(v => (
@@ -995,6 +1136,8 @@ const MileageTool = ({ onBack, windowHeight }) => {
                   ))}
                 </select>
               </div>
+
+              {/* 上期里程提示 */}
               {reportVehicle && (() => {
                 const veh = vehicles.find(v => v.id === reportVehicle);
                 const prev = veh ? getPrevReading(veh.plate, reportPeriod) : null;
@@ -1004,26 +1147,69 @@ const MileageTool = ({ onBack, windowHeight }) => {
                   </div>
                 ) : null;
               })()}
+
+              {/* 里程輸入 */}
               <div>
                 <label className="text-xs font-bold text-gray-500 block mb-1">本期累計里程表讀數 *（km）</label>
-                <input type="number" value={reportReading} onChange={e => setReportReading(e.target.value)}
+                <input type="number" value={reportReading} onChange={e => { setReportReading(e.target.value); setConflictOverrideMode(false); }}
                   placeholder="例：45230"
                   className="w-full border border-gray-300 rounded-lg p-2 text-sm focus:border-emerald-500 outline-none font-mono" />
               </div>
-              {reportReading && reportVehicle && (() => {
-                const veh = vehicles.find(v => v.id === reportVehicle);
-                const prev = veh ? getPrevReading(veh.plate, reportPeriod) : null;
-                const diff = prev != null ? parseInt(reportReading) - prev : null;
-                if (diff == null) return null;
-                const isAbnormal = diff < 0 || diff > 10000;
+
+              {/* ══ 衝突分析面板 ══ */}
+              {conflictAnalysis && (() => {
+                const { conflicts, warnings, canOverride, canSubmitWithWarning } = conflictAnalysis;
                 return (
-                  <div className={`text-xs rounded-lg p-2.5 border ${isAbnormal ? 'bg-red-50 border-red-200 text-red-700' : 'bg-green-50 border-green-200 text-green-700'}`}>
-                    本月行駛里程：<span className="font-bold font-mono">{fmtNum(diff)}</span> km
-                    {diff < 0 && ' ❌ 里程表不可能倒退，請重新確認'}
-                    {diff >= 0 && diff > 10000 && ' ⚠️ 數值偏高，請確認'}
+                  <div className="space-y-2">
+                    {/* 錯誤衝突 */}
+                    {conflicts.map((c, i) => (
+                      <div key={i} className={`rounded-lg p-3 border-l-4 text-xs ${
+                        c.type === 'PERIOD_CONFLICT'
+                          ? 'bg-amber-50 border-amber-400 border border-amber-200'
+                          : 'bg-red-50 border-red-500 border border-red-200'
+                      }`}>
+                        <div className="flex items-center gap-2 mb-1.5">
+                          <span className="font-bold text-sm">{c.type === 'REGRESSION' ? '↓' : c.type === 'OVERFLOW' ? '↑' : c.type === 'PERIOD_CONFLICT' ? '≠' : '＝'}</span>
+                          <span className={`font-bold ${c.type === 'PERIOD_CONFLICT' ? 'text-amber-700' : 'text-red-700'}`}>
+                            {c.type === 'REGRESSION' ? '里程倒退' : c.type === 'OVERFLOW' ? '超越後期' : c.type === 'PERIOD_CONFLICT' ? '期別衝突（可覆蓋）' : '資料重複'}
+                          </span>
+                          {(c.type === 'REGRESSION' || c.type === 'OVERFLOW') && (
+                            <span className="ml-auto bg-red-100 text-red-600 px-2 py-0.5 rounded-full text-xs font-bold">邏輯錯誤</span>
+                          )}
+                        </div>
+                        <p className={`leading-relaxed ${c.type === 'PERIOD_CONFLICT' ? 'text-amber-700' : 'text-red-700'}`}>{c.msg}</p>
+                        {c.record && (
+                          <div className="mt-1.5 bg-white rounded px-2 py-1 text-gray-500 text-xs">
+                            現有記錄：{c.record.period} · {fmtNum(c.record.odometerReading)} km
+                            {c.record.retroactive && <span className="ml-1 text-amber-500">（補登）</span>}
+                          </div>
+                        )}
+                      </div>
+                    ))}
+
+                    {/* 軟警告 */}
+                    {warnings.map((w, i) => (
+                      <div key={i} className="bg-yellow-50 border border-yellow-200 border-l-4 border-l-yellow-400 rounded-lg p-3 text-xs">
+                        <div className="flex items-center gap-2 mb-1.5">
+                          <span className="font-bold text-sm">⚡</span>
+                          <span className="font-bold text-yellow-700">里程跳躍警告</span>
+                          <span className="ml-auto bg-yellow-100 text-yellow-600 px-2 py-0.5 rounded-full text-xs">警告仍可送出</span>
+                        </div>
+                        <p className="text-yellow-700 leading-relaxed">{w.msg}</p>
+                      </div>
+                    ))}
+
+                    {/* 無衝突提示 */}
+                    {conflicts.length === 0 && warnings.length === 0 && (
+                      <div className="bg-emerald-50 border border-emerald-200 rounded-lg p-2.5 text-xs text-emerald-700 flex items-center gap-2">
+                        <span>✓</span> <span>與現有記錄邏輯一致，可直接送出。</span>
+                      </div>
+                    )}
                   </div>
                 );
               })()}
+
+              {/* 代填 */}
               <div>
                 <label className="text-xs font-bold text-gray-500 block mb-1">代填（選填，幫他人填寫時選擇）</label>
                 <select value={reportProxy} onChange={e => setReportProxy(e.target.value)}
@@ -1034,18 +1220,62 @@ const MileageTool = ({ onBack, windowHeight }) => {
                   ))}
                 </select>
               </div>
+
+              {/* 備註 */}
               <div>
                 <label className="text-xs font-bold text-gray-500 block mb-1">備註</label>
                 <input value={reportNotes} onChange={e => setReportNotes(e.target.value)}
-                  placeholder="選填"
+                  placeholder="選填（補登請說明原因）"
                   className="w-full border border-gray-300 rounded-lg p-2 text-sm focus:border-emerald-500 outline-none" />
               </div>
             </div>
-            <div className="flex gap-3 pt-2">
-              <button onClick={() => setShowModal(null)} className="flex-1 py-2.5 border border-gray-300 rounded-lg text-gray-600 font-bold text-sm hover:bg-gray-50">取消</button>
-              <button onClick={handleSubmitMonthly} disabled={!reportVehicle || !reportReading}
-                className="flex-1 py-2.5 bg-emerald-500 text-white rounded-lg font-bold text-sm hover:bg-emerald-600 disabled:opacity-40">送出回報</button>
-            </div>
+
+            {/* ══ 覆蓋確認區塊 ══ */}
+            {conflictOverrideMode && (
+              <div className="bg-amber-50 border border-amber-300 rounded-xl p-4 space-y-2">
+                <p className="text-sm font-bold text-amber-800">確認覆蓋現有數據？</p>
+                <p className="text-xs text-amber-700 leading-relaxed">
+                  將刪除 {reportPeriod} 現有里程記錄，以 {fmtNum(parseInt(reportReading))} km 取代，此動作無法還原。
+                </p>
+                <div className="flex gap-3 pt-1">
+                  <button onClick={() => handleSubmitMonthly(true)}
+                    className="flex-1 py-2 bg-amber-500 text-white rounded-lg font-bold text-sm hover:bg-amber-600">確認覆蓋</button>
+                  <button onClick={() => setConflictOverrideMode(false)}
+                    className="flex-1 py-2 border border-gray-300 rounded-lg text-gray-600 font-bold text-sm hover:bg-gray-50">取消</button>
+                </div>
+              </div>
+            )}
+
+            {/* ══ 主按鈕 ══ */}
+            {!conflictOverrideMode && (() => {
+              const hasBlocking = conflictAnalysis && conflictAnalysis.conflicts.length > 0 && !conflictAnalysis.canOverride;
+              const hasOverridable = conflictAnalysis && conflictAnalysis.canOverride;
+              const hasWarnOnly = conflictAnalysis && conflictAnalysis.canSubmitWithWarning;
+              return (
+                <div className="flex gap-3 pt-2">
+                  <button onClick={() => { setShowModal(null); setConflictOverrideMode(false); }}
+                    className="flex-1 py-2.5 border border-gray-300 rounded-lg text-gray-600 font-bold text-sm hover:bg-gray-50">取消</button>
+                  {hasBlocking ? (
+                    <button disabled className="flex-1 py-2.5 bg-gray-200 text-gray-400 rounded-lg font-bold text-sm cursor-not-allowed">
+                      ✗ 無法送出（邏輯衝突）
+                    </button>
+                  ) : hasOverridable ? (
+                    <button onClick={() => handleSubmitMonthly(false)}
+                      className="flex-1 py-2.5 bg-amber-500 text-white rounded-lg font-bold text-sm hover:bg-amber-600">
+                      ⚠ 送出（覆蓋現有）
+                    </button>
+                  ) : hasWarnOnly ? (
+                    <button onClick={() => handleSubmitMonthly(false)}
+                      className="flex-1 py-2.5 bg-yellow-400 text-yellow-900 rounded-lg font-bold text-sm hover:bg-yellow-500">
+                      ⚡ 確認送出（已知警告）
+                    </button>
+                  ) : (
+                    <button onClick={() => handleSubmitMonthly(false)} disabled={!reportVehicle || !reportReading}
+                      className="flex-1 py-2.5 bg-emerald-500 text-white rounded-lg font-bold text-sm hover:bg-emerald-600 disabled:opacity-40">送出回報</button>
+                  )}
+                </div>
+              );
+            })()}
           </div>
         </div>
       )}
