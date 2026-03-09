@@ -798,27 +798,33 @@ const MileageTool = ({ onBack, windowHeight }) => {
     const { headers, rows, summary } = buildExportRows(type);
     const title = type === 'monthly' ? '月報里程報表' : '用車紀錄報表';
     const rangeLabel = { month: '本月', quarter: '本季', year: '本年', custom: '自訂區間' }[exportRange];
-    const html = \`<!DOCTYPE html><html><head><meta charset="utf-8"><title>\${title}</title>
-<style>
-  body { font-family: 'Microsoft JhengHei', Arial, sans-serif; font-size: 11px; margin: 20px; }
-  h2 { font-size: 15px; margin-bottom: 4px; }
-  .meta { color: #666; font-size: 10px; margin-bottom: 14px; }
-  table { width: 100%; border-collapse: collapse; }
-  th { background: #1e293b; color: #fff; padding: 5px 7px; text-align: left; font-size: 10px; }
-  td { border-bottom: 1px solid #e2e8f0; padding: 4px 7px; }
-  tr:nth-child(even) td { background: #f8fafc; }
-  .summary { margin-top: 14px; background: #f1f5f9; padding: 10px 14px; border-radius: 6px; font-size: 11px; }
-  @media print { button { display: none; } }
-</style></head><body>
-<h2>\${title}</h2>
-<div class="meta">範圍：\${rangeLabel}｜匯出時間：\${new Date().toLocaleString('zh-TW')}</div>
-<table><thead><tr>\${headers.map(h => \`<th>\${h}</th>\`).join('')}</tr></thead>
-<tbody>\${rows.map(r => \`<tr>\${r.map(c => \`<td>\${c ?? ''}</td>\`).join('')}</tr>\`).join('')}</tbody></table>
-<div class="summary">\${type === 'monthly'
-  ? \`總里程合計：\${summary.total.toLocaleString()} km｜車均月增幅：\${summary.avg.toLocaleString()} km｜回報筆數：\${summary.count}\`
-  : \`用車總里程：\${summary.total.toLocaleString()} km｜紀錄筆數：\${summary.count}\`
-}</div>
-</body></html>\`;
+    const thCells = headers.map(h => '<th>' + h + '</th>').join('');
+    const tbodyRows = rows.map(r =>
+      '<tr>' + r.map(c => '<td>' + (c ?? '') + '</td>').join('') + '</tr>'
+    ).join('');
+    const summaryText = type === 'monthly'
+      ? '總里程合計：' + summary.total.toLocaleString() + ' km｜車均月增幅：' + summary.avg.toLocaleString() + ' km｜回報筆數：' + summary.count
+      : '用車總里程：' + summary.total.toLocaleString() + ' km｜紀錄筆數：' + summary.count;
+    const html = [
+      '<!DOCTYPE html><html><head><meta charset="utf-8"><title>' + title + '</title>',
+      '<style>',
+      '  body { font-family: "Microsoft JhengHei", Arial, sans-serif; font-size: 11px; margin: 20px; }',
+      '  h2 { font-size: 15px; margin-bottom: 4px; }',
+      '  .meta { color: #666; font-size: 10px; margin-bottom: 14px; }',
+      '  table { width: 100%; border-collapse: collapse; }',
+      '  th { background: #1e293b; color: #fff; padding: 5px 7px; text-align: left; font-size: 10px; }',
+      '  td { border-bottom: 1px solid #e2e8f0; padding: 4px 7px; }',
+      '  tr:nth-child(even) td { background: #f8fafc; }',
+      '  .summary { margin-top: 14px; background: #f1f5f9; padding: 10px 14px; border-radius: 6px; font-size: 11px; }',
+      '  @media print { button { display: none; } }',
+      '</style></head><body>',
+      '<h2>' + title + '</h2>',
+      '<div class="meta">範圍：' + rangeLabel + '｜匯出時間：' + new Date().toLocaleString('zh-TW') + '</div>',
+      '<table><thead><tr>' + thCells + '</tr></thead>',
+      '<tbody>' + tbodyRows + '</tbody></table>',
+      '<div class="summary">' + summaryText + '</div>',
+      '</body></html>'
+    ].join('\n');
     const w = window.open('', '_blank');
     w.document.write(html);
     w.document.close();
