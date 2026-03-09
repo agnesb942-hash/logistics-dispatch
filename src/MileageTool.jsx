@@ -1,5 +1,4 @@
 import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
-import { LineChart, Line, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, Cell } from 'recharts';
 
 // ═══════════════════════════════════════════════════════════════════════
 // 車輛里程管理系統 — Phase 1 MVP
@@ -1113,43 +1112,83 @@ const MileageTool = ({ onBack, windowHeight }) => {
             {/* Quick Actions */}
 
 
-            {/* ── 趨勢圖：最近 6 個月月增幅 ── */}
-            {chartData.trendData.some(d => d.total > 0) && (
-              <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-4">
-                <div className="text-sm font-bold text-gray-700 mb-3">📈 月增幅趨勢（近 6 個月）</div>
-                <ResponsiveContainer width="100%" height={180}>
-                  <LineChart data={chartData.trendData} margin={{ top: 5, right: 10, left: 0, bottom: 0 }}>
-                    <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
-                    <XAxis dataKey="period" tick={{ fontSize: 10 }} />
-                    <YAxis tick={{ fontSize: 10 }} tickFormatter={v => v >= 1000 ? (v/1000).toFixed(0)+'k' : v} width={36} />
-                    <Tooltip formatter={(v, n) => [fmtNum(v) + ' km', n === 'total' ? '總里程' : '車均里程']} labelStyle={{ fontSize: 11 }} />
-                    <Legend iconSize={10} wrapperStyle={{ fontSize: 11 }} />
-                    <Line type="monotone" dataKey="total" name="總里程" stroke="#10b981" strokeWidth={2} dot={{ r: 3 }} />
-                    <Line type="monotone" dataKey="avg" name="車均里程" stroke="#6366f1" strokeWidth={2} dot={{ r: 3 }} strokeDasharray="4 2" />
-                  </LineChart>
-                </ResponsiveContainer>
-              </div>
-            )}
+            {/* ── 趨勢圖：最近 6 個月月增幅（純 SVG） ── */}
+            {chartData.trendData.some(d => d.total > 0) && (() => {
+              const W = 560, H = 160, PL = 44, PR = 12, PT = 10, PB = 28;
+              const cw = W - PL - PR, ch = H - PT - PB;
+              const data = chartData.trendData;
+              const maxVal = Math.max(...data.map(d => d.total), 1);
+              const yTick = v => v >= 1000 ? (v/1000).toFixed(0)+'k' : String(v);
+              const px = i => PL + (i / (data.length - 1)) * cw;
+              const py = v => PT + ch - (v / maxVal) * ch;
+              const totalPts = data.map((d, i) => px(i) + ',' + py(d.total)).join(' ');
+              const avgPts = data.map((d, i) => px(i) + ',' + py(d.avg)).join(' ');
+              const ySteps = [0, 0.25, 0.5, 0.75, 1];
+              return (
+                <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-4">
+                  <div className="text-sm font-bold text-gray-700 mb-1">📈 月增幅趨勢（近 6 個月）</div>
+                  <div className="flex gap-4 mb-2">
+                    <span className="flex items-center gap-1 text-[10px] text-gray-500"><span className="inline-block w-5 h-0.5 bg-emerald-500 rounded"></span>總里程</span>
+                    <span className="flex items-center gap-1 text-[10px] text-gray-500"><span className="inline-block w-5 h-0.5 bg-indigo-400 rounded" style={{borderTop:'2px dashed #818cf8'}}></span>車均里程</span>
+                  </div>
+                  <svg viewBox={'0 0 ' + W + ' ' + H} className="w-full" style={{height:160}}>
+                    {ySteps.map((s, i) => (
+                      <g key={i}>
+                        <line x1={PL} y1={PT + ch - s*ch} x2={W-PR} y2={PT + ch - s*ch} stroke="#f0f0f0" strokeWidth="1"/>
+                        <text x={PL-4} y={PT + ch - s*ch + 4} textAnchor="end" fontSize="9" fill="#9ca3af">{yTick(Math.round(maxVal*s))}</text>
+                      </g>
+                    ))}
+                    <polyline points={totalPts} fill="none" stroke="#10b981" strokeWidth="2" strokeLinejoin="round"/>
+                    <polyline points={avgPts} fill="none" stroke="#818cf8" strokeWidth="2" strokeDasharray="5 3" strokeLinejoin="round"/>
+                    {data.map((d, i) => (
+                      <g key={i}>
+                        <circle cx={px(i)} cy={py(d.total)} r="3.5" fill="#10b981"/>
+                        <circle cx={px(i)} cy={py(d.avg)} r="3" fill="#818cf8"/>
+                        <text x={px(i)} y={H-4} textAnchor="middle" fontSize="9" fill="#6b7280">{d.period}</text>
+                      </g>
+                    ))}
+                  </svg>
+                </div>
+              );
+            })()}
 
-            {/* ── 當期各車里程 Top 10 ── */}
-            {chartData.vehicleData.length > 0 && (
-              <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-4">
-                <div className="text-sm font-bold text-gray-700 mb-3">🚗 本期里程 Top 10（{selectedPeriod}）</div>
-                <ResponsiveContainer width="100%" height={200}>
-                  <BarChart data={chartData.vehicleData} margin={{ top: 5, right: 10, left: 0, bottom: 20 }}>
-                    <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
-                    <XAxis dataKey="plate" tick={{ fontSize: 9 }} angle={-35} textAnchor="end" interval={0} />
-                    <YAxis tick={{ fontSize: 10 }} tickFormatter={v => v >= 1000 ? (v/1000).toFixed(0)+'k' : v} width={36} />
-                    <Tooltip formatter={v => [fmtNum(v) + ' km', '月增幅']} />
-                    <Bar dataKey="km" name="月增幅" radius={[3,3,0,0]}>
-                      {chartData.vehicleData.map((_, i) => (
-                        <Cell key={i} fill={i < 3 ? '#10b981' : '#6366f1'} fillOpacity={0.85} />
-                      ))}
-                    </Bar>
-                  </BarChart>
-                </ResponsiveContainer>
-              </div>
-            )}
+            {/* ── 當期各車里程 Top 10（純 SVG 長條圖） ── */}
+            {chartData.vehicleData.length > 0 && (() => {
+              const data = chartData.vehicleData;
+              const W = 560, H = 180, PL = 40, PR = 10, PT = 10, PB = 40;
+              const cw = W - PL - PR, ch = H - PT - PB;
+              const maxVal = Math.max(...data.map(d => d.km), 1);
+              const bw = Math.floor(cw / data.length) - 4;
+              const yTick = v => v >= 1000 ? (v/1000).toFixed(0)+'k' : String(v);
+              const ySteps = [0, 0.5, 1];
+              return (
+                <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-4">
+                  <div className="text-sm font-bold text-gray-700 mb-3">🚗 本期里程 Top 10（{selectedPeriod}）</div>
+                  <svg viewBox={'0 0 ' + W + ' ' + H} className="w-full" style={{height:180}}>
+                    {ySteps.map((s, i) => (
+                      <g key={i}>
+                        <line x1={PL} y1={PT + ch - s*ch} x2={W-PR} y2={PT + ch - s*ch} stroke="#f0f0f0" strokeWidth="1"/>
+                        <text x={PL-4} y={PT + ch - s*ch + 4} textAnchor="end" fontSize="9" fill="#9ca3af">{yTick(Math.round(maxVal*s))}</text>
+                      </g>
+                    ))}
+                    <line x1={PL} y1={PT} x2={PL} y2={PT+ch} stroke="#e5e7eb" strokeWidth="1"/>
+                    {data.map((d, i) => {
+                      const bh = Math.max(2, (d.km / maxVal) * ch);
+                      const bx = PL + i * (cw / data.length) + 2;
+                      const by = PT + ch - bh;
+                      const fill = i < 3 ? '#10b981' : '#818cf8';
+                      return (
+                        <g key={i}>
+                          <rect x={bx} y={by} width={bw} height={bh} fill={fill} fillOpacity="0.85" rx="2"/>
+                          <text x={bx + bw/2} y={H-4} textAnchor="middle" fontSize="8.5" fill="#6b7280"
+                            transform={'rotate(-30,' + (bx+bw/2) + ',' + (H-4) + ')'}>{d.plate}</text>
+                        </g>
+                      );
+                    })}
+                  </svg>
+                </div>
+              );
+            })()}
 
             {/* 勾稽比對：僅管理者可見，標示為「參考資訊」而非異常警告 */}
             {isAdmin && reconciliation.filter(r => r.tripSum > 0).length > 0 && (
