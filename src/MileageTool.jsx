@@ -605,6 +605,11 @@ const MileageTool = ({ onBack, windowHeight }) => {
   const [exportRange, setExportRange] = useState('month');
   const [exportFrom, setExportFrom] = useState('');
   const [exportTo, setExportTo] = useState('');
+  const [exportDept, setExportDept] = useState('all');
+  const [aiAnalysis, setAiAnalysis] = useState('');
+  const [aiLoading, setAiLoading] = useState(false);
+  const [aiDept, setAiDept] = useState('all');
+  const [aiPeriod, setAiPeriod] = useState('');
 
   // ── Firestore CRUD ──────────────────────────────────────────────
   const saveCollection = async (collName, data) => {
@@ -909,7 +914,7 @@ const MileageTool = ({ onBack, windowHeight }) => {
     if (type === 'monthly') {
       const recs = monthlyRecords
         .filter(r => periods.includes(r.period) &&
-          (filterDept === 'all' || vehicles.find(v => v.plate === r.vehiclePlate)?.deptId === filterDept))
+          (exportDept === 'all' || vehicles.find(v => v.plate === r.vehiclePlate)?.deptId === exportDept))
         .sort((a, b) => a.period.localeCompare(b.period) || a.vehiclePlate.localeCompare(b.vehiclePlate));
       return {
         headers: ['期別','部門','車牌','累計里程(km)','上期里程(km)','月增幅(km)','回報人','代填人','狀態','備註','回報時間'],
@@ -932,7 +937,7 @@ const MileageTool = ({ onBack, windowHeight }) => {
     } else {
       const recs = adhocRecords
         .filter(r => periods.includes(r.date?.slice(0,7)) &&
-          (filterDept === 'all' || vehicles.find(v => v.plate === r.vehiclePlate)?.deptId === filterDept))
+          (exportDept === 'all' || vehicles.find(v => v.plate === r.vehiclePlate)?.deptId === exportDept))
         .sort((a, b) => a.date?.localeCompare(b.date));
       return {
         headers: ['日期','部門','車牌','使用人','代填人','起始里程(km)','結束里程(km)','區間里程(km)','事由','狀態','備註'],
@@ -949,7 +954,7 @@ const MileageTool = ({ onBack, windowHeight }) => {
         }
       };
     }
-  }, [getExportPeriods, monthlyRecords, adhocRecords, filterDept, vehicles]);
+  }, [getExportPeriods, monthlyRecords, adhocRecords, exportDept, vehicles]);
 
   const exportCSV = (type) => {
     const { headers, rows } = buildExportRows(type);
@@ -989,6 +994,15 @@ const MileageTool = ({ onBack, windowHeight }) => {
     const { headers, rows, summary } = buildExportRows(type);
     const title = type === 'monthly' ? '月報里程報表' : '用車紀錄報表';
     const rangeLabel = { month: '本月', quarter: '本季', year: '本年', custom: '自訂區間' }[exportRange];
+    const deptLabel = exportDept === 'all' ? '全部部門' : departments.find(d=>d.id===exportDept)?.name || exportDept;
+    // 分析數據
+    const recWithKm = type === 'monthly' ? rows.filter(r => (r[5]||0) > 0) : [];
+    const kmsArr = recWithKm.map(r => r[5]).sort((a,b)=>a-b);
+    const pdfAvg = kmsArr.length ? Math.round(kmsArr.reduce((s,v)=>s+v,0)/kmsArr.length) : 0;
+    const pdfMax = kmsArr.length ? kmsArr[kmsArr.length-1] : 0;
+    const pdfMin = kmsArr.length ? kmsArr[0] : 0;
+    const pdfMed = kmsArr.length ? kmsArr[Math.floor(kmsArr.length/2)] : 0;
+    const highRisk = recWithKm.filter(r => r[5] > pdfAvg * 1.8);
     const thCells = headers.map(h => '<th>' + h + '</th>').join('');
     const tbodyRows = rows.map(r =>
       '<tr>' + r.map(c => '<td>' + (c ?? '') + '</td>').join('') + '</tr>'
@@ -1007,13 +1021,34 @@ const MileageTool = ({ onBack, windowHeight }) => {
       '  td { border-bottom: 1px solid #e2e8f0; padding: 4px 7px; }',
       '  tr:nth-child(even) td { background: #f8fafc; }',
       '  .summary { margin-top: 14px; background: #f1f5f9; padding: 10px 14px; border-radius: 6px; font-size: 11px; }',
+      '  .analysis { margin-top: 12px; background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 12px; }',
+      '  .analysis-title { font-size: 11px; font-weight: bold; color: #475569; margin-bottom: 10px; }',
+      '  .stat-grid { display: grid; grid-template-columns: repeat(4,1fr); gap: 8px; margin-bottom: 10px; }',
+      '  .stat-card { background: #fff; border: 1px solid #e2e8f0; border-radius: 6px; padding: 8px; text-align: center; }',
+      '  .stat-label { font-size: 9px; color: #9ca3af; margin-bottom: 4px; }',
+      '  .stat-val { font-size: 13px; font-weight: bold; }',
+      '  .stat-sub { font-size: 9px; color: #9ca3af; margin-top: 2px; }',
+      '  .rose { color: #e11d48; } .blue { color: #2563eb; } .indigo { color: #4f46e5; } .green { color: #059669; }',
+      '  .alert { background: #fff1f2; border: 1px solid #fecdd3; border-radius: 6px; padding: 8px 12px; font-size: 10px; color: #be123c; margin-top: 8px; }',
       '  @media print { button { display: none; } }',
       '</style></head><body>',
       '<h2>' + title + '</h2>',
-      '<div class="meta">範圍：' + rangeLabel + '｜匯出時間：' + new Date().toLocaleString('zh-TW') + '</div>',
+      '<div class="meta">部門：' + deptLabel + '｜範圍：' + rangeLabel + '｜匯出時間：' + new Date().toLocaleString('zh-TW') + '</div>',
       '<table><thead><tr>' + thCells + '</tr></thead>',
       '<tbody>' + tbodyRows + '</tbody></table>',
       '<div class="summary">' + summaryText + '</div>',
+      // 分析區塊（月報才顯示）
+      type === 'monthly' && recWithKm.length > 0 ? [
+        '<div class="analysis"><div class="analysis-title">數據分析摘要</div>',
+        '<div class="stat-grid">',
+        '<div class="stat-card"><div class="stat-label">最高月增幅</div><div class="stat-val rose">' + pdfMax.toLocaleString() + ' km</div><div class="stat-sub">' + (recWithKm.find(r=>r[5]===pdfMax)?.[2]||'') + '</div></div>',
+        '<div class="stat-card"><div class="stat-label">最低月增幅</div><div class="stat-val blue">' + pdfMin.toLocaleString() + ' km</div><div class="stat-sub">' + (recWithKm.find(r=>r[5]===pdfMin)?.[2]||'') + '</div></div>',
+        '<div class="stat-card"><div class="stat-label">中位數</div><div class="stat-val indigo">' + pdfMed.toLocaleString() + ' km</div></div>',
+        '<div class="stat-card"><div class="stat-label">平均月增幅</div><div class="stat-val green">' + pdfAvg.toLocaleString() + ' km</div><div class="stat-sub">' + recWithKm.length + ' 輛</div></div>',
+        '</div>',
+        highRisk.length > 0 ? '<div class="alert">⚡ 高里程預警（超過平均 180%）：' + highRisk.map(r=>r[2]+' '+r[5].toLocaleString()+'km').join('、') + '</div>' : '',
+        '</div>'
+      ].join('') : '',
       '</body></html>'
     ].join('\n');
     // 使用隱藏 iframe 輸入 HTML，避免彈出視窗被欋截
@@ -1234,6 +1269,7 @@ const MileageTool = ({ onBack, windowHeight }) => {
       { key: 'logs', icon: '🗂️', label: '操作記錄' },
     ] : []),
     { key: 'export', icon: '⬇️', label: '匯出報表' },
+    { key: 'ai', icon: '🤖', label: 'AI 診斷' },
   ];
 
   const getDeptName = (deptId) => departments.find(d => d.id === deptId)?.name || deptId;
@@ -1721,13 +1757,24 @@ const MileageTool = ({ onBack, windowHeight }) => {
           </>}
 
           {/* ═══ EXPORT ═══ */}
-          {activeSection === 'export' && <>
+          {activeSection === 'export' && (true) && (() => {
+            const { summary, rows, headers } = buildExportRows(exportType);
+            const expPeriods = getExportPeriods();
+            const recWithKm = exportType === 'monthly' ? rows.filter(r => (r[5]||0) > 0) : [];
+            const kms = recWithKm.map(r => r[5]).sort((a,b)=>a-b);
+            const expAvg = kms.length ? Math.round(kms.reduce((s,v)=>s+v,0)/kms.length) : 0;
+            const expMax = kms.length ? kms[kms.length-1] : 0;
+            const expMin = kms.length ? kms[0] : 0;
+            const expMed = kms.length ? kms[Math.floor(kms.length/2)] : 0;
+            const highRiskRows = recWithKm.filter(r => r[5] > expAvg * 1.8);
+            const deptLabel = exportDept === 'all' ? '全部部門' : departments.find(d=>d.id===exportDept)?.name || exportDept;
+            return (<>
             <h2 className="text-lg font-bold text-gray-800">匯出報表</h2>
 
-            {/* 資料類型 + 時間範圍 */}
+            {/* 匯出設定 */}
             <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-5 space-y-4">
               <div className="font-bold text-sm text-gray-700">⚙️ 匯出設定</div>
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-2 lg:grid-cols-3 gap-4">
                 <div>
                   <label className="text-xs font-bold text-gray-500 block mb-1.5">資料類型</label>
                   <div className="flex gap-2">
@@ -1738,6 +1785,14 @@ const MileageTool = ({ onBack, windowHeight }) => {
                       </button>
                     ))}
                   </div>
+                </div>
+                <div>
+                  <label className="text-xs font-bold text-gray-500 block mb-1.5">部門篩選</label>
+                  <select value={exportDept} onChange={e => setExportDept(e.target.value)}
+                    className="w-full border border-gray-300 rounded-lg px-3 py-1.5 text-xs outline-none focus:border-indigo-400">
+                    <option value="all">全部部門</option>
+                    {departments.map(d => <option key={d.id} value={d.id}>{d.name}</option>)}
+                  </select>
                 </div>
                 <div>
                   <label className="text-xs font-bold text-gray-500 block mb-1.5">時間範圍</label>
@@ -1769,18 +1824,41 @@ const MileageTool = ({ onBack, windowHeight }) => {
             </div>
 
             {/* 統計摘要預覽 */}
-            {(() => {
-              const { summary } = buildExportRows(exportType);
-              return (
-                <div className="bg-slate-50 border border-slate-200 rounded-xl p-4 text-xs text-slate-600 flex flex-wrap gap-6">
-                  <span>📊 期別：<strong>{getExportPeriods().join('、') || '—'}</strong></span>
-                  <span>筆數：<strong>{summary.count}</strong></span>
-                  {exportType === 'monthly' && <span>總里程：<strong>{fmtNum(summary.total)} km</strong></span>}
-                  {exportType === 'monthly' && <span>車均：<strong>{fmtNum(summary.avg)} km</strong></span>}
-                  {exportType === 'adhoc' && <span>用車總里程：<strong>{fmtNum(summary.total)} km</strong></span>}
+            <div className="bg-slate-50 border border-slate-200 rounded-xl p-4 space-y-3">
+              <div className="text-xs text-slate-600 flex flex-wrap gap-5">
+                <span>📋 部門：<strong className="text-indigo-700">{deptLabel}</strong></span>
+                <span>📅 期別：<strong>{expPeriods.join('、') || '—'}</strong></span>
+                <span>筆數：<strong>{summary.count}</strong></span>
+                {exportType === 'monthly' && <span>總里程：<strong>{fmtNum(summary.total)} km</strong></span>}
+                {exportType === 'monthly' && <span>車均月增幅：<strong>{fmtNum(summary.avg)} km</strong></span>}
+                {exportType === 'adhoc' && <span>用車總里程：<strong>{fmtNum(summary.total)} km</strong></span>}
+              </div>
+              {/* 月報里程分析預覽 */}
+              {exportType === 'monthly' && recWithKm.length > 0 && (
+                <div className="border-t border-slate-200 pt-3 space-y-2">
+                  <div className="text-xs font-bold text-slate-600">📊 本次匯出數據分析</div>
+                  <div className="grid grid-cols-2 lg:grid-cols-4 gap-2">
+                    {[
+                      { label: '最高月增幅', value: fmtNum(expMax)+' km', color:'text-rose-600' },
+                      { label: '最低月增幅', value: fmtNum(expMin)+' km', color:'text-blue-600' },
+                      { label: '中位數', value: fmtNum(expMed)+' km', color:'text-indigo-600' },
+                      { label: '平均月增幅', value: fmtNum(expAvg)+' km', color:'text-emerald-600' },
+                    ].map((s,i) => (
+                      <div key={i} className="bg-white border border-slate-100 rounded-lg p-2 text-center">
+                        <div className="text-[10px] text-gray-400">{s.label}</div>
+                        <div className={'text-sm font-bold '+s.color}>{s.value}</div>
+                      </div>
+                    ))}
+                  </div>
+                  {highRiskRows.length > 0 && (
+                    <div className="bg-rose-50 border border-rose-200 rounded-lg px-3 py-2 text-xs">
+                      <span className="font-bold text-rose-700">⚡ 高里程預警（超平均180%）：</span>
+                      {highRiskRows.map((r,i) => <span key={i} className="ml-1 bg-rose-100 text-rose-800 px-1.5 py-0.5 rounded font-mono">{r[2]} {fmtNum(r[5])}km</span>)}
+                    </div>
+                  )}
                 </div>
-              );
-            })()}
+              )}
+            </div>
 
             {/* 匯出格式按鈕 */}
             <div className="grid grid-cols-3 gap-4">
@@ -1788,13 +1866,13 @@ const MileageTool = ({ onBack, windowHeight }) => {
                 className="flex flex-col items-center gap-2 bg-white border border-gray-200 rounded-xl p-5 hover:border-green-400 hover:shadow-md transition-all group">
                 <span className="text-2xl">📗</span>
                 <span className="text-sm font-bold text-gray-700 group-hover:text-green-600">Excel (.xlsx)</span>
-                <span className="text-[10px] text-gray-400">含統計摘要、可直接用試算表開啟</span>
+                <span className="text-[10px] text-gray-400">含統計摘要與分析，可直接用試算表開啟</span>
               </button>
               <button onClick={() => exportPDF(exportType)}
                 className="flex flex-col items-center gap-2 bg-white border border-gray-200 rounded-xl p-5 hover:border-red-400 hover:shadow-md transition-all group">
                 <span className="text-2xl">📕</span>
                 <span className="text-sm font-bold text-gray-700 group-hover:text-red-600">PDF 列印</span>
-                <span className="text-[10px] text-gray-400">開啟瀏覽器列印視窗，可存 PDF</span>
+                <span className="text-[10px] text-gray-400">含數據分析區塊，開啟列印視窗</span>
               </button>
               <button onClick={() => exportCSV(exportType)}
                 className="flex flex-col items-center gap-2 bg-white border border-gray-200 rounded-xl p-5 hover:border-blue-400 hover:shadow-md transition-all group">
@@ -1803,12 +1881,113 @@ const MileageTool = ({ onBack, windowHeight }) => {
                 <span className="text-[10px] text-gray-400">通用格式，適合進一步處理</span>
               </button>
             </div>
-          </>}
+            </>);
+          })()}
 
         </div>
       </div>
 
       {/* ═══ MODALS ═══ */}
+
+          {activeSection === 'ai' && (() => {
+            const runAiAnalysis = async () => {
+              setAiLoading(true); setAiAnalysis('');
+              const targetPeriod = aiPeriod || selectedPeriod;
+              const deptFilter = aiDept === 'all' ? null : aiDept;
+              const filteredRecs = monthlyRecords.filter(r =>
+                r.period === targetPeriod &&
+                (!deptFilter || vehicles.find(v => v.plate === r.vehiclePlate)?.deptId === deptFilter)
+              );
+              const recWithKm = filteredRecs.filter(r => (r.monthlyMileage||0) > 0);
+              const kms = recWithKm.map(r => r.monthlyMileage).sort((a,b)=>a-b);
+              const avg = kms.length ? Math.round(kms.reduce((s,v)=>s+v,0)/kms.length) : 0;
+              const total = kms.reduce((s,v)=>s+v,0);
+              const deptLabel = aiDept === 'all' ? '全部部門' : departments.find(d=>d.id===aiDept)?.name || aiDept;
+              const top5 = [...recWithKm].sort((a,b)=>(b.monthlyMileage||0)-(a.monthlyMileage||0)).slice(0,5);
+              const bottom5 = [...recWithKm].sort((a,b)=>(a.monthlyMileage||0)-(b.monthlyMileage||0)).slice(0,5);
+              const anomalies = recWithKm.filter(r => r.monthlyMileage > avg * 2.0);
+              const prompt = `你是一位專業的物流車隊管理顧問，請根據以下里程數據進行專業診斷分析，並以繁體中文（台灣用語）回覆。
+
+【資料範圍】
+- 期別：${targetPeriod}
+- 部門：${deptLabel}
+- 有效回報車輛數：${recWithKm.length} 輛
+
+【關鍵指標】
+- 總月增幅里程：${total.toLocaleString()} km
+- 平均月增幅：${avg.toLocaleString()} km/輛
+- 最高 5 輛（車牌 里程）：${top5.map(r=>r.vehiclePlate+' '+r.monthlyMileage+'km').join('、')}
+- 最低 5 輛（車牌 里程）：${bottom5.map(r=>r.vehiclePlate+' '+r.monthlyMileage+'km').join('、')}
+- 異常高里程車輛（>平均 200%）：${anomalies.length > 0 ? anomalies.map(r=>r.vehiclePlate+' '+r.monthlyMileage+'km').join('、') : '無'}
+
+【請依序提供以下分析】：
+1. **整體狀況評估**：本期車隊運作總體評估（100字以內）
+2. **異常車輛分析**：針對高里程與低里程車輛的可能成因與風險提示
+3. **管理建議**：至少 3 條具體可執行的管理改善建議
+4. **下期預測**：根據趨勢，下期需注意的重點`;
+              try {
+                // 透過 Vercel Serverless Proxy 呼叫（API Key 安全存放於後端環境變數）
+                const res = await fetch('/api/ai-diagnose', {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({ prompt })
+                });
+                const data = await res.json();
+                if (!res.ok) {
+                  setAiAnalysis('❌ ' + (data.error || '分析失敗，請稍後再試'));
+                } else {
+                  setAiAnalysis(data.result || '（AI 未回傳結果）');
+                }
+              } catch(e) {
+                setAiAnalysis('❌ 網路錯誤：' + e.message);
+              }
+              setAiLoading(false);
+            };
+            return (
+              <div className="space-y-4">
+                <h2 className="text-lg font-bold text-gray-800">🤖 AI 物流診斷分析</h2>
+
+                {/* 設定區 */}
+                <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-5 space-y-4">
+                  <div className="font-bold text-sm text-gray-700">⚙️ 分析設定</div>
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <label className="text-xs font-bold text-gray-500 block mb-1.5">分析期別</label>
+                      <input type="month" value={aiPeriod || selectedPeriod} onChange={e => setAiPeriod(e.target.value)}
+                        className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm outline-none focus:border-indigo-400" />
+                    </div>
+                    <div>
+                      <label className="text-xs font-bold text-gray-500 block mb-1.5">部門</label>
+                      <select value={aiDept} onChange={e => setAiDept(e.target.value)}
+                        className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm outline-none focus:border-indigo-400">
+                        <option value="all">全部部門</option>
+                        {departments.map(d => <option key={d.id} value={d.id}>{d.name}</option>)}
+                      </select>
+                    </div>
+                  </div>
+                  <button onClick={runAiAnalysis} disabled={aiLoading}
+                    className="w-full py-3 bg-gradient-to-r from-indigo-500 to-purple-600 text-white font-bold rounded-xl text-sm hover:from-indigo-600 hover:to-purple-700 disabled:opacity-50 transition-all shadow-md">
+                    {aiLoading ? '⏳ AI 分析中（約 10 秒）...' : '🚀 開始 AI 診斷分析'}
+                  </button>
+                </div>
+
+                {/* 分析結果 */}
+                {aiAnalysis && (
+                  <div className="bg-white rounded-xl border border-indigo-200 shadow-sm p-5">
+                    <div className="flex items-center gap-2 mb-4">
+                      <span className="text-lg">🤖</span>
+                      <div className="font-bold text-gray-800">AI 診斷報告</div>
+                      <span className="text-[10px] bg-indigo-100 text-indigo-700 px-2 py-0.5 rounded-full">Claude Sonnet</span>
+                    </div>
+                    <div className="text-sm text-gray-700 leading-relaxed whitespace-pre-wrap">
+                      {aiAnalysis}
+                    </div>
+                  </div>
+                )}
+              </div>
+            );
+          })()}
+
       {showModal === 'monthly' && (
         <div className="fixed inset-0 bg-black bg-opacity-40 backdrop-blur-sm z-[9999] flex items-center justify-center p-4" onClick={() => { setShowModal(null); setConflictOverrideMode(false); setEditingRecord(null); }}>
           <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md p-4 lg:p-6 space-y-3 lg:space-y-4 max-h-[90vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
