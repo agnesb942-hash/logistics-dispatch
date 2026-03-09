@@ -2200,7 +2200,7 @@ ${deptDispatchLines}
 
                 // 離屏容器：visibility:hidden 保持版面計算正確，但不顯示在畫面上
                 const wrap = document.createElement('div');
-                wrap.style.cssText = `position:absolute;left:0;top:0;width:${W+60}px;background:#fff;visibility:hidden;pointer-events:none;z-index:-9999;`;
+                wrap.style.cssText = `position:absolute;left:-9999px;top:0;width:${W+60}px;background:#fff;z-index:-9999;`;
                 wrap.innerHTML = reportHTML;
                 document.body.appendChild(wrap);
 
