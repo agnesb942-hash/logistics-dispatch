@@ -369,6 +369,10 @@ const MileageTool = ({ onBack, windowHeight }) => {
   const [adhocPurpose, setAdhocPurpose] = useState('');
   const [adhocNotes, setAdhocNotes] = useState('');
   const [adhocProxy, setAdhocProxy] = useState(''); // 代填：實際使用人 ID
+  const [exportType, setExportType] = useState('monthly');
+  const [exportRange, setExportRange] = useState('month');
+  const [exportFrom, setExportFrom] = useState('');
+  const [exportTo, setExportTo] = useState('');
 
   // ── Firestore CRUD ──────────────────────────────────────────────
   const saveCollection = async (collName, data) => {
@@ -641,12 +645,7 @@ const MileageTool = ({ onBack, windowHeight }) => {
     setDeleteTarget({ id: recordId, type, label });
   };
 
-  // ── Export CSV ──────────────────────────────────────────────────
-  // ── Export States ───────────────────────────────────────────────
-  const [exportType, setExportType] = useState('monthly'); // monthly | adhoc
-  const [exportRange, setExportRange] = useState('month');  // month | quarter | year | custom
-  const [exportFrom, setExportFrom] = useState('');
-  const [exportTo, setExportTo] = useState('');
+  // ── Export functions ──────────────────────────────────────────
 
   const getExportPeriods = useCallback(() => {
     const all = [...new Set([
@@ -785,13 +784,24 @@ const MileageTool = ({ onBack, windowHeight }) => {
       '<div class="summary">' + summaryText + '</div>',
       '</body></html>'
     ].join('\n');
-    const blob = new Blob([html], { type: 'text/html;charset=utf-8' });
-    const url = URL.createObjectURL(blob);
-    const win = window.open(url, '_blank');
-    if (!win) {
-      alert('請允許彈出視窗後再試，或至瀏覽器設定允許此網站開啟新視窗。');
-    }
-    setTimeout(() => URL.revokeObjectURL(url), 5000);
+    // 使用隱藏 iframe 輸入 HTML，避免彈出視窗被欋截
+    const iframe = document.createElement('iframe');
+    iframe.style.cssText = 'position:fixed;top:-9999px;left:-9999px;width:1200px;height:900px;border:none;opacity:0';
+    document.body.appendChild(iframe);
+    const doc = iframe.contentDocument || iframe.contentWindow.document;
+    doc.open(); doc.write(html); doc.close();
+    setTimeout(() => {
+      try {
+        iframe.contentWindow.focus();
+        iframe.contentWindow.print();
+      } catch(e) {
+        const blob = new Blob([html], { type: 'text/html;charset=utf-8' });
+        const url = URL.createObjectURL(blob);
+        window.open(url, '_blank');
+        setTimeout(() => URL.revokeObjectURL(url), 5000);
+      }
+      setTimeout(() => { try { document.body.removeChild(iframe); } catch(e) {} }, 2000);
+    }, 400);
   };
 
 
