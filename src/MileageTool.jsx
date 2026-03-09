@@ -1295,43 +1295,78 @@ const MileageTool = ({ onBack, windowHeight }) => {
   // ═════════════════════════════════════════════════════════════════
   // RENDER: Main App
   // ═════════════════════════════════════════════════════════════════
+  // 手機底部導覽：一般用戶只看 3 項，管理者才顯示匯出 / AI 診斷
   const menuItems = [
     { key: 'dashboard', icon: '📊', label: '儀表板' },
-    { key: 'monthly', icon: '📋', label: '月報里程' },
-    { key: 'adhoc', icon: '🚗', label: '用車紀錄' },
+    { key: 'monthly',   icon: '📋', label: '月報里程' },
+    { key: 'adhoc',     icon: '🚗', label: '用車紀錄' },
     ...(isAdmin ? [
-      { key: 'vehicles', icon: '🔧', label: '車輛管理' },
+      { key: 'vehicles',  icon: '🔧', label: '車輛管理' },
       { key: 'personnel', icon: '👥', label: '人員管理' },
-      { key: 'logs', icon: '🗂️', label: '操作記錄' },
+      { key: 'logs',      icon: '🗂️', label: '操作記錄' },
+      { key: 'export',    icon: '⬇️', label: '匯出報表' },
+      { key: 'ai',        icon: '🤖', label: 'AI 診斷' },
     ] : []),
-    { key: 'export', icon: '⬇️', label: '匯出報表' },
-    { key: 'ai', icon: '🤖', label: 'AI 診斷' },
   ];
+  // 手機底部固定顯示的 4 個主要頁籤（一般用戶）
+  const mobileBottomItems = isAdmin
+    ? [
+        { key: 'dashboard', icon: '📊', label: '儀表板' },
+        { key: 'monthly',   icon: '📋', label: '月報' },
+        { key: 'adhoc',     icon: '🚗', label: '用車' },
+        { key: 'export',    icon: '⬇️', label: '報表' },
+        { key: 'ai',        icon: '🤖', label: 'AI 診斷' },
+      ]
+    : [
+        { key: 'dashboard', icon: '📊', label: '儀表板' },
+        { key: 'monthly',   icon: '📋', label: '月報里程' },
+        { key: 'adhoc',     icon: '🚗', label: '用車紀錄' },
+      ];
 
   const getDeptName = (deptId) => departments.find(d => d.id === deptId)?.name || deptId;
 
   return (
     <div className="flex flex-col lg:flex-row font-sans text-gray-900 overflow-hidden" style={{ height: windowHeight + 'px' }}>
-      {/* ── Mobile Top Nav ── */}
-      <div className="flex lg:hidden bg-slate-900 border-b border-slate-700 px-3 py-2 flex-shrink-0">
-        <div className="flex items-center gap-2 mr-3 flex-shrink-0">
-          <span className="text-sm">📊</span>
-          <div className="text-white text-[10px] font-bold">{currentUser.name}</div>
+      {/* ── Mobile Top Bar ── */}
+      <div className="flex lg:hidden bg-slate-900 border-b border-slate-700 px-4 flex-shrink-0" style={{minHeight:'56px',alignItems:'center'}}>
+        {/* 左：返回首頁 */}
+        <button onClick={onBack}
+          className="flex items-center justify-center w-10 h-10 rounded-xl text-slate-300 hover:bg-slate-700 active:bg-slate-600 transition-all flex-shrink-0"
+          style={{fontSize:'20px'}} title="返回首頁">
+          ‹
+        </button>
+        {/* 中：目前頁面標題 */}
+        <div className="flex-1 text-center">
+          <div className="text-white font-bold" style={{fontSize:'15px',letterSpacing:'0.01em'}}>
+            {menuItems.find(i => i.activeSection === activeSection)?.icon || menuItems.find(i => i.key === activeSection)?.icon || '📊'}{' '}
+            {menuItems.find(i => i.key === activeSection)?.label || '儀表板'}
+          </div>
+          <div className="text-slate-400" style={{fontSize:'11px'}}>{currentUser.name}{isAdmin ? ' · 👑 管理者' : ''}</div>
         </div>
-        <div className="flex-1 overflow-x-auto flex gap-1">
-          {menuItems.map(item => (
-            <button key={item.key} onClick={() => setActiveSection(item.key)}
-              className={`flex-shrink-0 px-3 py-1.5 rounded-lg text-[10px] font-bold transition-all
-                ${activeSection === item.key ? 'bg-emerald-500 bg-opacity-30 text-emerald-400' : 'text-slate-400'}`}>
-              {item.icon} {item.label}
-            </button>
-          ))}
-        </div>
-        <div className="flex gap-1 ml-2 flex-shrink-0">
-          <button onClick={() => { setCurrentUser(null); setIsAdmin(false); }} className="text-[10px] text-slate-500 px-2">切換</button>
-          <button onClick={onBack} className="text-[10px] text-slate-500 px-2">首頁</button>
-        </div>
+        {/* 右：切換身份 */}
+        <button onClick={() => { setCurrentUser(null); setIsAdmin(false); }}
+          className="flex items-center justify-center w-10 h-10 rounded-xl text-slate-400 hover:bg-slate-700 active:bg-slate-600 transition-all flex-shrink-0"
+          style={{fontSize:'18px'}} title="切換身份">
+          ⇄
+        </button>
       </div>
+
+      {/* ── Mobile 管理者「更多」頁面側滑選單 ── 管理者才有的額外頁面 */}
+      {isAdmin && (
+        <div className="flex lg:hidden bg-slate-800 border-b border-slate-700 overflow-x-auto flex-shrink-0" style={{scrollbarWidth:'none'}}>
+          <div className="flex px-2 py-1 gap-1 min-w-max">
+            {[{key:'vehicles',icon:'🔧',label:'車輛管理'},{key:'personnel',icon:'👥',label:'人員管理'},{key:'logs',icon:'🗂️',label:'操作記錄'},{key:'export',icon:'⬇️',label:'匯出報表'},{key:'ai',icon:'🤖',label:'AI診斷'}].map(item => (
+              <button key={item.key} onClick={() => setActiveSection(item.key)}
+                className={`flex-shrink-0 flex items-center gap-1.5 px-3 rounded-lg font-bold transition-all ${activeSection === item.key ? 'bg-emerald-500 text-white' : 'text-slate-400 hover:bg-slate-700'}`}
+                style={{fontSize:'13px',height:'36px',minWidth:'fit-content'}}>
+                <span>{item.icon}</span>
+                <span>{item.label}</span>
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+
       {/* ── Desktop Sidebar ── */}
       <div className="hidden lg:flex w-56 bg-slate-900 flex-col flex-shrink-0">
         <div className="p-4 border-b border-slate-700">
@@ -1373,7 +1408,7 @@ const MileageTool = ({ onBack, windowHeight }) => {
 
       {/* ── Main Content ── */}
       <div className="flex-1 min-h-0 bg-gray-50 overflow-y-auto">
-        <div className="p-3 lg:p-6 max-w-6xl mx-auto space-y-4 lg:space-y-6">
+        <div className="p-3 lg:p-6 max-w-6xl mx-auto space-y-4 lg:space-y-6 pb-24 lg:pb-6">
 
           {/* ═══ DASHBOARD ═══ */}
           {activeSection === 'dashboard' && <>
@@ -1793,7 +1828,7 @@ const MileageTool = ({ onBack, windowHeight }) => {
           </>}
 
           {/* ═══ EXPORT ═══ */}
-          {activeSection === 'export' && (true) && (() => {
+          {activeSection === 'export' && isAdmin && (() => {
             const { summary, rows, headers } = buildExportRows(exportType);
             const expPeriods = getExportPeriods();
             const recWithKm = exportType === 'monthly' ? rows.filter(r => (r[5]||0) > 0) : [];
@@ -1921,7 +1956,7 @@ const MileageTool = ({ onBack, windowHeight }) => {
           })()}
 
 
-          {activeSection === 'ai' && (() => {
+          {activeSection === 'ai' && isAdmin && (() => {
 
             const COST_PER_CALL = 0.002;
             const estimatedTotal = (aiUsageCount * COST_PER_CALL).toFixed(3);
@@ -2480,6 +2515,22 @@ ${deptAnalysisLines}
             );
           })()}
 
+        </div>
+      </div>
+
+      {/* ── Mobile Bottom Tab Bar ── */}
+      <div className="fixed bottom-0 left-0 right-0 lg:hidden bg-slate-900 border-t border-slate-700 z-[9990]" style={{paddingBottom:'env(safe-area-inset-bottom)'}}>
+        <div className="flex items-stretch" style={{height:'60px'}}>
+          {mobileBottomItems.map(item => (
+            <button key={item.key} onClick={() => setActiveSection(item.key)}
+              className={`flex-1 flex flex-col items-center justify-center gap-0.5 transition-all active:bg-slate-800 ${activeSection === item.key ? 'text-emerald-400' : 'text-slate-500'}`}>
+              <span style={{fontSize:'20px',lineHeight:1}}>{item.icon}</span>
+              <span style={{fontSize:'11px',fontWeight:700,lineHeight:1}}>{item.label}</span>
+              {activeSection === item.key && (
+                <span className="absolute bottom-0 w-8 h-0.5 bg-emerald-400 rounded-t-full" />
+              )}
+            </button>
+          ))}
         </div>
       </div>
 
