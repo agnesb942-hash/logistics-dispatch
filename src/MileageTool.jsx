@@ -49,7 +49,7 @@ const DEFAULT_VEHICLES = [
   { id:'v36',plate:'BQC-3973',name:'BQC-3973',deptId:'dept_sale',assignedTo:'',status:'active' },
 ];
 
-// 2月份初始里程（作為 seed data）
+// 2026 年 2 月回報里程（作為各車輛已知基準值）
 const FEB_MILEAGE = {
   'BMQ-6180':321243,'BMT-6092':291555,'BSQ-7353':198144,'BUB-0572':273964,
   'BUB-1036':355468,'BUB-1332':359884,'BUB-1562':310872,'BZH-7903':195169,
@@ -349,8 +349,8 @@ const MileageTool = ({ onBack, windowHeight }) => {
     // 優先從 monthlyRecords 找前一期記錄
     const rec = monthlyRecords.find(r => r.vehiclePlate === vehiclePlate && r.period === prev);
     if (rec) return rec.odometerReading;
-    // FEB seed 只在前一期恰好是 2026-02 時作為回退值
-    // 不可用於其他缺失期別（例如：補登 2026-01 的前一期是 2025-12，不應回傳 FEB 值）
+    // 2026-02 回報數據：僅在前一期恰好是 2026-02 時作為回退值
+    // 補登 2026-01 → 前一期 = 2025-12 → 不觸發此分支（正確回傳 null）
     if (prev === '2026-02') return FEB_MILEAGE[vehiclePlate] || null;
     return null;
   };
@@ -365,12 +365,12 @@ const MileageTool = ({ onBack, windowHeight }) => {
 
     const relevantRecords = monthlyRecords.filter(r => r.vehiclePlate === veh.plate);
 
-    // 將 FEB seed（2026-02）納入衝突分析，讓補登 2025-12、2026-01 時
+    // 將 2026-02 回報數據納入衝突分析，讓補登 2025-12、2026-01 時
     // 能正確偵測「超越後期（OVERFLOW）」衝突
     const febReading = FEB_MILEAGE[veh.plate];
     const hasFebInRecords = relevantRecords.some(r => r.period === '2026-02');
     const allRecords = (febReading && !hasFebInRecords)
-      ? [...relevantRecords, { id: '__seed_feb__', vehiclePlate: veh.plate, period: '2026-02', odometerReading: febReading, retroactive: false, notes: '（種子資料）' }]
+      ? [...relevantRecords, { id: '__seed_feb__', vehiclePlate: veh.plate, period: '2026-02', odometerReading: febReading, retroactive: false, notes: '（2026/02 回報數據）' }]
       : relevantRecords;
 
     if (allRecords.length === 0) return null;
@@ -1005,7 +1005,7 @@ const MileageTool = ({ onBack, windowHeight }) => {
                     <th className="text-left px-4 py-3 font-bold text-gray-600">部門</th>
                     <th className="text-left px-4 py-3 font-bold text-gray-600">負責人</th>
                     <th className="text-center px-4 py-3 font-bold text-gray-600">狀態</th>
-                    <th className="text-right px-4 py-3 font-bold text-gray-600">2月里程</th>
+                    <th className="text-right px-4 py-3 font-bold text-gray-600">2026/02 回報里程</th>
                     <th className="text-center px-4 py-3 font-bold text-gray-600">操作</th>
                   </tr>
                 </thead>
@@ -1190,7 +1190,7 @@ const MileageTool = ({ onBack, windowHeight }) => {
                         {c.record && (
                           <div className="mt-1.5 bg-white rounded px-2 py-1 text-gray-500 text-xs">
                             現有記錄：{c.record.period} · {fmtNum(c.record.odometerReading)} km
-                            {c.record.id === '__seed_feb__' && <span className="ml-1 text-blue-500">（2月起始資料）</span>}
+                            {c.record.id === '__seed_feb__' && <span className="ml-1 text-blue-500">（2026/02 回報數據）</span>}
                             {c.record.retroactive && c.record.id !== '__seed_feb__' && <span className="ml-1 text-amber-500">（補登）</span>}
                           </div>
                         )}
