@@ -2215,7 +2215,7 @@ ${deptAnalysisLines}
   <div data-card style="margin-bottom:10px;">
     <div style="background:#fff1f2;border:1.5px solid #fecdd3;border-left:5px solid #be123c;border-radius:8px;padding:12px 14px;">
       <div style="display:flex;align-items:center;gap:6px;margin-bottom:6px;"><span style="font-size:16px;">🚨</span><b style="color:#be123c;font-size:13px;">異常高里程預警（超過平均 200%）</b></div>
-      <div style="margin-bottom:5px;">${anom.map(v=>`<span style="display:inline-block;background:#be123c;color:#fff;border-radius:4px;padding:2px 8px;font-size:10.5px;font-weight:700;margin:2px 3px 2px 0;">${v.plate} ${v.km.toLocaleString()} km</span>`).join('')}</div>
+      <div style="display:flex;flex-wrap:wrap;gap:5px;margin-bottom:5px;">${anom.map(v=>`<div style="background:#be123c;color:#fff;border-radius:4px;padding:3px 10px;font-size:11px;font-weight:700;white-space:nowrap;">${v.plate}&nbsp;&nbsp;${v.km.toLocaleString()} km</div>`).join('')}</div>
       <div style="font-size:11px;color:#9f1239;">建議立即確認車輛使用狀況、里程紀錄正確性及駕駛行為。</div>
     </div>
   </div>`:''}
