@@ -2052,7 +2052,7 @@ ${deptDispatchLines}
               const b5      = sd.bottom5 || [];
               const anom    = sd.anomalies || [];
 
-              // 解析 5 個區塊
+              // ── 解析 5 個分析區塊 ────────────────────────────────────
               const splitSections = (text) => {
                 const lines = text.split('\n');
                 const buf   = {s1:[],s2:[],s3:[],s4:[],s5:[]};
@@ -2067,200 +2067,229 @@ ${deptDispatchLines}
                 for (const line of lines) {
                   const plain = line.replace(/\*+/g,'').replace(/^\d+[.、)]\s*/,'').trim();
                   if (plain.length > 0 && plain.length < 22) {
-                    let matched = false;
+                    let hit = false;
                     for (const {keys,t} of heads) {
-                      if (keys.some(k=>plain.includes(k))){ cur=t; matched=true; break; }
+                      if (keys.some(k=>plain.includes(k))){ cur=t; hit=true; break; }
                     }
-                    if (matched) continue;
+                    if (hit) continue;
                   }
                   if (cur) buf[cur].push(line);
                 }
                 return Object.fromEntries(Object.entries(buf).map(([k,v])=>[k,v.join('\n').trim()]));
               };
-
               const secs     = splitSections(displayResult);
               const allEmpty = !secs.s1&&!secs.s2&&!secs.s3&&!secs.s4&&!secs.s5;
-
-              const R = (t) => (t||'').replace(/\*\*(.+?)\*\*/g,'<b>$1</b>').replace(/\n/g,'<br>') || '<span style="color:#9ca3af;font-style:italic;">無資料</span>';
-
+              const R = (t) => (t||'').replace(/\*\*(.+?)\*\*/g,'<b>$1</b>').replace(/\n/g,'<br>')
+                || '<span style="color:#9ca3af;font-style:italic;">無資料</span>';
               const buildList = (t) => {
                 if (!t||!t.trim()) return '<span style="color:#9ca3af;">—</span>';
                 const items = t.split('\n').filter(l=>l.trim()&&!/^[\s*]+$/.test(l))
-                  .map(l=>l.replace(/^[-•·✦\d]+[.、)]*\s*/,'').replace(/\*\*/g,'').trim())
-                  .filter(l=>l.length>3);
+                  .map(l=>l.replace(/^[-•·✦\d]+[.、)]*\s*/,'').replace(/\*\*/g,'').trim()).filter(l=>l.length>3);
                 return items.length
                   ? items.map(it=>`<div style="display:flex;gap:8px;margin:5px 0;align-items:flex-start;"><span style="color:#15803d;font-weight:900;flex-shrink:0;">✦</span><span>${it}</span></div>`).join('')
                   : R(t);
               };
-
-              // 調度建議：保留【部門】格式的縮排
               const buildDispatch = (t) => {
                 if (!t||!t.trim()) return '<span style="color:#9ca3af;">—</span>';
                 return t.split('\n').map(line => {
                   const clean = line.replace(/\*\*/g,'').trimEnd();
-                  if (/^【.+】/.test(clean))
-                    return `<div style="font-weight:800;color:#1e40af;margin:10px 0 4px;font-size:12.5px;">${clean}</div>`;
-                  if (/^[-·•]/.test(clean.trim()))
-                    return `<div style="display:flex;gap:8px;margin:3px 0;padding-left:12px;"><span style="color:#2563eb;flex-shrink:0;">▸</span><span>${clean.trim().slice(1).trim()}</span></div>`;
+                  if (/^【.+】/.test(clean)) return `<div style="font-weight:800;color:#1e40af;margin:10px 0 4px;">${clean}</div>`;
+                  if (/^[-·•]/.test(clean.trim())) return `<div style="display:flex;gap:8px;margin:3px 0;padding-left:12px;"><span style="color:#2563eb;flex-shrink:0;">▸</span><span>${clean.trim().slice(1).trim()}</span></div>`;
                   return clean ? `<div style="margin:3px 0;padding-left:12px;color:#374151;">${clean}</div>` : '';
                 }).join('');
               };
-
               const maxKm = t5.length ? t5[0].km : 1;
               const BLUES = ['#1d4ed8','#3b82f6','#60a5fa','#93c5fd','#bfdbfe'];
               const barRow = (plate,km,color,base) => {
                 const pct = Math.max(5,Math.round((km/(base||1))*100));
-                return `<div style="display:flex;align-items:center;gap:8px;margin:4px 0;">
-                  <span style="width:62px;font-size:11px;font-weight:700;color:#1e293b;flex-shrink:0;">${plate}</span>
-                  <div style="flex:1;background:#e2e8f0;border-radius:4px;height:14px;overflow:hidden;">
-                    <div style="width:${pct}%;height:14px;background:${color};border-radius:4px;"></div>
-                  </div>
-                  <span style="width:70px;text-align:right;font-size:11px;font-weight:700;color:#1e293b;">${km.toLocaleString()} km</span>
-                </div>`;
+                return `<div style="display:flex;align-items:center;gap:8px;margin:4px 0;"><span style="width:62px;font-size:11px;font-weight:700;color:#1e293b;flex-shrink:0;">${plate}</span><div style="flex:1;background:#e2e8f0;border-radius:4px;height:14px;overflow:hidden;"><div style="width:${pct}%;height:14px;background:${color};border-radius:4px;"></div></div><span style="width:70px;text-align:right;font-size:11px;font-weight:700;color:#1e293b;">${km.toLocaleString()} km</span></div>`;
               };
 
-              const card = (ico,title,tc,bg,border,body) =>
-                `<div style="background:${bg};border-left:5px solid ${border};border-radius:10px;padding:14px 16px;margin-bottom:10px;break-inside:avoid;">
-                  <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;">
-                    <span style="font-size:18px;">${ico}</span>
-                    <b style="font-size:13.5px;color:${tc};">${title}</b>
-                  </div>
-                  <div style="font-size:12px;line-height:1.85;color:#374151;">${body}</div>
-                </div>`;
+              // ── 建立完整報告 HTML（單一長頁，每個卡片加 data-card 標記）──
+              const FONT = `font-family:'Microsoft JhengHei','PingFang TC',Arial,sans-serif;`;
+              const W = 760;
+              const reportHTML = `
+<div id="pdf-root" style="${FONT}width:${W}px;background:#fff;padding:20px 0;box-sizing:border-box;font-size:12.5px;color:#1f2937;">
 
-              const reportHTML = `<div id="pdf-report" style="width:760px;background:#fff;padding:28px 32px;font-family:'Microsoft JhengHei','PingFang TC',Arial,sans-serif;font-size:12.5px;color:#1f2937;box-sizing:border-box;">
-
-  <div style="background:linear-gradient(135deg,#4338ca 0%,#7c3aed 55%,#a855f7 100%);border-radius:12px;padding:20px 26px 18px;margin-bottom:14px;position:relative;overflow:hidden;">
-    <div style="position:absolute;right:-18px;top:-18px;width:100px;height:100px;background:rgba(255,255,255,0.12);border-radius:50%;"></div>
-    <div style="position:absolute;right:26px;top:16px;font-size:28px;">🤖</div>
-    <div style="color:#fff;font-size:19px;font-weight:800;margin-bottom:3px;">AI 物流診斷報告</div>
-    <div style="color:rgba(255,255,255,.82);font-size:11px;margin-bottom:9px;">車隊里程智慧分析系統 · 由 Claude AI 生成</div>
-    <span style="display:inline-block;background:rgba(255,255,255,0.25);color:#fff;border-radius:20px;padding:3px 12px;font-size:10.5px;font-weight:700;">📅 ${label}</span>
-  </div>
-
-  <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-bottom:12px;">
-    ${[['🗂️','分析類型',`${stats.rangeTyp||'—'}（${stats.periods||1}個月）`],['🏢','部門',`${(sd.label||'全部').split('｜')[0]}`],['🚛','有效車輛',`${stats.count||0} 輛`],['🕐','產生時間',savedAt]].map(([ico,lbl,val])=>
-    `<div style="background:#f8fafc;border:1.5px solid #e2e8f0;border-radius:8px;padding:9px 11px;">
-      <div style="font-size:15px;margin-bottom:3px;">${ico}</div>
-      <div style="font-size:9px;color:#94a3b8;text-transform:uppercase;font-weight:600;">${lbl}</div>
-      <div style="font-size:12px;font-weight:800;color:#1e293b;margin-top:2px;">${val}</div>
-    </div>`).join('')}
-  </div>
-
-  <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-bottom:12px;">
-    <div style="background:#eff6ff;border:1.5px solid #bfdbfe;border-radius:8px;padding:10px;text-align:center;">
-      <div style="font-size:20px;font-weight:800;color:#1d4ed8;">${stats.total?stats.total.toLocaleString():'—'}</div>
-      <div style="font-size:10px;color:#3b82f6;margin-top:3px;">📦 總里程 (km)</div>
-    </div>
-    <div style="background:#f0fdf4;border:1.5px solid #bbf7d0;border-radius:8px;padding:10px;text-align:center;">
-      <div style="font-size:20px;font-weight:800;color:#15803d;">${stats.avg?stats.avg.toLocaleString():'—'}</div>
-      <div style="font-size:10px;color:#16a34a;margin-top:3px;">📊 平均/輛/月</div>
-    </div>
-    <div style="background:#fefce8;border:1.5px solid #fde68a;border-radius:8px;padding:10px;text-align:center;">
-      <div style="font-size:20px;font-weight:800;color:#92400e;">${stats.median?stats.median.toLocaleString():'—'}</div>
-      <div style="font-size:10px;color:#b45309;margin-top:3px;">📐 中位數 (km)</div>
-    </div>
-    <div style="background:#fff1f2;border:1.5px solid #fecdd3;border-radius:8px;padding:10px;text-align:center;">
-      <div style="font-size:20px;font-weight:800;color:#be123c;">${stats.anomalyCount||0}</div>
-      <div style="font-size:10px;color:#e11d48;margin-top:3px;">⚠️ 異常高里程</div>
+  <!-- 頁首 -->
+  <div data-card style="margin-bottom:12px;">
+    <div style="background:linear-gradient(135deg,#4338ca 0%,#7c3aed 55%,#a855f7 100%);border-radius:12px;padding:22px 28px 20px;position:relative;overflow:hidden;">
+      <div style="position:absolute;right:-18px;top:-18px;width:100px;height:100px;background:rgba(255,255,255,0.12);border-radius:50%;"></div>
+      <div style="position:absolute;right:26px;top:16px;font-size:28px;">🤖</div>
+      <div style="color:#fff;font-size:20px;font-weight:800;margin-bottom:3px;">AI 物流診斷報告</div>
+      <div style="color:rgba(255,255,255,.82);font-size:11px;margin-bottom:9px;">車隊里程智慧分析系統 · 由 Claude AI 生成</div>
+      <span style="display:inline-block;background:rgba(255,255,255,0.25);color:#fff;border-radius:20px;padding:3px 12px;font-size:10.5px;font-weight:700;">📅 ${label}</span>
     </div>
   </div>
 
-  <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:10px;">
-    <div style="background:#f8fafc;border:1.5px solid #e2e8f0;border-radius:8px;padding:10px 12px;">
-      <div style="font-size:11px;font-weight:700;color:#475569;margin-bottom:6px;">🔝 里程前 5 名</div>
-      ${t5.length?t5.map((v,i)=>barRow(v.plate,v.km,BLUES[i],maxKm)).join(''):'<div style="color:#9ca3af;font-size:11px;">無資料</div>'}
-    </div>
-    <div style="background:#f8fafc;border:1.5px solid #e2e8f0;border-radius:8px;padding:10px 12px;">
-      <div style="font-size:11px;font-weight:700;color:#475569;margin-bottom:6px;">🔻 里程後 5 名</div>
-      ${b5.length?b5.map(v=>barRow(v.plate,v.km,'#94a3b8',maxKm)).join(''):'<div style="color:#9ca3af;font-size:11px;">無資料</div>'}
+  <!-- 元資料 -->
+  <div data-card style="margin-bottom:10px;">
+    <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:8px;">
+      ${[['🗂️','分析類型',`${stats.rangeTyp||'—'}（${stats.periods||1}個月）`],['🏢','部門',`${(sd.label||'全部').split('｜')[0]}`],['🚛','有效車輛',`${stats.count||0} 輛`],['🕐','產生時間',savedAt]].map(([ico,lbl,val])=>
+      `<div style="background:#f8fafc;border:1.5px solid #e2e8f0;border-radius:8px;padding:10px 12px;"><div style="font-size:16px;margin-bottom:3px;">${ico}</div><div style="font-size:9px;color:#94a3b8;text-transform:uppercase;font-weight:600;">${lbl}</div><div style="font-size:12px;font-weight:800;color:#1e293b;margin-top:2px;">${val}</div></div>`).join('')}
     </div>
   </div>
 
-  ${anom.length>0?`<div style="background:#fff1f2;border:1.5px solid #fecdd3;border-left:5px solid #be123c;border-radius:8px;padding:10px 12px;margin-bottom:10px;">
-    <div style="display:flex;align-items:center;gap:6px;margin-bottom:6px;"><span style="font-size:16px;">🚨</span><b style="color:#be123c;font-size:13px;">異常高里程預警（超過平均 200%）</b></div>
-    <div>${anom.map(v=>`<span style="display:inline-block;background:#be123c;color:#fff;border-radius:4px;padding:2px 8px;font-size:10.5px;font-weight:700;margin:2px 3px 2px 0;">${v.plate} ${v.km.toLocaleString()} km</span>`).join('')}</div>
-    <div style="font-size:11px;color:#9f1239;margin-top:5px;">建議立即確認車輛使用狀況、里程紀錄正確性及駕駛行為。</div>
+  <!-- KPI -->
+  <div data-card style="margin-bottom:10px;">
+    <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:8px;">
+      <div style="background:#eff6ff;border:1.5px solid #bfdbfe;border-radius:8px;padding:10px;text-align:center;"><div style="font-size:22px;font-weight:800;color:#1d4ed8;">${stats.total?stats.total.toLocaleString():'—'}</div><div style="font-size:10px;color:#3b82f6;margin-top:3px;">📦 總里程 (km)</div></div>
+      <div style="background:#f0fdf4;border:1.5px solid #bbf7d0;border-radius:8px;padding:10px;text-align:center;"><div style="font-size:22px;font-weight:800;color:#15803d;">${stats.avg?stats.avg.toLocaleString():'—'}</div><div style="font-size:10px;color:#16a34a;margin-top:3px;">📊 平均/輛/月</div></div>
+      <div style="background:#fefce8;border:1.5px solid #fde68a;border-radius:8px;padding:10px;text-align:center;"><div style="font-size:22px;font-weight:800;color:#92400e;">${stats.median?stats.median.toLocaleString():'—'}</div><div style="font-size:10px;color:#b45309;margin-top:3px;">📐 中位數 (km)</div></div>
+      <div style="background:#fff1f2;border:1.5px solid #fecdd3;border-radius:8px;padding:10px;text-align:center;"><div style="font-size:22px;font-weight:800;color:#be123c;">${stats.anomalyCount||0}</div><div style="font-size:10px;color:#e11d48;margin-top:3px;">⚠️ 異常高里程</div></div>
+    </div>
+  </div>
+
+  <!-- 排行橫條圖 -->
+  <div data-card style="margin-bottom:10px;">
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;">
+      <div style="background:#f8fafc;border:1.5px solid #e2e8f0;border-radius:8px;padding:10px 12px;">
+        <div style="font-size:11px;font-weight:700;color:#475569;margin-bottom:6px;">🔝 里程前 5 名</div>
+        ${t5.length?t5.map((v,i)=>barRow(v.plate,v.km,BLUES[i],maxKm)).join(''):'<div style="color:#9ca3af;font-size:11px;">無資料</div>'}
+      </div>
+      <div style="background:#f8fafc;border:1.5px solid #e2e8f0;border-radius:8px;padding:10px 12px;">
+        <div style="font-size:11px;font-weight:700;color:#475569;margin-bottom:6px;">🔻 里程後 5 名</div>
+        ${b5.length?b5.map(v=>barRow(v.plate,v.km,'#94a3b8',maxKm)).join(''):'<div style="color:#9ca3af;font-size:11px;">無資料</div>'}
+      </div>
+    </div>
+  </div>
+
+  ${anom.length>0?`
+  <!-- 異常預警 -->
+  <div data-card style="margin-bottom:10px;">
+    <div style="background:#fff1f2;border:1.5px solid #fecdd3;border-left:5px solid #be123c;border-radius:8px;padding:12px 14px;">
+      <div style="display:flex;align-items:center;gap:6px;margin-bottom:6px;"><span style="font-size:16px;">🚨</span><b style="color:#be123c;font-size:13px;">異常高里程預警（超過平均 200%）</b></div>
+      <div style="margin-bottom:5px;">${anom.map(v=>`<span style="display:inline-block;background:#be123c;color:#fff;border-radius:4px;padding:2px 8px;font-size:10.5px;font-weight:700;margin:2px 3px 2px 0;">${v.plate} ${v.km.toLocaleString()} km</span>`).join('')}</div>
+      <div style="font-size:11px;color:#9f1239;">建議立即確認車輛使用狀況、里程紀錄正確性及駕駛行為。</div>
+    </div>
   </div>`:''}
 
   ${allEmpty
-    ? card('📋','完整 AI 診斷報告','#3730a3','#eef2ff','#4f46e5',R(displayResult))
-    : card('📋','整體狀況評估','#3730a3','#eef2ff','#4f46e5',R(secs.s1))
-    + card('🔍','異常車輛分析','#c2410c','#fff7ed','#ea580c',R(secs.s2)||'<span style="color:#9ca3af;">本期無明顯異常車輛。</span>')
-    + card('💡','管理建議','#15803d','#f0fdf4','#16a34a',buildList(secs.s3))
-    + card('🔄','車輛調度建議（依部門）','#1e40af','#eff6ff','#2563eb',buildDispatch(secs.s4))
-    + card('🔮','下期預測','#7e22ce','#faf5ff','#9333ea',R(secs.s5))
+    ? `<div data-card style="margin-bottom:10px;"><div style="background:#eef2ff;border-left:5px solid #4f46e5;border-radius:10px;padding:14px 16px;"><div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;"><span style="font-size:18px;">📋</span><b style="font-size:13.5px;color:#3730a3;">完整 AI 診斷報告</b></div><div style="font-size:12px;line-height:1.85;color:#374151;">${R(displayResult)}</div></div></div>`
+    : `
+  <div data-card style="margin-bottom:10px;"><div style="background:#eef2ff;border-left:5px solid #4f46e5;border-radius:10px;padding:14px 16px;"><div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;"><span style="font-size:18px;">📋</span><b style="font-size:13.5px;color:#3730a3;">整體狀況評估</b></div><div style="font-size:12px;line-height:1.85;color:#374151;">${R(secs.s1)}</div></div></div>
+  <div data-card style="margin-bottom:10px;"><div style="background:#fff7ed;border-left:5px solid #ea580c;border-radius:10px;padding:14px 16px;"><div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;"><span style="font-size:18px;">🔍</span><b style="font-size:13.5px;color:#c2410c;">異常車輛分析</b></div><div style="font-size:12px;line-height:1.85;color:#374151;">${R(secs.s2)||'<span style="color:#9ca3af;">本期無明顯異常車輛。</span>'}</div></div></div>
+  <div data-card style="margin-bottom:10px;"><div style="background:#f0fdf4;border-left:5px solid #16a34a;border-radius:10px;padding:14px 16px;"><div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;"><span style="font-size:18px;">💡</span><b style="font-size:13.5px;color:#15803d;">管理建議</b></div><div style="font-size:12px;line-height:1.85;color:#374151;">${buildList(secs.s3)}</div></div></div>
+  <div data-card style="margin-bottom:10px;"><div style="background:#eff6ff;border-left:5px solid #2563eb;border-radius:10px;padding:14px 16px;"><div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;"><span style="font-size:18px;">🔄</span><b style="font-size:13.5px;color:#1e40af;">車輛調度建議（依部門）</b></div><div style="font-size:12px;line-height:1.85;color:#374151;">${buildDispatch(secs.s4)}</div></div></div>
+  <div data-card style="margin-bottom:10px;"><div style="background:#faf5ff;border-left:5px solid #9333ea;border-radius:10px;padding:14px 16px;"><div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;"><span style="font-size:18px;">🔮</span><b style="font-size:13.5px;color:#7e22ce;">下期預測</b></div><div style="font-size:12px;line-height:1.85;color:#374151;">${R(secs.s5)}</div></div></div>`
   }
 
-  <div style="margin-top:14px;border-top:1px solid #e2e8f0;padding-top:8px;display:flex;justify-content:space-between;align-items:center;font-size:10px;color:#94a3b8;">
-    <span>物流管理平台 · 車輛里程管理系統</span>
-    <span style="background:#ede9fe;color:#5b21b6;border-radius:4px;padding:2px 9px;font-size:10px;font-weight:700;">🤖 Claude AI · Haiku 4.5</span>
+  <!-- 頁尾 -->
+  <div data-card>
+    <div style="border-top:1px solid #e2e8f0;padding-top:8px;display:flex;justify-content:space-between;align-items:center;font-size:10px;color:#94a3b8;">
+      <span>物流管理平台 · 車輛里程管理系統</span>
+      <span style="background:#ede9fe;color:#5b21b6;border-radius:4px;padding:2px 9px;font-size:10px;font-weight:700;">🤖 Claude AI · Haiku 4.5</span>
+    </div>
   </div>
 </div>`;
 
-              // ── 動態載入 html2canvas + jsPDF，產生彩色 PDF 下載 ───────
+              // ── 載入 CDN 套件 ─────────────────────────────────────────
               const loadScript = (src) => new Promise((res,rej) => {
                 const exist = document.querySelector(`script[src="${src}"]`);
-                if (exist) { res(); return; }
-                const s = document.createElement('script');
-                s.src=src; s.onload=res; s.onerror=rej;
+                if (exist && (src.includes('jspdf') ? window.jspdf : window.html2canvas)) { res(); return; }
+                const s = document.createElement('script'); s.src=src; s.onload=res; s.onerror=rej;
                 document.head.appendChild(s);
               });
 
-              try {
-                // 先告知使用者正在處理
-                const btn = document.querySelector('[data-pdf-btn]');
-                if (btn) btn.textContent = '⏳ 產生中...';
+              const btn = document.querySelector('[data-pdf-btn]');
+              if (btn) { btn.disabled=true; btn.textContent='⏳ 產生中...'; }
 
+              try {
                 await loadScript('https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js');
                 await loadScript('https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js');
 
-                // 建立離屏容器（固定寬度，讓 html2canvas 截圖穩定）
+                // 離屏容器，寬度固定
                 const wrap = document.createElement('div');
-                wrap.style.cssText = 'position:fixed;left:-9999px;top:0;width:820px;background:#fff;z-index:-1;';
+                wrap.style.cssText = `position:fixed;left:-9999px;top:0;width:${W+60}px;background:#fff;z-index:-9999;`;
                 wrap.innerHTML = reportHTML;
                 document.body.appendChild(wrap);
 
-                const el = wrap.querySelector('#pdf-report');
-                const canvas = await window.html2canvas(el, {
+                const root = wrap.querySelector('#pdf-root');
+
+                // 截整份報告（scale=2 高解析度）
+                const fullCanvas = await window.html2canvas(root, {
                   scale: 2,
                   useCORS: true,
                   logging: false,
                   backgroundColor: '#ffffff',
-                  width: 760,
-                  windowWidth: 820,
+                  width: W,
+                  windowWidth: W + 60,
                 });
                 document.body.removeChild(wrap);
 
-                // A4 尺寸：210 x 297 mm
+                // ── 計算每張頁面要裁切的像素範圍 ────────────────────────
                 const { jsPDF } = window.jspdf;
-                const pdf    = new jsPDF({ orientation:'portrait', unit:'mm', format:'a4' });
-                const pdfW   = pdf.internal.pageSize.getWidth();   // 210
-                const pdfH   = pdf.internal.pageSize.getHeight();  // 297
-                const imgW   = canvas.width;
-                const imgH   = canvas.height;
-                const ratio  = pdfW / (imgW / 2);   // canvas scale=2，所以除以2
-                const totalH = (imgH / 2) * ratio;  // 報告在 PDF 中的總高度 (mm)
+                const SCALE      = 2;                           // html2canvas scale
+                const MARGIN_MM  = 10;                          // PDF 上下左右留白(mm)
+                const pdf        = new jsPDF({ orientation:'portrait', unit:'mm', format:'a4' });
+                const pdfW_mm    = pdf.internal.pageSize.getWidth();   // 210
+                const pdfH_mm    = pdf.internal.pageSize.getHeight();  // 297
+                const contentW_mm = pdfW_mm - MARGIN_MM * 2;          // 190
+                const contentH_mm = pdfH_mm - MARGIN_MM * 2;          // 277
 
-                const imgData = canvas.toDataURL('image/jpeg', 0.97);
+                // canvas px → mm 比例
+                const canvasW_px   = fullCanvas.width;          // = W * SCALE
+                const px_per_mm    = canvasW_px / contentW_mm;  // px / mm（水平方向）
+                const pageH_px     = Math.floor(contentH_mm * px_per_mm); // 每頁可用高度(px)
+                const totalH_px    = fullCanvas.height;
 
-                // 分頁處理：超過一頁則自動換頁
-                let posY = 0;
-                let page = 0;
-                while (posY < totalH) {
-                  if (page > 0) pdf.addPage();
-                  pdf.addImage(imgData, 'JPEG', 0, -posY, pdfW, totalH);
-                  posY += pdfH;
-                  page++;
+                // 找出每個 [data-card] 元素的 bottom（px，乘以 SCALE）
+                // 這些是「安全的切割點」：卡片結束後的空白處
+                const cardEls    = Array.from(root.querySelectorAll('[data-card]'));
+                // 取得每個卡片底部的 px 位置（相對於 root top）
+                const rootTop    = root.getBoundingClientRect().top;
+                const safeBreaks = cardEls.map(el => {
+                  const b = el.getBoundingClientRect().bottom - rootTop;
+                  return Math.round(b * SCALE);  // 換算成 canvas px
+                }).filter(b => b > 0 && b < totalH_px);
+
+                // ── 貪心分頁：找最近的 safeBreak 不超過頁面高度 ────────
+                const pageSlices = []; // [{start, end}]
+                let pageStart = 0;
+                while (pageStart < totalH_px) {
+                  const pageEnd_ideal = pageStart + pageH_px;
+                  if (pageEnd_ideal >= totalH_px) {
+                    // 最後一片
+                    pageSlices.push({ start: pageStart, end: totalH_px });
+                    break;
+                  }
+                  // 找在 pageStart ~ pageEnd_ideal 範圍內，最大的 safeBreak
+                  const candidates = safeBreaks.filter(b => b > pageStart && b <= pageEnd_ideal);
+                  const cutAt = candidates.length > 0
+                    ? candidates[candidates.length - 1]  // 最靠近頁底的卡片結束點
+                    : pageEnd_ideal;                     // 沒有安全點則強制切（超長卡片）
+                  pageSlices.push({ start: pageStart, end: cutAt });
+                  pageStart = cutAt;
                 }
 
-                const fname = 'AI診斷報告_' + (sd.label||'').replace(/[｜～\s\/]/g,'_') + '.pdf';
+                // ── 依 pageSlices 裁切 canvas，加入 PDF ─────────────────
+                pageSlices.forEach(({ start, end }, idx) => {
+                  if (idx > 0) pdf.addPage();
+
+                  const sliceH_px = end - start;
+                  const sliceH_mm = sliceH_px / px_per_mm;
+
+                  // 用 OffscreenCanvas（或 createImageBitmap）裁切
+                  const sliceCanvas = document.createElement('canvas');
+                  sliceCanvas.width  = canvasW_px;
+                  sliceCanvas.height = sliceH_px;
+                  const ctx = sliceCanvas.getContext('2d');
+                  ctx.fillStyle = '#ffffff';
+                  ctx.fillRect(0, 0, sliceCanvas.width, sliceCanvas.height);
+                  ctx.drawImage(fullCanvas, 0, -start);
+
+                  const imgData = sliceCanvas.toDataURL('image/jpeg', 0.96);
+                  pdf.addImage(imgData, 'JPEG', MARGIN_MM, MARGIN_MM, contentW_mm, sliceH_mm);
+                });
+
+                const fname = 'AI診斷報告_' + (sd.label||'報告').replace(/[｜～\s\/]/g,'_') + '.pdf';
                 pdf.save(fname);
 
-                if (btn) btn.textContent = '📄 PDF 下載';
               } catch(err) {
                 console.error('[PDF]', err);
-                alert('PDF 產生失敗，請確認網路連線（需載入 CDN 套件）\n錯誤：' + err.message);
+                alert('PDF 產生失敗：' + err.message);
+              } finally {
+                if (btn) { btn.disabled=false; btn.textContent='📄 PDF 下載'; }
               }
             };
 
