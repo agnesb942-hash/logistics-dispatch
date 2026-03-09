@@ -2198,9 +2198,9 @@ ${deptDispatchLines}
                 await loadScript('https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js');
                 await loadScript('https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js');
 
-                // 離屏容器，寬度固定
+                // 離屏容器：visibility:hidden 保持版面計算正確，但不顯示在畫面上
                 const wrap = document.createElement('div');
-                wrap.style.cssText = `position:fixed;left:-9999px;top:0;width:${W+60}px;background:#fff;z-index:-9999;`;
+                wrap.style.cssText = `position:absolute;left:0;top:0;width:${W+60}px;background:#fff;visibility:hidden;pointer-events:none;z-index:-9999;`;
                 wrap.innerHTML = reportHTML;
                 document.body.appendChild(wrap);
 
@@ -2215,33 +2215,35 @@ ${deptDispatchLines}
                   width: W,
                   windowWidth: W + 60,
                 });
-                document.body.removeChild(wrap);
 
                 // ── 計算每張頁面要裁切的像素範圍 ────────────────────────
                 const { jsPDF } = window.jspdf;
-                const SCALE      = 2;                           // html2canvas scale
-                const MARGIN_MM  = 10;                          // PDF 上下左右留白(mm)
-                const pdf        = new jsPDF({ orientation:'portrait', unit:'mm', format:'a4' });
-                const pdfW_mm    = pdf.internal.pageSize.getWidth();   // 210
-                const pdfH_mm    = pdf.internal.pageSize.getHeight();  // 297
-                const contentW_mm = pdfW_mm - MARGIN_MM * 2;          // 190
-                const contentH_mm = pdfH_mm - MARGIN_MM * 2;          // 277
+                const SCALE       = 2;
+                const MARGIN_MM   = 10;
+                const pdf         = new jsPDF({ orientation:'portrait', unit:'mm', format:'a4' });
+                const pdfW_mm     = pdf.internal.pageSize.getWidth();
+                const pdfH_mm     = pdf.internal.pageSize.getHeight();
+                const contentW_mm = pdfW_mm - MARGIN_MM * 2;
+                const contentH_mm = pdfH_mm - MARGIN_MM * 2;
 
-                // canvas px → mm 比例
-                const canvasW_px   = fullCanvas.width;          // = W * SCALE
-                const px_per_mm    = canvasW_px / contentW_mm;  // px / mm（水平方向）
-                const pageH_px     = Math.floor(contentH_mm * px_per_mm); // 每頁可用高度(px)
-                const totalH_px    = fullCanvas.height;
+                const canvasW_px  = fullCanvas.width;
+                const px_per_mm   = canvasW_px / contentW_mm;
+                const pageH_px    = Math.floor(contentH_mm * px_per_mm);
+                const totalH_px   = fullCanvas.height;
 
-                // 找出每個 [data-card] 元素的 bottom（px，乘以 SCALE）
-                // 這些是「安全的切割點」：卡片結束後的空白處
+                // 用 offsetTop + offsetHeight 取得每個卡片底部位置
+                // （不依賴 getBoundingClientRect，離屏時也準確）
                 const cardEls    = Array.from(root.querySelectorAll('[data-card]'));
-                // 取得每個卡片底部的 px 位置（相對於 root top）
-                const rootTop    = root.getBoundingClientRect().top;
                 const safeBreaks = cardEls.map(el => {
-                  const b = el.getBoundingClientRect().bottom - rootTop;
-                  return Math.round(b * SCALE);  // 換算成 canvas px
+                  // 累加 offsetTop 直到 root，取得相對於 root 的頂部距離
+                  let top = 0;
+                  let cur = el;
+                  while (cur && cur !== root) { top += cur.offsetTop; cur = cur.offsetParent; }
+                  const bottom = top + el.offsetHeight;
+                  return Math.round(bottom * SCALE);
                 }).filter(b => b > 0 && b < totalH_px);
+
+                document.body.removeChild(wrap);
 
                 // ── 貪心分頁：找最近的 safeBreak 不超過頁面高度 ────────
                 const pageSlices = []; // [{start, end}]
