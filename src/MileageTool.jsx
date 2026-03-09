@@ -333,6 +333,10 @@ const MileageTool = ({ onBack, windowHeight }) => {
   // ── UI State ────────────────────────────────────────────────────
   const [activeSection, setActiveSection] = useState('dashboard'); // dashboard | monthly | adhoc | vehicles | personnel | departments | export
   const [selectedPeriod, setSelectedPeriod] = useState(getTaiwanPeriod());
+  // 儀表板週期範圍
+  const [dashRange, setDashRange] = useState('month'); // month | quarter | year | custom
+  const [dashFrom, setDashFrom] = useState('');
+  const [dashTo, setDashTo] = useState('');
   const [filterDept, setFilterDept] = useState('all');
   const [showModal, setShowModal] = useState(null); // null | 'monthly' | 'adhoc' | 'vehicle' | 'person' | 'dept'
   const [editItem, setEditItem] = useState(null);
@@ -388,7 +392,6 @@ const MileageTool = ({ onBack, windowHeight }) => {
       const snap = await fb.getDoc(fb.doc(fb.db, 'mileage_config', collName));
       if (snap.exists()) return snap.data().data;
     } catch (e) { console.warn('[MileageTool] load failed:', collName, e); }
-    if (prev === BASELINE_PERIOD) return BASELINE_MILEAGE[vehiclePlate] ?? null;
     return null;
   };
 
@@ -396,6 +399,7 @@ const MileageTool = ({ onBack, windowHeight }) => {
   useEffect(() => {
     const load = async () => {
       setDataLoading(true);
+      try {
       const [depts, vehs, pers, monthly, adhoc] = await Promise.all([
         loadCollection('departments'),
         loadCollection('vehicles'),
@@ -413,6 +417,7 @@ const MileageTool = ({ onBack, windowHeight }) => {
         setMonthlyRecords([...seedOnly, ...monthly]);
       }
       if (adhoc) setAdhocRecords(adhoc);
+      } catch(e) { console.error('[MileageTool] initial load error:', e); }
       setDataLoading(false);
     };
     load();
@@ -782,14 +787,11 @@ const MileageTool = ({ onBack, windowHeight }) => {
     ].join('\n');
     const blob = new Blob([html], { type: 'text/html;charset=utf-8' });
     const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.target = '_blank';
-    a.rel = 'noopener';
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    setTimeout(() => URL.revokeObjectURL(url), 3000);
+    const win = window.open(url, '_blank');
+    if (!win) {
+      alert('請允許彈出視窗後再試，或至瀏覽器設定允許此網站開啟新視窗。');
+    }
+    setTimeout(() => URL.revokeObjectURL(url), 5000);
   };
 
 
@@ -846,6 +848,53 @@ const MileageTool = ({ onBack, windowHeight }) => {
 
     return { trendData, vehicleData };
   }, [monthlyRecords, periodRecords, selectedPeriod, filterDept, vehicles]);
+
+  // ── 儀表板週期範圍：計算要顯示的 period 清單 ─────────────────────
+  const dashPeriods = useMemo(() => {
+    const cur = selectedPeriod || getTaiwanPeriod();
+    const [y, m] = cur.split('-').map(Number);
+    if (dashRange === 'month') {
+      return [cur];
+    } else if (dashRange === 'quarter') {
+      const qStart = Math.floor((m - 1) / 3) * 3 + 1;
+      return [0, 1, 2].map(i => {
+        const mm = qStart + i;
+        return y + '-' + String(mm).padStart(2, '0');
+      });
+    } else if (dashRange === 'year') {
+      return Array.from({ length: 12 }, (_, i) => y + '-' + String(i + 1).padStart(2, '0'));
+    } else if (dashRange === 'custom' && dashFrom && dashTo) {
+      const all = [...new Set(monthlyRecords.map(r => r.period))].sort();
+      return all.filter(p => p >= dashFrom && p <= dashTo);
+    }
+    return [cur];
+  }, [dashRange, dashFrom, dashTo, selectedPeriod, monthlyRecords]);
+
+  const dashRecords = useMemo(() =>
+    monthlyRecords.filter(r =>
+      dashPeriods.includes(r.period) &&
+      (filterDept === 'all' || vehicles.find(v => v.plate === r.vehiclePlate)?.deptId === filterDept)
+    ),
+  [monthlyRecords, dashPeriods, filterDept, vehicles]);
+
+  const dashStats = useMemo(() => {
+    const activeVehs = vehicles.filter(v => v.status === 'active' && (filterDept === 'all' || v.deptId === filterDept));
+    // 回報進度：最新期別
+    const latestPeriod = dashPeriods[dashPeriods.length - 1];
+    const reportedInLatest = activeVehs.filter(v => dashRecords.some(r => r.vehiclePlate === v.plate && r.period === latestPeriod));
+    const missingInLatest = activeVehs.filter(v => !dashRecords.some(r => r.vehiclePlate === v.plate && r.period === latestPeriod));
+    const totalKm = dashRecords.reduce((s, r) => s + (r.monthlyMileage || 0), 0);
+    const withKm = dashRecords.filter(r => (r.monthlyMileage || 0) > 0);
+    const avgKm = withKm.length > 0 ? Math.round(totalKm / withKm.length) : 0;
+    const adhocCount = adhocRecords.filter(r =>
+      dashPeriods.includes(r.date?.slice(0, 7)) &&
+      (filterDept === 'all' || vehicles.find(v => v.plate === r.vehiclePlate)?.deptId === filterDept)
+    ).length;
+    const adhocKm = adhocRecords
+      .filter(r => dashPeriods.includes(r.date?.slice(0, 7)) && (filterDept === 'all' || vehicles.find(v => v.plate === r.vehiclePlate)?.deptId === filterDept))
+      .reduce((s, r) => s + (r.tripMileage || 0), 0);
+    return { reported: reportedInLatest.length, total: activeVehs.length, missing: missingInLatest, totalKm, avgKm, adhocCount, adhocKm, latestPeriod };
+  }, [dashRecords, dashPeriods, vehicles, filterDept, adhocRecords]);
 
 
   // ═════════════════════════════════════════════════════════════════
@@ -1014,52 +1063,73 @@ const MileageTool = ({ onBack, windowHeight }) => {
 
           {/* ═══ DASHBOARD ═══ */}
           {activeSection === 'dashboard' && <>
-            <div className="flex items-center justify-between">
+            {/* 頂部：標題 + 部門篩選 + 基準期別 */}
+            <div className="flex items-center justify-between flex-wrap gap-2">
               <h2 className="text-lg font-bold text-gray-800">儀表板</h2>
-              <div className="flex items-center gap-3">
+              <div className="flex items-center gap-2 flex-wrap">
                 <select value={filterDept} onChange={e => setFilterDept(e.target.value)}
                   className="border border-gray-300 rounded-lg px-3 py-1.5 text-xs">
                   <option value="all">全部門</option>
                   {departments.map(d => <option key={d.id} value={d.id}>{d.name}</option>)}
                 </select>
                 <input type="month" value={selectedPeriod} onChange={e => setSelectedPeriod(e.target.value)}
-                  className="border border-gray-300 rounded-lg px-3 py-1.5 text-xs" />
+                  className="border border-gray-300 rounded-lg px-2 py-1.5 text-xs" />
               </div>
+            </div>
+
+            {/* 週期範圍切換 */}
+            <div className="flex items-center gap-2 flex-wrap">
+              {[['month','本月'],['quarter','本季'],['year','本年'],['custom','自訂']].map(([v,l]) => (
+                <button key={v} onClick={() => setDashRange(v)}
+                  className={'px-3 py-1.5 rounded-lg text-xs font-bold border transition-all ' + (dashRange === v ? 'bg-blue-600 text-white border-blue-600' : 'bg-white text-gray-500 border-gray-200 hover:border-blue-300')}>
+                  {l}
+                </button>
+              ))}
+              {dashRange === 'custom' && <>
+                <input type="month" value={dashFrom} onChange={e => setDashFrom(e.target.value)}
+                  className="border border-gray-300 rounded-lg px-2 py-1 text-xs" />
+                <span className="text-gray-400 text-xs">～</span>
+                <input type="month" value={dashTo} onChange={e => setDashTo(e.target.value)}
+                  className="border border-gray-300 rounded-lg px-2 py-1 text-xs" />
+              </>}
+              <span className="text-[10px] text-gray-400 bg-gray-100 rounded-full px-2 py-1">
+                {dashRange === 'month' ? dashPeriods[0]
+                  : dashRange === 'quarter' ? dashPeriods[0] + ' ～ ' + dashPeriods[dashPeriods.length-1]
+                  : dashRange === 'year' ? (selectedPeriod?.slice(0,4) + ' 全年')
+                  : (dashFrom && dashTo ? dashFrom + ' ～ ' + dashTo : '請選擇區間')}
+              </span>
             </div>
 
             {/* Stats Cards */}
             <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 lg:gap-4">
               <div className="bg-white rounded-xl p-4 border border-gray-200 shadow-sm">
                 <div className="text-xs text-gray-500 mb-1">回報進度</div>
-                <div className="text-2xl font-bold text-blue-600">{reportProgress.reported}/{reportProgress.total}</div>
-                <div className="text-[10px] text-gray-400 mt-1">{reportProgress.total - reportProgress.reported} 輛未回報</div>
+                <div className="text-2xl font-bold text-blue-600">{dashStats.reported}/{dashStats.total}</div>
+                <div className="text-[10px] text-gray-400 mt-1">{dashStats.total - dashStats.reported} 輛未回報（{dashStats.latestPeriod}）</div>
               </div>
               <div className="bg-white rounded-xl p-4 border border-gray-200 shadow-sm">
-                <div className="text-xs text-gray-500 mb-1">本月平均里程</div>
-                <div className="text-2xl font-bold text-emerald-600">
-                  {periodRecords.filter(r => r.monthlyMileage > 0).length > 0
-                    ? fmtNum(Math.round(periodRecords.filter(r => r.monthlyMileage > 0).reduce((s, r) => s + r.monthlyMileage, 0) / periodRecords.filter(r => r.monthlyMileage > 0).length))
-                    : '—'}
-                </div>
-                <div className="text-[10px] text-gray-400 mt-1">km / 車</div>
+                <div className="text-xs text-gray-500 mb-1">{dashRange === 'month' ? '月' : dashRange === 'quarter' ? '季' : dashRange === 'year' ? '年' : '期間'}總里程</div>
+                <div className="text-2xl font-bold text-emerald-600">{fmtNum(dashStats.totalKm)}</div>
+                <div className="text-[10px] text-gray-400 mt-1">km（{dashPeriods.length} 期）</div>
               </div>
               <div className="bg-white rounded-xl p-4 border border-gray-200 shadow-sm">
-                <div className="text-xs text-gray-500 mb-1">用車紀錄（本月）</div>
-                <div className="text-2xl font-bold text-purple-600">
-                  {adhocRecords.filter(r => r.date?.startsWith(selectedPeriod)).length}
-                </div>
-                <div className="text-[10px] text-gray-400 mt-1">
-                  {fmtNum(adhocRecords.filter(r => r.date?.startsWith(selectedPeriod)).reduce((s, r) => s + (r.tripMileage || 0), 0))} km
-                </div>
+                <div className="text-xs text-gray-500 mb-1">車均里程</div>
+                <div className="text-2xl font-bold text-indigo-600">{dashStats.avgKm > 0 ? fmtNum(dashStats.avgKm) : '—'}</div>
+                <div className="text-[10px] text-gray-400 mt-1">km / 車 / 月</div>
+              </div>
+              <div className="bg-white rounded-xl p-4 border border-gray-200 shadow-sm">
+                <div className="text-xs text-gray-500 mb-1">用車紀錄</div>
+                <div className="text-2xl font-bold text-purple-600">{dashStats.adhocCount}</div>
+                <div className="text-[10px] text-gray-400 mt-1">{fmtNum(dashStats.adhocKm)} km</div>
               </div>
             </div>
 
-            {/* Missing Reports */}
-            {reportProgress.missing.length > 0 && (
+            {/* Missing Reports：只看最新期別 */}
+            {dashStats.missing.length > 0 && (
               <div className="bg-amber-50 border border-amber-200 rounded-xl p-4">
-                <h3 className="text-sm font-bold text-amber-700 mb-2">⚠️ 尚未回報（{selectedPeriod}）</h3>
+                <h3 className="text-sm font-bold text-amber-700 mb-2">⚠️ 尚未回報（{dashStats.latestPeriod}）</h3>
                 <div className="flex flex-wrap gap-2">
-                  {reportProgress.missing.map(v => (
+                  {dashStats.missing.map(v => (
                     <span key={v.id} className="text-xs bg-amber-100 text-amber-800 px-2 py-1 rounded-lg font-bold">{v.plate}</span>
                   ))}
                 </div>
