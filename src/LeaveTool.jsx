@@ -142,9 +142,10 @@ const HOLIDAY_STYLE = {
 const CONSECUTIVE_THRESHOLD = 3;
 
 // ── Constants ─────────────────────────────────────────────────────────
-const LEAVE_DEPTS = [
+// LEAVE_DEPTS 改為從 leaveConfig 讀取（動態，管理者可新增）
+// 預設只有物流部；初始化時若 leaveConfig.depts 為空則使用此值
+const DEFAULT_LEAVE_DEPTS = [
   { id: 'dept_logi', name: '物流部', code: 'LOGI', color: '#3b82f6' },
-  { id: 'dept_ware', name: '倉儲部', code: 'WARE', color: '#f97316' },
 ];
 
 const LEAVE_TYPES = [
@@ -153,6 +154,7 @@ const LEAVE_TYPES = [
   { id: 'sick',         name: '病假',   short: '病假', color: '#dc2626', bg: '#fef2f2', border: '#fecaca' },
   { id: 'official',     name: '公假',   short: '公假', color: '#16a34a', bg: '#f0fdf4', border: '#bbf7d0' },
   { id: 'compensatory', name: '補休假', short: '補休', color: '#7c3aed', bg: '#f5f3ff', border: '#ddd6fe' },
+  { id: 'other',        name: '其他',   short: '其他', color: '#64748b', bg: '#f8fafc', border: '#e2e8f0' },
 ];
 
 const STATUS_CFG = {
@@ -330,6 +332,15 @@ const getPrevWorkingDay = (dateStr) => {
 // uid 產生器
 const genUID = () => `${Date.now()}_${Math.random().toString(36).slice(2,6)}`;
 
+// 判斷某日是否為週固定禁休（週一=1、週二=2），遇假日或補班日則解除
+const isWeeklyBlocked = (dateStr) => {
+  const dow = new Date(dateStr + 'T00:00:00').getDay(); // 0=Sun,1=Mon,2=Tue
+  if (dow !== 1 && dow !== 2) return false;          // 只判斷週一、週二
+  if (isTWHoliday(dateStr))    return false;          // 遇國定假日：解除
+  if (isMakeupWorkDay(dateStr)) return true;           // 補班日仍禁休
+  return true;
+};
+
 // ════════════════════════════════════════════════════════════════════════
 // LeaveTool Component
 // ════════════════════════════════════════════════════════════════════════
@@ -374,7 +385,7 @@ const LeaveTool = ({ onBack, windowHeight }) => {
   // ── Core Data ─────────────────────────────────────────────────────
   const [personnel,     setPersonnel]     = useState(DEFAULT_LEAVE_PERSONNEL);
   const [leaveRequests, setLeaveRequests] = useState([]);
-  const [leaveConfig,   setLeaveConfig]   = useState({ managerEmail: '', calendarId: '', autoApprove: true });
+  const [leaveConfig,   setLeaveConfig]   = useState({ managerEmail: '', calendarId: '', autoApprove: true, depts: DEFAULT_LEAVE_DEPTS });
   const [auditLog,      setAuditLog]      = useState([]);
   const [dataLoading,   setDataLoading]   = useState(false);
   const [syncStatus,    setSyncStatus]    = useState('');
@@ -387,6 +398,7 @@ const LeaveTool = ({ onBack, windowHeight }) => {
   const [applyStart,    setApplyStart]    = useState('');
   const [applyEnd,      setApplyEnd]      = useState('');
   const [applyHours,    setApplyHours]    = useState('8');
+  const [applyUnit,     setApplyUnit]     = useState('day'); // 'day' | 'hour'
   const [applyReason,   setApplyReason]   = useState('');
   const [applyFor,      setApplyFor]      = useState(''); // for admin proxy apply
   const [applySubmitting, setApplySubmitting] = useState(false);
@@ -434,6 +446,8 @@ const LeaveTool = ({ onBack, windowHeight }) => {
   // Settings edit
   const [settingEdit,   setSettingEdit]   = useState(null);
   const [settingForm,   setSettingForm]   = useState({});
+  const [settingDeptForm, setSettingDeptForm] = useState({ name:'', code:'', color:'#3b82f6' });
+  const [settingDeptEdit, setSettingDeptEdit] = useState(null);
 
   // ── Firestore CRUD wrappers ────────────────────────────────────────
   const syncTimerRef = useRef(null);
@@ -518,11 +532,14 @@ const LeaveTool = ({ onBack, windowHeight }) => {
     if (applyStart > applyEnd) return alert('開始日期不能晚於結束日期');
 
     const leaveTypeDef = LEAVE_TYPES.find(t=>t.id===applyType);
+    const isHourUnit = applyUnit === 'hour' && applyType !== 'compensatory';
     const workDays = applyType==='compensatory'
       ? 0
-      : calcWorkingDaysWithHolidays(applyStart, applyEnd);
-    const hours = applyType==='compensatory' ? parseFloat(applyHours)||0 : workDays*8;
-    const isConsecutive = workDays >= CONSECUTIVE_THRESHOLD;
+      : isHourUnit ? 0 : calcWorkingDaysWithHolidays(applyStart, applyEnd);
+    const hours = applyType==='compensatory'
+      ? parseFloat(applyHours)||0
+      : isHourUnit ? parseFloat(applyHours)||0 : workDays*8;
+    const isConsecutive = !isHourUnit && workDays >= CONSECUTIVE_THRESHOLD;
 
     // 職務代理人驗證
     if (applyType !== 'compensatory') {
@@ -538,10 +555,20 @@ const LeaveTool = ({ onBack, windowHeight }) => {
     const conflicts = detectConflicts(targetPerson.deptId, applyStart, applyEnd);
     const isConflict = conflicts.length > 0;
     const isBlockedRange = Object.keys(calBlockedDates).some(d=>d>=applyStart&&d<=applyEnd);
+    // 週一/二固定禁休（除非遇假）
+    const isWeeklyBlockedRange = !isHourUnit && (() => {
+      const cur = new Date(applyStart + 'T00:00:00');
+      const last = new Date(applyEnd + 'T00:00:00');
+      while (cur <= last) {
+        if (isWeeklyBlocked(toDateStr(cur))) return true;
+        cur.setDate(cur.getDate()+1);
+      }
+      return false;
+    })();
 
     // 狀態決定（優先級：衝突 > 連休 > 禁休日重疊 > autoApprove）
     let status;
-    if (isConflict || isConsecutive || isBlockedRange) {
+    if (isConflict || isConsecutive || isBlockedRange || isWeeklyBlockedRange) {
       status = 'pending'; // 統一進待審（主管審核）
       if (isConflict) status = 'conflict_pending';
     } else {
@@ -559,6 +586,7 @@ const LeaveTool = ({ onBack, windowHeight }) => {
       startDate:     applyStart,
       endDate:       applyEnd,
       days:          workDays,
+      unit:          isHourUnit ? 'hour' : 'day',
       hours,
       reason:        applyReason,
       isConsecutive,
@@ -600,7 +628,7 @@ const LeaveTool = ({ onBack, windowHeight }) => {
     setNoticeModal(null); setNoticeConfirm(false);
     setApplyType('annual'); setApplyStart(''); setApplyEnd('');
     setApplyHours('8'); setApplyReason(''); setApplyFor('');
-    setApplyProxy(''); setApplyProxySched({});
+    setApplyProxy(''); setApplyProxySched({}); setApplyUnit('day');
     setActiveSection('calendar');
     const statusLabel = STATUS_CFG[req.status]?.label || req.status;
     if (req.status==='conflict_pending') alert(`⚠️ 衝突提醒\n同部門 ${req.conflictWith.join('、')} 於該期間已排休。\n申請已送出，等待主管審核。`);
@@ -687,10 +715,18 @@ const LeaveTool = ({ onBack, windowHeight }) => {
 
 
   // ── Derived data ──────────────────────────────────────────────────
-  const personnelByDept = useMemo(()=>({
-    dept_logi: personnel.filter(p=>p.deptId==='dept_logi'&&p.status==='active'),
-    dept_ware: personnel.filter(p=>p.deptId==='dept_ware'&&p.status==='active'),
-  }),[personnel]);
+  // 動態部門清單（從 leaveConfig 讀取，管理者可新增）
+  const LEAVE_DEPTS = useMemo(()=>
+    (leaveConfig.depts?.length ? leaveConfig.depts : DEFAULT_LEAVE_DEPTS)
+  ,[leaveConfig.depts]);
+
+  const personnelByDept = useMemo(()=>{
+    const map = {};
+    LEAVE_DEPTS.forEach(d=>{
+      map[d.id] = personnel.filter(p=>p.deptId===d.id&&p.status==='active');
+    });
+    return map;
+  },[personnel, LEAVE_DEPTS]);
 
   const allPeriods = useMemo(()=>
     [...new Set(leaveRequests.map(r=>r.startDate.slice(0,7)))].sort().reverse()
@@ -730,11 +766,13 @@ const LeaveTool = ({ onBack, windowHeight }) => {
     { key:'apply',     icon:'✏️',  label:'申請休假' },
     ...(isAdmin?[{ key:'review', icon:'📋', label:`審核管理${dashStats.conflictCount>0?` (${dashStats.conflictCount})`:''}` }]:[]),
     { key:'calendar',  icon:'📅', label:'月曆檢視' },
-    { key:'stats',     icon:'📊', label:'統計報表' },
-    { key:'ai',        icon:'🤖', label:'AI 分析' },
-    { key:'export',    icon:'⬇️', label:'匯出報表' },
-    { key:'logs',      icon:'🗂️',  label:'操作記錄' },
-    ...(isAdmin?[{ key:'settings', icon:'⚙️', label:'系統設定' }]:[]),
+    ...(isAdmin?[
+      { key:'stats',    icon:'📊', label:'統計報表' },
+      { key:'ai',       icon:'🤖', label:'AI 分析' },
+      { key:'export',   icon:'⬇️', label:'匯出報表' },
+      { key:'logs',     icon:'🗂️',  label:'操作記錄' },
+      { key:'settings', icon:'⚙️', label:'系統設定' },
+    ]:[]),
   ];
 
   // ════════════════════════════════════════════════════════════════════
@@ -852,22 +890,7 @@ const LeaveTool = ({ onBack, windowHeight }) => {
             </div>
             <button onClick={()=>setActiveSection('apply')} className="bg-white bg-opacity-20 hover:bg-opacity-30 transition-all px-4 py-2 rounded-xl text-sm font-bold">✏️ 申請休假</button>
           </div>
-          {!currentUser.isAdmin && (
-            <div className="mt-4 grid grid-cols-3 gap-3">
-              <div className="bg-white bg-opacity-15 rounded-xl p-3">
-                <div className="text-xs text-violet-200">特休配額</div>
-                <div className="text-xl font-bold">{myQuota} 天</div>
-              </div>
-              <div className="bg-white bg-opacity-15 rounded-xl p-3">
-                <div className="text-xs text-violet-200">已使用</div>
-                <div className="text-xl font-bold">{myAnnualUsed} 天</div>
-              </div>
-              <div className="bg-white bg-opacity-15 rounded-xl p-3">
-                <div className="text-xs text-violet-200">剩餘</div>
-                <div className={`text-xl font-bold ${myAnnualLeft<=3?'text-yellow-300':''}`}>{myAnnualLeft} 天</div>
-              </div>
-            </div>
-          )}
+
         </div>
 
         {/* 今日在休 */}
@@ -971,9 +994,18 @@ const LeaveTool = ({ onBack, windowHeight }) => {
   const renderApply = () => {
     const targetId     = isAdmin && applyFor ? applyFor : currentUser?.id;
     const targetPerson = personnel.find(p=>p.id===targetId)||(currentUser?.isAdmin?null:currentUser);
+    const isHourUnit    = applyUnit === 'hour' && applyType !== 'compensatory';
     const workDays     = applyType==='compensatory' ? 0
+      : isHourUnit ? 0
       : (applyStart&&applyEnd&&applyStart<=applyEnd ? calcWorkingDaysWithHolidays(applyStart,applyEnd) : 0);
-    const isConsecutive = workDays >= CONSECUTIVE_THRESHOLD;
+    const isConsecutive = !isHourUnit && workDays >= CONSECUTIVE_THRESHOLD;
+    // 週一/二固定禁休範圍偵測（UI 提示用）
+    const hasWeeklyBlock = !isHourUnit && applyStart && applyEnd && (() => {
+      const cur = new Date(applyStart+'T00:00:00');
+      const last = new Date(applyEnd+'T00:00:00');
+      while (cur<=last){ if(isWeeklyBlocked(toDateStr(cur))) return true; cur.setDate(cur.getDate()+1); }
+      return false;
+    })();
     const workDayList   = isConsecutive && applyStart && applyEnd ? getWorkingDaysInRange(applyStart,applyEnd) : [];
     const conflicts     = (targetPerson && applyStart && applyEnd && applyStart<=applyEnd)
       ? detectConflicts(targetPerson.deptId, applyStart, applyEnd) : [];
@@ -1033,19 +1065,43 @@ const LeaveTool = ({ onBack, windowHeight }) => {
             </div>
           </div>
 
-          {/* 補休：小時數 */}
-          {applyType==='compensatory' && (
+          {/* 請假單位切換（天/小時，不含補休假） */}
+          {applyType !== 'compensatory' && (
             <div>
-              <label className="block text-xs font-bold text-gray-500 mb-1.5">補休時數</label>
-              <input type="number" value={applyHours} min="1" max="72" onChange={e=>setApplyHours(e.target.value)}
-                className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:border-violet-400"/>
+              <label className="block text-xs font-bold text-gray-500 mb-1.5">請假單位</label>
+              <div className="flex gap-2">
+                {[{v:'day',l:'以天計算'},{v:'hour',l:'以小時計算'}].map(o=>(
+                  <button key={o.v} onClick={()=>setApplyUnit(o.v)}
+                    className={`flex-1 py-2 rounded-xl text-xs font-bold border-2 transition-all
+                      ${applyUnit===o.v?'bg-violet-50 border-violet-400 text-violet-700':'bg-gray-50 border-transparent text-gray-400'}`}>
+                    {o.l}
+                  </button>
+                ))}
+              </div>
             </div>
           )}
 
-          {/* 計算天數 + 連休標示 */}
-          {workDays > 0 && (
-            <div className="flex items-center gap-3">
-              <span className="text-sm text-gray-500">工作天數：<span className="font-bold text-violet-700">{workDays} 天</span></span>
+          {/* 補休／小時制：輸入時數 */}
+          {(applyType==='compensatory' || isHourUnit) && (
+            <div>
+              <label className="block text-xs font-bold text-gray-500 mb-1.5">
+                {applyType==='compensatory' ? '補休時數' : '請假時數'}
+              </label>
+              <input type="number" value={applyHours} min="1" max="72" step="0.5"
+                onChange={e=>setApplyHours(e.target.value)}
+                className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:border-violet-400"
+                placeholder="例：4（半天）、8（一天）"/>
+            </div>
+          )}
+
+          {/* 計算天數/時數 + 連休標示 */}
+          {(workDays > 0 || (isHourUnit && parseFloat(applyHours)>0)) && (
+            <div className="flex items-center flex-wrap gap-2">
+              {isHourUnit ? (
+                <span className="text-sm text-gray-500">請假時數：<span className="font-bold text-violet-700">{applyHours} 小時</span></span>
+              ) : (
+                <span className="text-sm text-gray-500">工作天數：<span className="font-bold text-violet-700">{workDays} 天（{workDays*8} 小時）</span></span>
+              )}
               {isConsecutive && (
                 <span className="text-xs bg-amber-100 text-amber-700 border border-amber-200 px-2 py-0.5 rounded-full font-bold">
                   🔴 連休（≥{CONSECUTIVE_THRESHOLD}天）— 需主管審核
@@ -1054,11 +1110,14 @@ const LeaveTool = ({ onBack, windowHeight }) => {
             </div>
           )}
 
-          {/* 原因 */}
+          {/* 事由 */}
           <div>
-            <label className="block text-xs font-bold text-gray-500 mb-1.5">事由（選填）</label>
+            <div className="flex items-center gap-2 mb-1.5">
+              <label className="text-xs font-bold text-gray-500">事由</label>
+              <span className="text-[10px] bg-gray-100 text-gray-500 px-2 py-0.5 rounded-full">選填・僅管理者可見</span>
+            </div>
             <textarea value={applyReason} onChange={e=>setApplyReason(e.target.value)} rows={2}
-              placeholder="請填寫請假事由..."
+              placeholder="此欄位僅管理者可見，非強制填寫"
               className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:border-violet-400 resize-none"/>
           </div>
 
@@ -1099,6 +1158,14 @@ const LeaveTool = ({ onBack, windowHeight }) => {
                   ))}
                 </div>
               )}
+            </div>
+          )}
+
+          {/* 週固定禁休警告（週一/二） */}
+          {hasWeeklyBlock && (
+            <div className="bg-rose-50 border-2 border-rose-200 rounded-xl p-3">
+              <div className="text-xs font-bold text-rose-700 mb-1">📅 範圍內含固定禁休日（週一/二）</div>
+              <div className="text-xs text-rose-600">每週一、週二為固定禁休日（遇國定假日解除）。申請將自動進入主管審核。</div>
             </div>
           )}
 
@@ -1162,7 +1229,7 @@ const LeaveTool = ({ onBack, windowHeight }) => {
                 <span className="ml-2">{r.startDate} ～ {r.endDate}</span>
                 <span className="ml-2">{r.days>0?r.days+'天':r.hours+'H'}</span>
               </div>
-              {r.reason && <div className="text-xs text-gray-500 mt-1">事由：{r.reason}</div>}
+              {isAdmin && r.reason && <div className="text-xs text-gray-500 mt-1">📝 事由：{r.reason}</div>}
             </div>
             <span className={`text-[10px] font-bold px-2 py-1 rounded-full ${STATUS_CFG[r.status]?.badge}`}>{STATUS_CFG[r.status]?.label}</span>
           </div>
@@ -1961,6 +2028,109 @@ ${(() => {
           </div>
         </div>
 
+        {/* 部門管理 */}
+        <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
+          <div className="p-4 border-b border-gray-100 flex items-center justify-between">
+            <div className="text-sm font-bold text-gray-700">🏢 部門管理</div>
+            <button onClick={()=>setSettingDeptEdit('new')}
+              className="px-3 py-1.5 bg-violet-50 text-violet-700 rounded-lg text-xs font-bold hover:bg-violet-100 transition-all">
+              + 新增部門
+            </button>
+          </div>
+          <div className="overflow-x-auto">
+            <table className="w-full text-xs">
+              <thead className="bg-gray-50 border-b border-gray-100">
+                <tr>
+                  <th className="px-4 py-2.5 text-left text-gray-500 font-bold">部門名稱</th>
+                  <th className="px-3 py-2.5 text-gray-500 font-bold">代碼</th>
+                  <th className="px-3 py-2.5 text-gray-500 font-bold">顏色</th>
+                  <th className="px-3 py-2.5 text-gray-500 font-bold">人數</th>
+                  <th className="px-3 py-2.5 text-gray-500 font-bold">操作</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-50">
+                {LEAVE_DEPTS.map(d=>(
+                  <tr key={d.id}>
+                    <td className="px-4 py-2.5 font-bold text-gray-700">
+                      <div className="flex items-center gap-2">
+                        <div className="w-3 h-3 rounded-full" style={{backgroundColor:d.color}}></div>
+                        {d.name}
+                      </div>
+                    </td>
+                    <td className="px-3 py-2.5 text-center text-gray-500 font-mono">{d.code}</td>
+                    <td className="px-3 py-2.5 text-center">
+                      <span className="text-[10px] px-2 py-0.5 rounded-full font-bold text-white" style={{backgroundColor:d.color}}>{d.color}</span>
+                    </td>
+                    <td className="px-3 py-2.5 text-center font-bold text-violet-700">
+                      {personnel.filter(p=>p.deptId===d.id&&p.status==='active').length} 人
+                    </td>
+                    <td className="px-3 py-2.5 text-center">
+                      <button onClick={()=>{ setSettingDeptEdit(d.id); setSettingDeptForm({name:d.name,code:d.code,color:d.color}); }}
+                        className="px-2 py-1 bg-gray-100 text-gray-500 rounded text-[10px] hover:bg-violet-50 hover:text-violet-600 transition-all mr-1">編輯</button>
+                      {LEAVE_DEPTS.length > 1 && (
+                        <button onClick={()=>{
+                          if(!window.confirm(`確認刪除「${d.name}」部門？該部門人員將需重新分配。`)) return;
+                          const newDepts = LEAVE_DEPTS.filter(x=>x.id!==d.id);
+                          const updated = {...leaveConfig, depts: newDepts};
+                          setLeaveConfig(updated); saveCfgF(updated);
+                          logAction('settings','刪除部門',d.name);
+                        }}
+                          className="px-2 py-1 bg-gray-100 text-gray-400 rounded text-[10px] hover:bg-red-50 hover:text-red-500 transition-all">刪除</button>
+                      )}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        {/* 新增/編輯部門 Modal */}
+        {settingDeptEdit && (
+          <div className="fixed inset-0 bg-black bg-opacity-40 flex items-center justify-center z-50 p-4">
+            <div className="bg-white rounded-2xl p-6 w-full max-w-sm mx-4 space-y-4">
+              <div className="text-base font-bold text-gray-800">{settingDeptEdit==='new' ? '新增部門' : '編輯部門'}</div>
+              {[['text','name','部門名稱（如：業務部）'],['text','code','代碼（如：SALES，英文大寫）']].map(([type,key,label])=>(
+                <div key={key}>
+                  <label className="block text-xs font-bold text-gray-500 mb-1">{label}</label>
+                  <input type={type} value={settingDeptForm[key]||''} onChange={e=>setSettingDeptForm(prev=>({...prev,[key]:e.target.value}))}
+                    className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-violet-400"/>
+                </div>
+              ))}
+              <div>
+                <label className="block text-xs font-bold text-gray-500 mb-1">部門顏色</label>
+                <div className="flex items-center gap-3">
+                  <input type="color" value={settingDeptForm.color||'#3b82f6'}
+                    onChange={e=>setSettingDeptForm(prev=>({...prev,color:e.target.value}))}
+                    className="w-12 h-9 rounded-lg border border-gray-200 cursor-pointer"/>
+                  <span className="text-xs text-gray-500">{settingDeptForm.color}</span>
+                </div>
+              </div>
+              <div className="flex gap-3 pt-2">
+                <button onClick={()=>{
+                  if(!settingDeptForm.name?.trim()) return alert('請填寫部門名稱');
+                  if(!settingDeptForm.code?.trim()) return alert('請填寫部門代碼');
+                  let newDepts;
+                  if(settingDeptEdit==='new'){
+                    const nd={ id:'dept_'+Date.now(), name:settingDeptForm.name.trim(), code:settingDeptForm.code.trim().toUpperCase(), color:settingDeptForm.color||'#3b82f6' };
+                    newDepts=[...LEAVE_DEPTS, nd];
+                    logAction('settings','新增部門',nd.name);
+                  } else {
+                    newDepts=LEAVE_DEPTS.map(d=>d.id===settingDeptEdit?{...d,...settingDeptForm,code:settingDeptForm.code.trim().toUpperCase()}:d);
+                    logAction('settings','編輯部門',settingDeptForm.name);
+                  }
+                  const updated={...leaveConfig,depts:newDepts};
+                  setLeaveConfig(updated); saveCfgF(updated);
+                  setSettingDeptEdit(null); setSettingDeptForm({name:'',code:'',color:'#3b82f6'});
+                }}
+                  className="flex-1 py-2.5 bg-violet-600 text-white rounded-xl text-sm font-bold hover:bg-violet-700 transition-all">儲存</button>
+                <button onClick={()=>{setSettingDeptEdit(null);setSettingDeptForm({name:'',code:'',color:'#3b82f6'});}}
+                  className="flex-1 py-2.5 bg-gray-100 text-gray-500 rounded-xl text-sm font-bold hover:bg-gray-200 transition-all">取消</button>
+              </div>
+            </div>
+          </div>
+        )}
+
         {/* 新增/編輯人員 Modal */}
         {settingEdit && (
           <div className="fixed inset-0 bg-black bg-opacity-40 flex items-center justify-center z-50">
@@ -2150,7 +2320,7 @@ ${(() => {
             {key:'apply',    icon:'✏️', label:'申請'},
             ...(isAdmin?[{key:'review',icon:'📋',label:`審核${dashStats.conflictCount>0?`(${dashStats.conflictCount})`:''}` }]:[]),
             {key:'calendar', icon:'📅',label:'月曆'},
-            {key:'stats',    icon:'📊',label:'統計'},
+            ...(isAdmin?[{key:'stats',icon:'📊',label:'統計'}]:[]),
           ].map(item=>(
             <button key={item.key} onClick={()=>setActiveSection(item.key)}
               className={`flex flex-col items-center py-2 px-2 text-[10px] font-bold transition-all ${activeSection===item.key?'text-violet-600':'text-gray-400'}`}>
