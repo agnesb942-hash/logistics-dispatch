@@ -1439,10 +1439,9 @@ const LeaveTool = ({ onBack, windowHeight }) => {
   const renderCalendar = () => {
     const daysInMonth   = getDaysInMonth(calYear, calMonth);
     const firstDow      = new Date(`${calYear}-${String(calMonth).padStart(2,'0')}-01`).getDay();
-    const paddingDays   = (firstDow+6)%7; // Mon=0
+    const paddingDays   = (firstDow+6)%7;
     const today         = todayStr();
 
-    // 當月假單分布
     const dayLeaves = {};
     leaveRequests.forEach(r=>{
       if(r.status==='rejected') return;
@@ -1455,7 +1454,6 @@ const LeaveTool = ({ onBack, windowHeight }) => {
     const prevMonth=()=>{ if(calMonth===1){setCalMonth(12);setCalYear(calYear-1);}else setCalMonth(calMonth-1); };
     const nextMonth=()=>{ if(calMonth===12){setCalMonth(1);setCalYear(calYear+1);}else setCalMonth(calMonth+1); };
 
-    // 管理者點擊日期：顯示詳情 + 禁休設定
     const handleDayClick = (d) => {
       setCalDayDetail({ date:d, leaves:dayLeaves[d]||[], holiday:TW_HOLIDAYS[d], blocked:calBlockedDates[d] });
     };
@@ -1473,100 +1471,197 @@ const LeaveTool = ({ onBack, windowHeight }) => {
       setCalDayDetail(null);
     };
 
+    // 統計當月排休人次
+    const totalThisMonth = Object.values(dayLeaves).flat().length;
+    const uniquePersons  = new Set(Object.values(dayLeaves).flat().map(r=>r.employeeId)).size;
+
     return (
       <div className="space-y-3">
-        {/* 頁面標題 */}
-        <div className="flex items-center justify-between">
+
+        {/* ── 頁頭 ── */}
+        <div className="flex items-start justify-between gap-3">
           <div>
-            <div className="text-sm font-bold text-gray-800">📅 月曆檢視</div>
-            <div className="text-[11px] text-gray-400 mt-0.5">顯示全部部門排休 · <span className="text-violet-500 font-bold">👤</span> 為您的假單 · 點擊日期查看詳情與銷假</div>
+            <h2 className="text-base font-extrabold text-gray-800 tracking-tight">月曆檢視</h2>
+            <p className="text-[11px] text-gray-400 mt-0.5">
+              全部門排休總覽 · <span className="text-violet-500 font-bold">👤</span> 我的假單 · 點擊日期查看詳情
+              {isAdmin && <span className="ml-1 text-amber-500">· 管理者可設定禁休</span>}
+            </p>
+          </div>
+          {/* 本月小統計 */}
+          <div className="flex gap-2 flex-shrink-0">
+            <div className="text-center bg-violet-50 rounded-xl px-3 py-1.5 border border-violet-100">
+              <div className="text-base font-extrabold text-violet-600">{uniquePersons}</div>
+              <div className="text-[9px] text-violet-400 font-bold">本月人次</div>
+            </div>
+            <div className="text-center bg-emerald-50 rounded-xl px-3 py-1.5 border border-emerald-100">
+              <div className="text-base font-extrabold text-emerald-600">{totalThisMonth}</div>
+              <div className="text-[9px] text-emerald-400 font-bold">假單總數</div>
+            </div>
           </div>
         </div>
-        {/* 控制列 */}
-        <div className="flex items-center justify-between flex-wrap gap-2">
-          <div className="flex items-center gap-2">
-            <button onClick={prevMonth} className="w-8 h-8 rounded-lg bg-gray-100 hover:bg-gray-200 flex items-center justify-center font-bold text-gray-600">‹</button>
-            <div className="text-base font-bold text-gray-800">{calYear} 年 {calMonth} 月</div>
-            <button onClick={nextMonth} className="w-8 h-8 rounded-lg bg-gray-100 hover:bg-gray-200 flex items-center justify-center font-bold text-gray-600">›</button>
+
+        {/* ── 導覽列 ── */}
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-1">
+            <button onClick={prevMonth}
+              className="w-9 h-9 rounded-xl bg-white border border-gray-200 shadow-sm hover:border-violet-300 hover:text-violet-600 flex items-center justify-center text-gray-500 font-bold text-lg transition-all">
+              ‹
+            </button>
+            <div className="px-4 py-2 rounded-xl bg-white border border-gray-200 shadow-sm">
+              <span className="text-sm font-extrabold text-gray-800">{calYear}</span>
+              <span className="text-xs text-gray-400 mx-1">年</span>
+              <span className="text-sm font-extrabold text-violet-600">{calMonth}</span>
+              <span className="text-xs text-gray-400 ml-1">月</span>
+            </div>
+            <button onClick={nextMonth}
+              className="w-9 h-9 rounded-xl bg-white border border-gray-200 shadow-sm hover:border-violet-300 hover:text-violet-600 flex items-center justify-center text-gray-500 font-bold text-lg transition-all">
+              ›
+            </button>
           </div>
           <select value={calDeptFilter} onChange={e=>setCalDeptFilter(e.target.value)}
-            className="border border-gray-200 rounded-lg px-2 py-1.5 text-xs">
+            className="border border-gray-200 rounded-xl px-3 py-2 text-xs font-bold bg-white shadow-sm focus:outline-none focus:border-violet-400">
             <option value="all">全部門</option>
             {LEAVE_DEPTS.map(d=><option key={d.id} value={d.id}>{d.name}</option>)}
           </select>
         </div>
 
-        {/* 圖例 */}
-        <div className="flex flex-wrap gap-2 text-[10px]">
-          {LEAVE_TYPES.map(t=>(
-            <div key={t.id} className="flex items-center gap-1"><div className="w-2.5 h-2.5 rounded-full" style={{backgroundColor:t.color}}></div><span className="text-gray-500">{t.short}</span></div>
-          ))}
-          <div className="flex items-center gap-1"><div className="w-2.5 h-2.5 rounded-full bg-amber-400"></div><span className="text-gray-500">待審</span></div>
-          <div className="flex items-center gap-1"><div className="w-2.5 h-2.5 bg-red-100 rounded border border-red-200"></div><span className="text-gray-500">國定假日</span></div>
-          <div className="flex items-center gap-1"><div className="w-2.5 h-2.5 bg-rose-900 rounded opacity-30"></div><span className="text-gray-500">禁休日（需主管審核）</span></div>
-          {isAdmin && <span className="text-violet-500">（管理者可點選日期設定禁休）</span>}
+        {/* ── 圖例 ── */}
+        <div className="bg-white rounded-2xl border border-gray-100 shadow-sm px-4 py-3">
+          <div className="flex flex-wrap gap-x-4 gap-y-1.5 items-center">
+            {LEAVE_TYPES.map(t=>(
+              <div key={t.id} className="flex items-center gap-1.5">
+                <div className="w-3 h-3 rounded-full shadow-sm border" style={{backgroundColor:t.color,borderColor:t.border}}></div>
+                <span className="text-[10px] font-bold text-gray-500">{t.short}</span>
+              </div>
+            ))}
+            <div className="flex items-center gap-1.5">
+              <div className="w-3 h-3 rounded-full bg-amber-400 shadow-sm"></div>
+              <span className="text-[10px] font-bold text-gray-500">待審核</span>
+            </div>
+            <div className="flex items-center gap-1.5">
+              <div className="w-3 h-3 rounded bg-rose-100 border border-rose-300"></div>
+              <span className="text-[10px] font-bold text-gray-500">禁休</span>
+            </div>
+            <div className="flex items-center gap-1.5">
+              <div className="w-3 h-3 rounded bg-red-50 border border-red-200"></div>
+              <span className="text-[10px] font-bold text-gray-500">國定假日</span>
+            </div>
+          </div>
         </div>
 
-        {/* 日曆格 */}
-        <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
-          <div className="grid grid-cols-7 border-b border-gray-100">
-            {['一','二','三','四','五','六','日'].map((d,i)=>(
-              <div key={d} className={`py-2 text-center text-xs font-bold ${i>=5?'text-red-400':'text-gray-400'}`}>{d}</div>
+        {/* ── 日曆主體 ── */}
+        <div className="bg-white rounded-2xl border border-gray-200 shadow-md overflow-hidden">
+
+          {/* 星期標題列 */}
+          <div className="grid grid-cols-7 bg-gray-50 border-b-2 border-gray-100">
+            {[
+              {label:'一',wknd:false},{label:'二',wknd:false},{label:'三',wknd:false},
+              {label:'四',wknd:false},{label:'五',wknd:false},
+              {label:'六',wknd:true}, {label:'日',wknd:true},
+            ].map(({label,wknd})=>(
+              <div key={label}
+                className={`py-2.5 text-center text-xs font-extrabold tracking-widest ${wknd?'text-rose-400 bg-rose-50/60':'text-gray-500'}`}>
+                {label}
+              </div>
             ))}
           </div>
+
+          {/* 日期格 */}
           <div className="grid grid-cols-7">
             {Array(paddingDays).fill(null).map((_,i)=>(
-              <div key={'p'+i} className="min-h-[72px] sm:min-h-[88px] border-r border-b border-gray-50 bg-gray-50"></div>
+              <div key={'p'+i} className="min-h-[80px] sm:min-h-[96px] bg-gray-50/70 border-r border-b border-gray-100"></div>
             ))}
             {daysInMonth.map(d=>{
-              const dow    = (new Date(d+'T00:00:00').getDay()+6)%7;
-              const isWknd = dow>=5;
-              const isToday= d===today;
-              const holiday= TW_HOLIDAYS[d];
-              const blocked= calBlockedDates[d];
-              const leaves = dayLeaves[d]||[];
-              const isMakeup = holiday?.type==='makeup_work';
-              const isHoliday= holiday && !isMakeup;
-              const style  = isHoliday ? HOLIDAY_STYLE[holiday.type] || HOLIDAY_STYLE.national : null;
+              const dow     = (new Date(d+'T00:00:00').getDay()+6)%7;
+              const isWknd  = dow>=5;
+              const isToday = d===today;
+              const holiday = TW_HOLIDAYS[d];
+              const blocked = calBlockedDates[d];
+              const leaves  = dayLeaves[d]||[];
+              const isMakeup   = holiday?.type==='makeup_work';
+              const isHoliday  = holiday && !isMakeup;
+              const style      = isHoliday ? HOLIDAY_STYLE[holiday.type] || HOLIDAY_STYLE.national : null;
+              const hasMine    = leaves.some(r=>r.employeeId===currentUser?.id);
+              const pendCount  = leaves.filter(r=>r.status==='pending'||r.status==='conflict_pending').length;
+
+              // 決定格子底色
+              let cellBg = '';
+              if (blocked)       cellBg = 'bg-rose-50';
+              else if (isHoliday) cellBg = '';
+              else if (isWknd)   cellBg = 'bg-slate-50';
+
               return (
                 <div key={d}
                   onClick={()=>handleDayClick(d)}
                   className={[
-                    'min-h-[72px] sm:min-h-[88px] p-1 border-r border-b border-gray-50 cursor-pointer transition-all hover:brightness-95',
-                    isWknd&&!isHoliday ? 'bg-gray-50' : '',
-                    isToday ? 'ring-2 ring-violet-400 ring-inset' : '',
-                    blocked ? 'bg-rose-50' : '',
-                    isHoliday ? '' : '',
+                    'min-h-[80px] sm:min-h-[96px] border-r border-b border-gray-100 cursor-pointer transition-all duration-150 hover:brightness-[0.97] hover:z-10 relative',
+                    cellBg,
+                    hasMine ? 'ring-2 ring-inset ring-violet-300' : '',
+                    isToday ? 'ring-2 ring-inset ring-violet-500' : '',
                   ].filter(Boolean).join(' ')}
-                  style={isHoliday?{backgroundColor:style?.bg}:{}}>
-                  <div className="flex items-start justify-between mb-0.5">
-                    <div className={`text-xs font-bold w-6 h-6 flex items-center justify-center rounded-full flex-shrink-0
-                      ${isToday?'bg-violet-600 text-white':isHoliday?'text-red-600':isWknd?'text-red-300':'text-gray-400'}`}>
+                  style={isHoliday?{backgroundColor:style?.bg}:{}}
+                >
+                  {/* 日期數字列 */}
+                  <div className="flex items-center justify-between px-1.5 pt-1.5 pb-0.5">
+                    {/* 日期圈 */}
+                    <div className={[
+                      'w-6 h-6 flex items-center justify-center rounded-full text-xs font-extrabold leading-none',
+                      isToday    ? 'bg-violet-600 text-white shadow-md shadow-violet-200' :
+                      isHoliday  ? 'text-red-600' :
+                      isWknd     ? 'text-rose-400' :
+                                   'text-gray-600',
+                    ].join(' ')}>
                       {parseInt(d.slice(8))}
                     </div>
-                    <div className="flex gap-0.5 flex-wrap justify-end">
-                      {isMakeup && <span className="text-[8px] bg-blue-100 text-blue-600 px-0.5 rounded">補班</span>}
-                      {blocked   && <span className="text-[8px] bg-rose-200 text-rose-700 px-0.5 rounded">禁休</span>}
-                      {leaves.length>0 && <span className="text-[8px] bg-gray-100 text-gray-500 px-0.5 rounded">{leaves.length}人</span>}
+
+                    {/* 右上角標籤群 */}
+                    <div className="flex items-center gap-0.5 flex-wrap justify-end">
+                      {isMakeup && (
+                        <span className="text-[8px] font-bold bg-blue-500 text-white px-1 py-0.5 rounded leading-none">補班</span>
+                      )}
+                      {blocked && (
+                        <span className="text-[8px] font-bold bg-rose-500 text-white px-1 py-0.5 rounded leading-none">禁休</span>
+                      )}
+                      {pendCount>0 && (
+                        <span className="text-[8px] font-bold bg-amber-400 text-white px-1 py-0.5 rounded leading-none">待{pendCount}</span>
+                      )}
+                      {leaves.length>0 && (
+                        <span className="text-[8px] font-bold bg-gray-700 text-white px-1 py-0.5 rounded leading-none">{leaves.length}人</span>
+                      )}
                     </div>
                   </div>
+
+                  {/* 假日名稱 */}
                   {isHoliday && (
-                    <div className="text-[8px] font-bold mb-0.5 truncate" style={{color:style?.text}}>{holiday.name}</div>
+                    <div className="px-1.5 text-[8px] font-bold truncate mb-0.5" style={{color:style?.text}}>
+                      {holiday.name}
+                    </div>
                   )}
-                  <div className="space-y-0.5">
+
+                  {/* 假單標籤 */}
+                  <div className="px-1 space-y-0.5 pb-1">
                     {leaves.slice(0,3).map(r=>{
-                      const lt=LEAVE_TYPES.find(t=>t.id===r.leaveType);
-                      const pend=r.status==='pending'||r.status==='conflict_pending';
-                      const isMine = r.employeeId === currentUser?.id;
-                      return(
+                      const lt   = LEAVE_TYPES.find(t=>t.id===r.leaveType);
+                      const pend = r.status==='pending'||r.status==='conflict_pending';
+                      const mine = r.employeeId===currentUser?.id;
+                      return (
                         <div key={r.id}
-                          className={"text-[8px] sm:text-[9px] font-bold px-1 py-0.5 rounded truncate" + (isMine?" ring-1 ring-violet-400":"")}
-                          style={{backgroundColor:pend?'#fef3c7':lt?.bg,color:pend?'#92400e':lt?.color,border:`1px solid ${pend?'#fcd34d':lt?.border}`}}>
-                          {isMine?'👤':''}{r.employeeName}{pend?'*':''}{r.isConsecutive?'🔴':''}
+                          className={[
+                            'text-[8px] sm:text-[9px] font-bold px-1.5 py-0.5 rounded-md truncate leading-snug',
+                            mine ? 'ring-1 ring-violet-500 ring-offset-0' : '',
+                          ].join(' ')}
+                          style={{
+                            backgroundColor: pend ? '#fef3c7' : lt?.bg,
+                            color:           pend ? '#92400e' : lt?.color,
+                            borderLeft:      `3px solid ${pend?'#f59e0b':lt?.color}`,
+                          }}>
+                          {mine?'👤':''}{r.employeeName}{pend?' ⏳':''}{r.isConsecutive?' 🔴':''}
                         </div>
                       );
                     })}
-                    {leaves.length>3 && <div className="text-[8px] text-gray-400 pl-1">+{leaves.length-3}</div>}
+                    {leaves.length>3 && (
+                      <div className="text-[8px] font-bold text-gray-400 pl-1">＋{leaves.length-3} 位</div>
+                    )}
                   </div>
                 </div>
               );
@@ -1574,62 +1669,119 @@ const LeaveTool = ({ onBack, windowHeight }) => {
           </div>
         </div>
 
-        {/* 日期詳情 + 禁休設定 Modal */}
+        {/* ── 日期詳情 Modal ── */}
         {calDayDetail && (
-          <div className="fixed inset-0 bg-black bg-opacity-40 flex items-center justify-center z-50 p-4"
+          <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4"
             onClick={e=>{if(e.target===e.currentTarget)setCalDayDetail(null);}}>
-            <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm p-5 space-y-4">
-              <div className="flex items-start justify-between">
-                <div>
-                  <div className="text-base font-bold text-gray-800">{calDayDetail.date}</div>
-                  {calDayDetail.holiday && <div className="text-xs text-red-600 font-bold mt-0.5">{calDayDetail.holiday.name}</div>}
-                  {calDayDetail.blocked && <div className="text-xs text-rose-700 mt-0.5">🚫 禁休：{calDayDetail.blocked.note||''}</div>}
+            <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm overflow-hidden">
+
+              {/* Modal 頁頭 */}
+              <div className="px-5 pt-5 pb-4 border-b border-gray-100">
+                <div className="flex items-start justify-between">
+                  <div>
+                    <div className="text-base font-extrabold text-gray-800">{calDayDetail.date}</div>
+                    {calDayDetail.holiday && (
+                      <div className="text-xs text-red-600 font-bold mt-0.5">🎌 {calDayDetail.holiday.name}</div>
+                    )}
+                    {calDayDetail.blocked && (
+                      <div className="text-xs text-rose-600 font-bold mt-0.5">🚫 禁休 {calDayDetail.blocked.note ? `・${calDayDetail.blocked.note}` : ''}</div>
+                    )}
+                  </div>
+                  <button onClick={()=>setCalDayDetail(null)}
+                    className="w-7 h-7 rounded-full bg-gray-100 hover:bg-gray-200 flex items-center justify-center text-gray-500 transition-all">
+                    ×
+                  </button>
                 </div>
-                <button onClick={()=>setCalDayDetail(null)} className="text-gray-400 hover:text-gray-600 text-xl leading-none">×</button>
+                {calDayDetail.leaves.length>0 && (
+                  <div className="mt-2 flex items-center gap-1.5">
+                    <span className="text-[10px] font-bold bg-violet-100 text-violet-700 px-2 py-0.5 rounded-full">
+                      {calDayDetail.leaves.length} 人排休
+                    </span>
+                    {calDayDetail.leaves.filter(r=>r.status==='pending'||r.status==='conflict_pending').length>0 && (
+                      <span className="text-[10px] font-bold bg-amber-100 text-amber-700 px-2 py-0.5 rounded-full">
+                        {calDayDetail.leaves.filter(r=>r.status==='pending'||r.status==='conflict_pending').length} 待審
+                      </span>
+                    )}
+                  </div>
+                )}
               </div>
-              {calDayDetail.leaves.length>0 ? (
-                <div className="space-y-1.5 max-h-48 overflow-y-auto">
-                  {calDayDetail.leaves.map(r=>{
-                    const lt=LEAVE_TYPES.find(t=>t.id===r.leaveType);
+
+              {/* 假單清單 */}
+              <div className="px-4 py-3 max-h-64 overflow-y-auto space-y-2">
+                {calDayDetail.leaves.length>0 ? (
+                  calDayDetail.leaves.map(r=>{
+                    const lt = LEAVE_TYPES.find(t=>t.id===r.leaveType);
                     const isMine = r.employeeId===currentUser?.id;
                     const canCancel = (isMine || isAdmin) && r.status!=='rejected';
-                    return(
-                    <div key={r.id} className={"text-xs border rounded-lg p-2"+(isMine?" ring-2 ring-violet-300":"")} style={{borderColor:lt?.border,backgroundColor:lt?.bg}}>
-                      <div className="flex items-start justify-between gap-1">
-                        <div>
-                          <span className="font-bold" style={{color:lt?.color}}>
-                            {isMine?'👤 ':''}{ r.employeeName} · {r.leaveTypeName} {r.isConsecutive?'🔴連休':''}
-                          </span>
+                    return (
+                      <div key={r.id}
+                        className={['rounded-xl border-2 p-3', isMine ? 'border-violet-300 bg-violet-50' : 'border-transparent'].join(' ')}
+                        style={isMine?{}:{borderColor:lt?.border, backgroundColor:lt?.bg}}>
+                        <div className="flex items-start justify-between gap-2">
+                          <div className="flex-1 min-w-0">
+                            {/* 姓名 + 假別 */}
+                            <div className="flex items-center gap-1.5 flex-wrap">
+                              {isMine && <span className="text-violet-500 font-black text-[10px]">👤 我</span>}
+                              <span className="text-xs font-extrabold text-gray-800">{r.employeeName}</span>
+                              <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-full text-white"
+                                style={{backgroundColor:lt?.color}}>
+                                {r.leaveTypeName}
+                              </span>
+                              {r.isConsecutive && <span className="text-[10px] font-bold text-rose-600">🔴 連休</span>}
+                            </div>
+                            {/* 日期區間 */}
+                            <div className="text-[10px] text-gray-500 mt-1 font-mono">
+                              {r.startDate}～{r.endDate} ·{' '}
+                              {r.unit==='hour'||r.leaveType==='compensatory' ? r.hours+'H' : r.days+'天'+(isAdmin&&r.days>0?' ('+r.days*WORK_HOURS_PER_DAY+'H)':'')}
+                            </div>
+                            {/* 小時制時間 */}
+                            {r.unit==='hour' && r.timeStart && r.timeEnd && (
+                              <div className="text-[10px] text-violet-600 font-bold mt-0.5">
+                                ⏱ {r.timeStart} ～ {r.timeEnd}（{r.hours}H）
+                              </div>
+                            )}
+                            {/* 代理人 */}
+                            {(r.proxyName||r.proxySchedule) && (
+                              <div className="text-[10px] text-gray-400 mt-0.5">
+                                👤 代理：{r.proxyName||Object.values(r.proxySchedule||{}).map(id=>personnel.find(p=>p.id===id)?.name||id).join('/')}
+                              </div>
+                            )}
+                            {/* 狀態 */}
+                            <div className="mt-1.5">
+                              <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${STATUS_CFG[r.status]?.badge}`}>
+                                {STATUS_CFG[r.status]?.label}
+                              </span>
+                            </div>
+                          </div>
+                          {/* 銷假按鈕 */}
+                          {canCancel && (
+                            <button onClick={()=>{setCalDayDetail(null);setCancelModal(r);}}
+                              className="flex-shrink-0 text-[10px] font-bold px-2 py-1.5 rounded-lg bg-rose-500 text-white hover:bg-rose-600 transition-all shadow-sm">
+                              銷假
+                            </button>
+                          )}
                         </div>
-                        {canCancel && (
-                          <button onClick={()=>{setCalDayDetail(null);setCancelModal(r);}}
-                            className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-rose-100 text-rose-600 hover:bg-rose-200 flex-shrink-0 transition-all">
-                            銷假
-                          </button>
+                        {isAdmin && r.reason && (
+                          <div className="mt-1.5 text-[10px] text-gray-500 bg-white/70 rounded px-2 py-1">
+                            📝 {r.reason}
+                          </div>
                         )}
                       </div>
-                      <div className="text-gray-500 mt-0.5">
-                        {r.startDate}～{r.endDate} ·{' '}
-                        {r.unit==='hour'||r.leaveType==='compensatory'?r.hours+'H':r.days+'天'+(isAdmin&&r.days>0?' ('+r.days*WORK_HOURS_PER_DAY+'H)':'')}
-                      </div>
-                      {r.unit==='hour' && r.timeStart && r.timeEnd && (
-                        <div className="text-gray-400 mt-0.5">⏱ {r.timeStart} ～ {r.timeEnd}（{r.hours}H）</div>
-                      )}
-                      {(r.proxyName||r.proxySchedule) &&
-                        <div className="text-gray-400 mt-0.5">代理：{r.proxyName||Object.values(r.proxySchedule||{}).map(id=>personnel.find(p=>p.id===id)?.name||id).join('/')}</div>
-                      }
-                      <span className={`text-[10px] px-1.5 py-0.5 rounded-full ${STATUS_CFG[r.status]?.badge}`}>{STATUS_CFG[r.status]?.label}</span>
-                    </div>
-                  );})}
-                </div>
-              ):(
-                <div className="text-xs text-gray-400 text-center py-3">該日無排休記錄</div>
-              )}
+                    );
+                  })
+                ) : (
+                  <div className="py-8 text-center text-gray-400 text-sm">該日無排休記錄</div>
+                )}
+              </div>
+
+              {/* 管理者禁休設定 */}
               {isAdmin && (
-                <BlockedDateControl
-                  date={calDayDetail.date}
-                  blocked={calDayDetail.blocked}
-                  onToggle={handleToggleBlock}/>
+                <div className="px-4 pb-4 border-t border-gray-100 pt-3">
+                  <BlockedDateControl
+                    date={calDayDetail.date}
+                    blocked={calDayDetail.blocked}
+                    onToggle={handleToggleBlock}/>
+                </div>
               )}
             </div>
           </div>
