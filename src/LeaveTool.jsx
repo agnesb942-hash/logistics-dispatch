@@ -418,6 +418,7 @@ const LeaveTool = ({ onBack, windowHeight }) => {
   const [calDeptFilter, setCalDeptFilter] = useState('all');
   const [calBlockedDates, setCalBlockedDates] = useState({}); // {日期: {note, setBy}}
   const [calDayDetail,  setCalDayDetail]  = useState(null);   // 點擊日期彈窗
+  const [cancelModal,    setCancelModal]    = useState(null);   // 銷假確認彈窗 {req}
 
   // Stats / Export / AI
   const [statsRange,    setStatsRange]    = useState('month');
@@ -612,7 +613,7 @@ const LeaveTool = ({ onBack, windowHeight }) => {
     const prevDay = getPrevWorkingDay(applyStart);
     setNoticeModal({ req: newReq, prevDay });
   }, [currentUser, isAdmin, applyFor, applyType, applyStart, applyEnd, applyHours,
-      applyReason, applyProxy, applyProxySched, personnel, leaveConfig,
+      applyUnit, applyReason, applyProxy, applyProxySched, personnel, leaveConfig,
       detectConflicts, calBlockedDates]);
 
   // 知會彈窗確認後真正送出
@@ -689,6 +690,28 @@ const LeaveTool = ({ onBack, windowHeight }) => {
     await delReq(id);
     if (related.length>0) await batchReqs(related);
     logAction('delete','刪除假單',`${req.employeeName}・${req.leaveTypeName}・${req.startDate}～${req.endDate}`);
+  },[leaveRequests, leaveConfig, delReq, batchReqs, logAction]);
+
+  // 銷假（使用者自行取消已申請的假單）
+  const handleCancelLeave = useCallback(async (req) => {
+    const now = new Date().toISOString();
+    // 清理其他假單的衝突記錄
+    const related = leaveRequests.filter(r=>
+      r.id!==req.id && (r.conflictIds?.includes(req.id)||r.conflictWith?.includes(req.employeeName))
+    ).map(r=>{
+      const newCW  = (r.conflictWith||[]).filter(n=>n!==req.employeeName);
+      const newCID = (r.conflictIds||[]).filter(i=>i!==req.id);
+      const autoOk = newCW.length===0 && r.status==='conflict_pending' && leaveConfig.autoApprove!==false && !r.isConsecutive;
+      return {...r, conflictWith:newCW, conflictIds:newCID, status:autoOk?'approved':r.status, updatedAt:now};
+    });
+    setLeaveRequests(prev=>{
+      const without = prev.filter(r=>r.id!==req.id);
+      return without.map(r=>related.find(u=>u.id===r.id)||r);
+    });
+    await delReq(req.id);
+    if (related.length>0) await batchReqs(related);
+    logAction('cancel','銷假',`${req.employeeName}・${req.leaveTypeName}・${req.startDate}～${req.endDate}`);
+    setCancelModal(null);
   },[leaveRequests, leaveConfig, delReq, batchReqs, logAction]);
 
 
@@ -968,17 +991,29 @@ const LeaveTool = ({ onBack, windowHeight }) => {
                 <div className="space-y-2">
                   {myLeaves.slice(0,5).map(r=>{
                     const lt = LEAVE_TYPES.find(t=>t.id===r.leaveType);
+                    const canCancel = r.status !== 'rejected'; // 非已拒絕皆可銷假
                     return (
-                      <div key={r.id} className="flex items-center justify-between text-xs border border-gray-100 rounded-xl p-2.5">
-                        <div className="flex items-center gap-2">
-                          <div className="w-2 h-2 rounded-full" style={{backgroundColor:lt?.color}}></div>
-                          <div>
+                      <div key={r.id} className="flex items-center justify-between text-xs border border-gray-100 rounded-xl p-2.5 gap-2">
+                        <div className="flex items-center gap-2 min-w-0">
+                          <div className="w-2 h-2 rounded-full flex-shrink-0" style={{backgroundColor:lt?.color}}></div>
+                          <div className="min-w-0">
                             <span className="font-bold text-gray-700">{r.leaveTypeName}</span>
                             <span className="text-gray-400 ml-2">{r.startDate}～{r.endDate}</span>
-                            <span className="text-gray-400 ml-2">{r.days>0?r.days+'天':r.hours+'H'}</span>
+                            <span className="text-gray-400 ml-2">
+                              {r.unit==='hour'||r.leaveType==='compensatory' ? r.hours+'H' : r.days+'天'}
+                            </span>
                           </div>
                         </div>
-                        <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${STATUS_CFG[r.status]?.badge}`}>{STATUS_CFG[r.status]?.label}</span>
+                        <div className="flex items-center gap-1.5 flex-shrink-0">
+                          <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${STATUS_CFG[r.status]?.badge}`}>{STATUS_CFG[r.status]?.label}</span>
+                          {canCancel && (
+                            <button
+                              onClick={()=>setCancelModal(r)}
+                              className="px-2 py-0.5 rounded-lg text-[10px] font-bold bg-rose-50 text-rose-600 border border-rose-200 hover:bg-rose-100 transition-all">
+                              銷假
+                            </button>
+                          )}
+                        </div>
                       </div>
                     );
                   })}
@@ -1066,23 +1101,20 @@ const LeaveTool = ({ onBack, windowHeight }) => {
             </div>
           </div>
 
-          {/* 請假單位切換：管理者才可切換天/小時 */}
-          {applyType !== 'compensatory' && isAdmin && (
+          {/* 請假單位切換：所有人均可選天或小時 */}
+          {applyType !== 'compensatory' && (
             <div>
-              <label className="block text-xs font-bold text-gray-500 mb-1.5">
-                請假單位
-                <span className="ml-1 text-[10px] text-violet-500 font-normal">（管理者）</span>
-              </label>
+              <label className="block text-xs font-bold text-gray-500 mb-1.5">請假單位</label>
               <div className="flex gap-2">
                 {[{v:'day',l:'📅 以天計算'},{v:'hour',l:'⏱ 以小時計算'}].map(o=>(
                   <button key={o.v} onClick={()=>setApplyUnit(o.v)}
-                    className={`flex-1 py-2 rounded-xl text-xs font-bold border-2 transition-all
+                    className={`flex-1 py-2.5 rounded-xl text-xs font-bold border-2 transition-all
                       ${applyUnit===o.v?'bg-violet-50 border-violet-400 text-violet-700':'bg-gray-50 border-transparent text-gray-400'}`}>
                     {o.l}
                   </button>
                 ))}
               </div>
-              <div className="text-[10px] text-gray-400 mt-1">每日標準工時 8 小時（08:00–17:00）</div>
+              <div className="text-[10px] text-gray-400 mt-1">標準工時 08:00–17:00（8H/天）；半天請假填 4H</div>
             </div>
           )}
 
@@ -1362,6 +1394,13 @@ const LeaveTool = ({ onBack, windowHeight }) => {
 
     return (
       <div className="space-y-3">
+        {/* 頁面標題 */}
+        <div className="flex items-center justify-between">
+          <div>
+            <div className="text-sm font-bold text-gray-800">📅 月曆檢視</div>
+            <div className="text-[11px] text-gray-400 mt-0.5">顯示全部部門排休 · <span className="text-violet-500 font-bold">👤</span> 為您的假單 · 點擊日期查看詳情與銷假</div>
+          </div>
+        </div>
         {/* 控制列 */}
         <div className="flex items-center justify-between flex-wrap gap-2">
           <div className="flex items-center gap-2">
@@ -1420,13 +1459,14 @@ const LeaveTool = ({ onBack, windowHeight }) => {
                   ].filter(Boolean).join(' ')}
                   style={isHoliday?{backgroundColor:style?.bg}:{}}>
                   <div className="flex items-start justify-between mb-0.5">
-                    <div className={`text-xs font-bold w-6 h-6 flex items-center justify-center rounded-full
+                    <div className={`text-xs font-bold w-6 h-6 flex items-center justify-center rounded-full flex-shrink-0
                       ${isToday?'bg-violet-600 text-white':isHoliday?'text-red-600':isWknd?'text-red-300':'text-gray-400'}`}>
                       {parseInt(d.slice(8))}
                     </div>
-                    <div className="flex gap-0.5">
+                    <div className="flex gap-0.5 flex-wrap justify-end">
                       {isMakeup && <span className="text-[8px] bg-blue-100 text-blue-600 px-0.5 rounded">補班</span>}
                       {blocked   && <span className="text-[8px] bg-rose-200 text-rose-700 px-0.5 rounded">禁休</span>}
+                      {leaves.length>0 && <span className="text-[8px] bg-gray-100 text-gray-500 px-0.5 rounded">{leaves.length}人</span>}
                     </div>
                   </div>
                   {isHoliday && (
@@ -1436,10 +1476,12 @@ const LeaveTool = ({ onBack, windowHeight }) => {
                     {leaves.slice(0,3).map(r=>{
                       const lt=LEAVE_TYPES.find(t=>t.id===r.leaveType);
                       const pend=r.status==='pending'||r.status==='conflict_pending';
+                      const isMine = r.employeeId === currentUser?.id;
                       return(
-                        <div key={r.id} className="text-[8px] sm:text-[9px] font-bold px-1 py-0.5 rounded truncate"
+                        <div key={r.id}
+                          className={"text-[8px] sm:text-[9px] font-bold px-1 py-0.5 rounded truncate" + (isMine?" ring-1 ring-violet-400":"")}
                           style={{backgroundColor:pend?'#fef3c7':lt?.bg,color:pend?'#92400e':lt?.color,border:`1px solid ${pend?'#fcd34d':lt?.border}`}}>
-                          {r.employeeName}{pend?'*':''}{r.isConsecutive?'🔴':''}
+                          {isMine?'👤':''}{r.employeeName}{pend?'*':''}{r.isConsecutive?'🔴':''}
                         </div>
                       );
                     })}
@@ -1466,10 +1508,32 @@ const LeaveTool = ({ onBack, windowHeight }) => {
               </div>
               {calDayDetail.leaves.length>0 ? (
                 <div className="space-y-1.5 max-h-48 overflow-y-auto">
-                  {calDayDetail.leaves.map(r=>{const lt=LEAVE_TYPES.find(t=>t.id===r.leaveType);return(
-                    <div key={r.id} className="text-xs border rounded-lg p-2" style={{borderColor:lt?.border,backgroundColor:lt?.bg}}>
-                      <div className="font-bold" style={{color:lt?.color}}>{r.employeeName} · {r.leaveTypeName} {r.isConsecutive?'🔴連休':''}</div>
-                      <div className="text-gray-500 mt-0.5">{r.startDate}～{r.endDate} · 代理：{r.proxyName||Object.values(r.proxySchedule||{}).map(id=>personnel.find(p=>p.id===id)?.name||id).join('/')} · {r.unit==='hour'||r.leaveType==='compensatory'?r.hours+'H':r.days+'天'+(isAdmin&&r.days>0?' ('+r.days*WORK_HOURS_PER_DAY+'H)':'')}</div>
+                  {calDayDetail.leaves.map(r=>{
+                    const lt=LEAVE_TYPES.find(t=>t.id===r.leaveType);
+                    const isMine = r.employeeId===currentUser?.id;
+                    const canCancel = isMine && r.status!=='rejected';
+                    return(
+                    <div key={r.id} className={"text-xs border rounded-lg p-2"+(isMine?" ring-2 ring-violet-300":"")} style={{borderColor:lt?.border,backgroundColor:lt?.bg}}>
+                      <div className="flex items-start justify-between gap-1">
+                        <div>
+                          <span className="font-bold" style={{color:lt?.color}}>
+                            {isMine?'👤 ':''}{ r.employeeName} · {r.leaveTypeName} {r.isConsecutive?'🔴連休':''}
+                          </span>
+                        </div>
+                        {canCancel && (
+                          <button onClick={()=>{setCalDayDetail(null);setCancelModal(r);}}
+                            className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-rose-100 text-rose-600 hover:bg-rose-200 flex-shrink-0 transition-all">
+                            銷假
+                          </button>
+                        )}
+                      </div>
+                      <div className="text-gray-500 mt-0.5">
+                        {r.startDate}～{r.endDate} ·{' '}
+                        {r.unit==='hour'||r.leaveType==='compensatory'?r.hours+'H':r.days+'天'+(isAdmin&&r.days>0?' ('+r.days*WORK_HOURS_PER_DAY+'H)':'')}
+                      </div>
+                      {(r.proxyName||r.proxySchedule) &&
+                        <div className="text-gray-400 mt-0.5">代理：{r.proxyName||Object.values(r.proxySchedule||{}).map(id=>personnel.find(p=>p.id===id)?.name||id).join('/')}</div>
+                      }
                       <span className={`text-[10px] px-1.5 py-0.5 rounded-full ${STATUS_CFG[r.status]?.badge}`}>{STATUS_CFG[r.status]?.label}</span>
                     </div>
                   );})}
@@ -2204,6 +2268,65 @@ ${(() => {
   // ════════════════════════════════════════════════════════════════════
 
   // ── 知會提醒 Modal ─────────────────────────────────────────────────
+
+  // ── 銷假確認 Modal ─────────────────────────────────────────────
+  const renderCancelModal = () => {
+    if (!cancelModal) return null;
+    const r = cancelModal;
+    const lt = LEAVE_TYPES.find(t=>t.id===r.leaveType);
+    const isApproved = r.status === 'approved';
+    return (
+      <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4"
+        onClick={e=>{if(e.target===e.currentTarget)setCancelModal(null);}}>
+        <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm p-6 space-y-4">
+          {/* 標題 */}
+          <div className="flex items-start justify-between">
+            <div className="text-base font-bold text-gray-800">⚠️ 確認銷假</div>
+            <button onClick={()=>setCancelModal(null)} className="text-gray-400 hover:text-gray-600 text-xl">×</button>
+          </div>
+
+          {/* 假單摘要 */}
+          <div className="rounded-xl p-4 border-2" style={{backgroundColor:lt?.bg,borderColor:lt?.border}}>
+            <div className="text-xs font-bold mb-2" style={{color:lt?.color}}>📋 假單資訊</div>
+            <div className="space-y-1 text-xs text-gray-600">
+              <div><span className="text-gray-400">假別：</span><span className="font-bold">{r.leaveTypeName}</span></div>
+              <div><span className="text-gray-400">日期：</span><span className="font-bold">{r.startDate} ～ {r.endDate}</span></div>
+              <div><span className="text-gray-400">時數：</span><span className="font-bold">
+                {r.unit==='hour'||r.leaveType==='compensatory' ? r.hours+'H' : r.days+'天（'+r.days*WORK_HOURS_PER_DAY+'H）'}
+              </span></div>
+              <div><span className="text-gray-400">狀態：</span>
+                <span className={`font-bold px-1.5 py-0.5 rounded-full text-[10px] ${STATUS_CFG[r.status]?.badge}`}>{STATUS_CFG[r.status]?.label}</span>
+              </div>
+            </div>
+          </div>
+
+          {/* 警告文字 */}
+          <div className="bg-amber-50 border border-amber-200 rounded-xl p-3">
+            <div className="text-xs font-bold text-amber-700 mb-1">⚠️ 請注意</div>
+            <ul className="text-xs text-amber-700 space-y-0.5 list-disc list-inside">
+              {isApproved && <li>此假單已核准，銷假後需重新申請。</li>}
+              <li>銷假後，假單將從系統中移除，無法復原。</li>
+              <li>請確認已通知職務代理人解除代理安排。</li>
+              <li>如需重新申請，請至「申請休假」頁面。</li>
+            </ul>
+          </div>
+
+          {/* 操作按鈕 */}
+          <div className="flex gap-3">
+            <button onClick={()=>setCancelModal(null)}
+              className="flex-1 py-2.5 bg-gray-100 text-gray-600 rounded-xl text-sm font-bold hover:bg-gray-200 transition-all">
+              返回
+            </button>
+            <button onClick={()=>handleCancelLeave(r)}
+              className="flex-1 py-2.5 bg-rose-600 text-white rounded-xl text-sm font-bold hover:bg-rose-700 transition-all">
+              確認銷假
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  };
+
   const renderNoticeModal = () => {
     if (!noticeModal) return null;
     const { req, prevDay } = noticeModal;
@@ -2287,6 +2410,7 @@ ${(() => {
   return (
     <div style={{minHeight:windowHeight+'px'}} className="bg-gray-50 font-sans flex flex-col">
       {renderNoticeModal()}
+      {renderCancelModal()}
       {/* ── Top Bar ─────────────────────────────────────────────── */}
       <div className="bg-white border-b border-gray-100 shadow-sm sticky top-0 z-40">
         <div className="max-w-5xl mx-auto px-4 py-3 flex items-center justify-between">
