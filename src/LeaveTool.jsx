@@ -141,6 +141,9 @@ const HOLIDAY_STYLE = {
 // 連休門檻（工作天數 ≥ 此值時視為「連休」，強制主管審核）
 const CONSECUTIVE_THRESHOLD = 3;
 
+// 標準工時（每日小時數，用於天↔小時換算）
+const WORK_HOURS_PER_DAY = 8; // 08:00–17:00
+
 // ── Constants ─────────────────────────────────────────────────────────
 // LEAVE_DEPTS 改為從 leaveConfig 讀取（動態，管理者可新增）
 // 預設只有物流部；初始化時若 leaveConfig.depts 為空則使用此值
@@ -168,34 +171,34 @@ const LEAVE_ADMIN_PW = 'admin2024';
 
 const DEFAULT_LEAVE_PERSONNEL = [
   // 物流部
-  { id:'lp01',name:'陳承業',deptId:'dept_logi',email:'',annualQuota:15,status:'active' },
-  { id:'lp02',name:'馬一帆',deptId:'dept_logi',email:'',annualQuota:15,status:'active' },
-  { id:'lp03',name:'蕭頎俊',deptId:'dept_logi',email:'',annualQuota:15,status:'active' },
-  { id:'lp04',name:'吳泓諭',deptId:'dept_logi',email:'',annualQuota:15,status:'active' },
-  { id:'lp05',name:'林凱鴻',deptId:'dept_logi',email:'',annualQuota:15,status:'active' },
-  { id:'lp06',name:'石宗民',deptId:'dept_logi',email:'',annualQuota:15,status:'active' },
-  { id:'lp07',name:'林信宏',deptId:'dept_logi',email:'',annualQuota:15,status:'active' },
-  { id:'lp08',name:'顏瑋慶',deptId:'dept_logi',email:'',annualQuota:15,status:'active' },
-  { id:'lp09',name:'楊展儀',deptId:'dept_logi',email:'',annualQuota:15,status:'active' },
-  { id:'lp10',name:'陳崇倫',deptId:'dept_logi',email:'',annualQuota:15,status:'active' },
-  { id:'lp11',name:'鄭松岩',deptId:'dept_logi',email:'',annualQuota:15,status:'active' },
-  { id:'lp12',name:'鄭宇婷',deptId:'dept_logi',email:'',annualQuota:15,status:'active' },
-  { id:'lp13',name:'許展綸',deptId:'dept_logi',email:'',annualQuota:15,status:'active' },
-  { id:'lp14',name:'林秉裕',deptId:'dept_logi',email:'',annualQuota:15,status:'active' },
-  { id:'lp15',name:'郭軒齊',deptId:'dept_logi',email:'',annualQuota:15,status:'active' },
-  { id:'lp16',name:'梁鈞為',deptId:'dept_logi',email:'',annualQuota:15,status:'active' },
-  { id:'lp17',name:'吳冠霖',deptId:'dept_logi',email:'',annualQuota:15,status:'active' },
+  { id:'lp01',name:'陳承業',deptId:'dept_logi',email:'',status:'active' },
+  { id:'lp02',name:'馬一帆',deptId:'dept_logi',email:'',status:'active' },
+  { id:'lp03',name:'蕭頎俊',deptId:'dept_logi',email:'',status:'active' },
+  { id:'lp04',name:'吳泓諭',deptId:'dept_logi',email:'',status:'active' },
+  { id:'lp05',name:'林凱鴻',deptId:'dept_logi',email:'',status:'active' },
+  { id:'lp06',name:'石宗民',deptId:'dept_logi',email:'',status:'active' },
+  { id:'lp07',name:'林信宏',deptId:'dept_logi',email:'',status:'active' },
+  { id:'lp08',name:'顏瑋慶',deptId:'dept_logi',email:'',status:'active' },
+  { id:'lp09',name:'楊展儀',deptId:'dept_logi',email:'',status:'active' },
+  { id:'lp10',name:'陳崇倫',deptId:'dept_logi',email:'',status:'active' },
+  { id:'lp11',name:'鄭松岩',deptId:'dept_logi',email:'',status:'active' },
+  { id:'lp12',name:'鄭宇婷',deptId:'dept_logi',email:'',status:'active' },
+  { id:'lp13',name:'許展綸',deptId:'dept_logi',email:'',status:'active' },
+  { id:'lp14',name:'林秉裕',deptId:'dept_logi',email:'',status:'active' },
+  { id:'lp15',name:'郭軒齊',deptId:'dept_logi',email:'',status:'active' },
+  { id:'lp16',name:'梁鈞為',deptId:'dept_logi',email:'',status:'active' },
+  { id:'lp17',name:'吳冠霖',deptId:'dept_logi',email:'',status:'active' },
   // 倉儲部
-  { id:'lp18',name:'黃建宏',deptId:'dept_ware',email:'',annualQuota:15,status:'active' },
-  { id:'lp19',name:'劉韋廷',deptId:'dept_ware',email:'',annualQuota:15,status:'active' },
-  { id:'lp20',name:'林彥廷',deptId:'dept_ware',email:'',annualQuota:15,status:'active' },
-  { id:'lp21',name:'陳彥廷',deptId:'dept_ware',email:'',annualQuota:15,status:'active' },
-  { id:'lp22',name:'蔡承翰',deptId:'dept_ware',email:'',annualQuota:15,status:'active' },
-  { id:'lp23',name:'張宥銘',deptId:'dept_ware',email:'',annualQuota:15,status:'active' },
-  { id:'lp24',name:'王俊傑',deptId:'dept_ware',email:'',annualQuota:15,status:'active' },
-  { id:'lp25',name:'許哲維',deptId:'dept_ware',email:'',annualQuota:15,status:'active' },
-  { id:'lp26',name:'洪志豪',deptId:'dept_ware',email:'',annualQuota:15,status:'active' },
-  { id:'lp27',name:'吳承恩',deptId:'dept_ware',email:'',annualQuota:15,status:'active' },
+  { id:'lp18',name:'黃建宏',deptId:'dept_ware',email:'',status:'active' },
+  { id:'lp19',name:'劉韋廷',deptId:'dept_ware',email:'',status:'active' },
+  { id:'lp20',name:'林彥廷',deptId:'dept_ware',email:'',status:'active' },
+  { id:'lp21',name:'陳彥廷',deptId:'dept_ware',email:'',status:'active' },
+  { id:'lp22',name:'蔡承翰',deptId:'dept_ware',email:'',status:'active' },
+  { id:'lp23',name:'張宥銘',deptId:'dept_ware',email:'',status:'active' },
+  { id:'lp24',name:'王俊傑',deptId:'dept_ware',email:'',status:'active' },
+  { id:'lp25',name:'許哲維',deptId:'dept_ware',email:'',status:'active' },
+  { id:'lp26',name:'洪志豪',deptId:'dept_ware',email:'',status:'active' },
+  { id:'lp27',name:'吳承恩',deptId:'dept_ware',email:'',status:'active' },
 ];
 
 // ── Utilities ─────────────────────────────────────────────────────────
@@ -828,7 +831,7 @@ const LeaveTool = ({ onBack, windowHeight }) => {
                   <input value={customName} onChange={e=>setCustomName(e.target.value)} placeholder="其他人員姓名"
                     className="flex-1 bg-white bg-opacity-10 border border-white border-opacity-20 rounded-lg px-3 py-2 text-white text-xs placeholder-white placeholder-opacity-30 focus:outline-none" />
                   <button disabled={!customName.trim()} onClick={()=>{
-                    const p={ id:`custom_${Date.now()}`,name:customName.trim(),deptId:loginDept,email:'',annualQuota:15,status:'active' };
+                    const p={ id:`custom_${Date.now()}`,name:customName.trim(),deptId:loginDept,email:'',status:'active' };
                     setCurrentUser(p);
                     setTimeout(()=>logAction('login','自訂名稱登入',`${p.name}・${LEAVE_DEPTS.find(d=>d.id===loginDept)?.name}・⚠️ 非名單用戶`),0);
                   }}
@@ -875,9 +878,7 @@ const LeaveTool = ({ onBack, windowHeight }) => {
     const myPending = myLeaves.filter(r=>r.status==='pending'||r.status==='conflict_pending');
     const myUpcoming = leaveRequests.filter(r=>r.employeeId===currentUser.id&&r.status==='approved'&&r.startDate>=today).sort((a,b)=>a.startDate.localeCompare(b.startDate));
     const thisYear = String(getTaiwanDate().getFullYear());
-    const myAnnualUsed = leaveRequests.filter(r=>r.employeeId===currentUser.id&&r.leaveType==='annual'&&r.status==='approved'&&r.startDate.startsWith(thisYear)).reduce((s,r)=>s+r.days,0);
-    const myQuota = personnel.find(p=>p.id===currentUser.id)?.annualQuota || currentUser.annualQuota || 15;
-    const myAnnualLeft = Math.max(0, myQuota - myAnnualUsed);
+
 
     return (
       <div className="space-y-4">
@@ -1065,12 +1066,15 @@ const LeaveTool = ({ onBack, windowHeight }) => {
             </div>
           </div>
 
-          {/* 請假單位切換（天/小時，不含補休假） */}
-          {applyType !== 'compensatory' && (
+          {/* 請假單位切換：管理者才可切換天/小時 */}
+          {applyType !== 'compensatory' && isAdmin && (
             <div>
-              <label className="block text-xs font-bold text-gray-500 mb-1.5">請假單位</label>
+              <label className="block text-xs font-bold text-gray-500 mb-1.5">
+                請假單位
+                <span className="ml-1 text-[10px] text-violet-500 font-normal">（管理者）</span>
+              </label>
               <div className="flex gap-2">
-                {[{v:'day',l:'以天計算'},{v:'hour',l:'以小時計算'}].map(o=>(
+                {[{v:'day',l:'📅 以天計算'},{v:'hour',l:'⏱ 以小時計算'}].map(o=>(
                   <button key={o.v} onClick={()=>setApplyUnit(o.v)}
                     className={`flex-1 py-2 rounded-xl text-xs font-bold border-2 transition-all
                       ${applyUnit===o.v?'bg-violet-50 border-violet-400 text-violet-700':'bg-gray-50 border-transparent text-gray-400'}`}>
@@ -1078,6 +1082,7 @@ const LeaveTool = ({ onBack, windowHeight }) => {
                   </button>
                 ))}
               </div>
+              <div className="text-[10px] text-gray-400 mt-1">每日標準工時 8 小時（08:00–17:00）</div>
             </div>
           )}
 
@@ -1087,10 +1092,11 @@ const LeaveTool = ({ onBack, windowHeight }) => {
               <label className="block text-xs font-bold text-gray-500 mb-1.5">
                 {applyType==='compensatory' ? '補休時數' : '請假時數'}
               </label>
-              <input type="number" value={applyHours} min="1" max="72" step="0.5"
+              <input type="number" value={applyHours} min="0.5" max="72" step="0.5"
                 onChange={e=>setApplyHours(e.target.value)}
                 className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:border-violet-400"
-                placeholder="例：4（半天）、8（一天）"/>
+                placeholder="例：4（半天）、8（整天）"/>
+              <div className="text-[10px] text-gray-400 mt-1">標準工時 8H/天（08:00–17:00）；半天 = 4H</div>
             </div>
           )}
 
@@ -1098,9 +1104,13 @@ const LeaveTool = ({ onBack, windowHeight }) => {
           {(workDays > 0 || (isHourUnit && parseFloat(applyHours)>0)) && (
             <div className="flex items-center flex-wrap gap-2">
               {isHourUnit ? (
-                <span className="text-sm text-gray-500">請假時數：<span className="font-bold text-violet-700">{applyHours} 小時</span></span>
+                <span className="text-sm text-gray-500">請假時數：<span className="font-bold text-violet-700">{applyHours} 小時</span>
+                  <span className="text-gray-400 ml-1">（約 {(parseFloat(applyHours)||0)/8 % 1 === 0 ? (parseFloat(applyHours)||0)/8 : ((parseFloat(applyHours)||0)/8).toFixed(1)} 天）</span>
+                </span>
               ) : (
-                <span className="text-sm text-gray-500">工作天數：<span className="font-bold text-violet-700">{workDays} 天（{workDays*8} 小時）</span></span>
+                <span className="text-sm text-gray-500">工作天數：<span className="font-bold text-violet-700">{workDays} 天</span>
+                  <span className="text-gray-400 ml-1">（{workDays * WORK_HOURS_PER_DAY} 小時）</span>
+                </span>
               )}
               {isConsecutive && (
                 <span className="text-xs bg-amber-100 text-amber-700 border border-amber-200 px-2 py-0.5 rounded-full font-bold">
@@ -1227,7 +1237,13 @@ const LeaveTool = ({ onBack, windowHeight }) => {
               <div className="text-xs text-gray-500 mt-0.5">
                 <span className="font-bold" style={{color:lt?.color}}>{r.leaveTypeName}</span>
                 <span className="ml-2">{r.startDate} ～ {r.endDate}</span>
-                <span className="ml-2">{r.days>0?r.days+'天':r.hours+'H'}</span>
+                <span className="ml-2">
+                  {r.unit==='hour' || r.leaveType==='compensatory'
+                    ? r.hours+'H'
+                    : r.days+'天'}
+                  {isAdmin && r.unit!=='hour' && r.leaveType!=='compensatory' && r.days>0 &&
+                    <span className="text-gray-400 ml-1">({r.days*WORK_HOURS_PER_DAY}H)</span>}
+                </span>
               </div>
               {isAdmin && r.reason && <div className="text-xs text-gray-500 mt-1">📝 事由：{r.reason}</div>}
             </div>
@@ -1453,7 +1469,7 @@ const LeaveTool = ({ onBack, windowHeight }) => {
                   {calDayDetail.leaves.map(r=>{const lt=LEAVE_TYPES.find(t=>t.id===r.leaveType);return(
                     <div key={r.id} className="text-xs border rounded-lg p-2" style={{borderColor:lt?.border,backgroundColor:lt?.bg}}>
                       <div className="font-bold" style={{color:lt?.color}}>{r.employeeName} · {r.leaveTypeName} {r.isConsecutive?'🔴連休':''}</div>
-                      <div className="text-gray-500 mt-0.5">{r.startDate}～{r.endDate} · 代理：{r.proxyName||Object.values(r.proxySchedule||{}).map(id=>personnel.find(p=>p.id===id)?.name||id).join('/')}</div>
+                      <div className="text-gray-500 mt-0.5">{r.startDate}～{r.endDate} · 代理：{r.proxyName||Object.values(r.proxySchedule||{}).map(id=>personnel.find(p=>p.id===id)?.name||id).join('/')} · {r.unit==='hour'||r.leaveType==='compensatory'?r.hours+'H':r.days+'天'+(isAdmin&&r.days>0?' ('+r.days*WORK_HOURS_PER_DAY+'H)':'')}</div>
                       <span className={`text-[10px] px-1.5 py-0.5 rounded-full ${STATUS_CFG[r.status]?.badge}`}>{STATUS_CFG[r.status]?.label}</span>
                     </div>
                   );})}
@@ -1981,7 +1997,7 @@ ${(() => {
         <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
           <div className="p-4 border-b border-gray-100 flex items-center justify-between">
             <div className="text-sm font-bold text-gray-700">👥 人員管理</div>
-            <button onClick={()=>{ setSettingEdit('new_person'); setSettingForm({name:'',deptId:'dept_logi',email:'',annualQuota:15,status:'active'}); }}
+            <button onClick={()=>{ setSettingEdit('new_person'); setSettingForm({name:'',deptId:'dept_logi',email:'',status:'active'}); }}
               className="px-3 py-1.5 bg-violet-50 text-violet-700 rounded-lg text-xs font-bold border border-violet-200 hover:bg-violet-100 transition-all">
               + 新增人員
             </button>
@@ -1992,8 +2008,7 @@ ${(() => {
                 <tr>
                   <th className="px-4 py-2.5 text-left text-gray-500 font-bold">姓名</th>
                   <th className="px-3 py-2.5 text-gray-500 font-bold">部門</th>
-                  <th className="px-3 py-2.5 text-gray-500 font-bold">特休配額(天)</th>
-                  <th className="px-3 py-2.5 text-gray-500 font-bold">狀態</th>
+                                    <th className="px-3 py-2.5 text-gray-500 font-bold">狀態</th>
                   <th className="px-3 py-2.5 text-gray-500 font-bold">操作</th>
                 </tr>
               </thead>
@@ -2002,8 +2017,7 @@ ${(() => {
                   <tr key={p.id} className={p.status!=='active'?'opacity-40':''}>
                     <td className="px-4 py-2.5 font-bold text-gray-700">{p.name}</td>
                     <td className="px-3 py-2.5 text-center text-gray-500">{LEAVE_DEPTS.find(d=>d.id===p.deptId)?.name}</td>
-                    <td className="px-3 py-2.5 text-center font-bold text-violet-600">{p.annualQuota}</td>
-                    <td className="px-3 py-2.5 text-center">
+                                        <td className="px-3 py-2.5 text-center">
                       <span className={`text-[10px] px-2 py-0.5 rounded-full font-bold ${p.status==='active'?'bg-emerald-100 text-emerald-700':'bg-gray-100 text-gray-500'}`}>
                         {p.status==='active'?'在職':'離職'}
                       </span>
@@ -2139,8 +2153,7 @@ ${(() => {
               {[
                 ['text','name','姓名'],
                 ['text','email','Email（選填）'],
-                ['number','annualQuota','特休配額（天）'],
-              ].map(([type,key,label])=>(
+                              ].map(([type,key,label])=>(
                 <div key={key}>
                   <label className="block text-xs font-bold text-gray-500 mb-1">{label}</label>
                   <input type={type} value={settingForm[key]||''} onChange={e=>setSettingForm(prev=>({...prev,[key]:type==='number'?parseInt(e.target.value)||0:e.target.value}))}
