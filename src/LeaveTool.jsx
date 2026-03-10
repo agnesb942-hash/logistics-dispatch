@@ -528,6 +528,9 @@ const LeaveTool = ({ onBack, windowHeight }) => {
   // ── handleSubmitLeave ──────────────────────────────────────────────
   // 邏輯：衝突 → conflict_pending；連休(≥3工作天) → pending；autoApprove → approved
   const handleSubmitLeave = useCallback(async () => {
+    // ── 先宣告 isHourUnit，避免 Temporal Dead Zone ──
+    const isHourUnit = applyUnit === 'hour' && applyType !== 'compensatory';
+
     const targetPerson = isAdmin && applyFor
       ? personnel.find(p=>p.id===applyFor)
       : currentUser;
@@ -544,7 +547,6 @@ const LeaveTool = ({ onBack, windowHeight }) => {
     }
 
     const leaveTypeDef = LEAVE_TYPES.find(t=>t.id===applyType);
-    const isHourUnit = applyUnit === 'hour' && applyType !== 'compensatory';
     const workDays = applyType==='compensatory'
       ? 0
       : isHourUnit ? 0 : calcWorkingDaysWithHolidays(applyStart, applyEnd);
