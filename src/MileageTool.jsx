@@ -625,6 +625,9 @@ const MileageTool = ({ onBack, windowHeight }) => {
   const [fuelPreview,     setFuelPreview]     = useState([]);          // 前5筆預覽
   const [fuelDashDept,    setFuelDashDept]    = useState('all');
   const [fuelDashPeriod,  setFuelDashPeriod]  = useState('');
+  const [fuelRange,       setFuelRange]       = useState('month'); // month|quarter|year|custom
+  const [fuelFrom,        setFuelFrom]        = useState('');
+  const [fuelTo,          setFuelTo]          = useState('');
 
   // ── Firestore CRUD ──────────────────────────────────────────────
   const saveCollection = async (collName, data) => {
@@ -1913,6 +1916,15 @@ const MileageTool = ({ onBack, windowHeight }) => {
               const newOnly  = fuelPending.filter(r=>!existKey.has(`${r.vehiclePlate}_${r.date}_${r.fuelLiters}`));
               const merged   = [...fuelRecords, ...newOnly];
               autoSave('fuel_records', merged, setFuelRecords);
+              // ── 寫入操作記錄 ──
+              const periodRange = fuelPending.length
+                ? (() => {
+                    const periods = [...new Set(fuelPending.map(r=>r.period))].sort();
+                    return periods.length === 1 ? periods[0] : `${periods[0]} ～ ${periods[periods.length-1]}`;
+                  })()
+                : '—';
+              logAction('fuel', '油耗資料匯入',
+                `期間 ${periodRange}・新增 ${newOnly.length} 筆・跳過重複 ${fuelPending.length - newOnly.length} 筆`);
               setFuelImportStep('upload');
               setFuelPending([]); setFuelPreview([]);
               setFuelTab('dashboard');
@@ -1956,10 +1968,33 @@ const MileageTool = ({ onBack, windowHeight }) => {
             // 統計計算
             // ══════════════════════════════════════════════════════════
             const fuelPeriodList = [...new Set(fuelRecords.map(r=>r.period))].sort().reverse();
-            const curPeriod      = fuelDashPeriod || fuelPeriodList[0] || '';
+            // 基準期別（用戶手動選擇的 yyyy-mm，或預設最新）
+            const fuelBasePeriod = fuelDashPeriod || fuelPeriodList[0] || getTaiwanPeriod();
+            // 依 fuelRange 展開成多個 period
+            const fuelActivePeriods = (() => {
+              if (!fuelBasePeriod) return [];
+              const [fy, fm] = fuelBasePeriod.split('-').map(Number);
+              if (fuelRange === 'month') {
+                return [fuelBasePeriod];
+              } else if (fuelRange === 'quarter') {
+                const qStart = Math.floor((fm - 1) / 3) * 3 + 1;
+                return [0,1,2].map(i => fy + '-' + String(qStart + i).padStart(2,'0'));
+              } else if (fuelRange === 'year') {
+                return Array.from({length:12}, (_,i) => fy + '-' + String(i+1).padStart(2,'0'));
+              } else if (fuelRange === 'custom' && fuelFrom && fuelTo) {
+                return fuelPeriodList.filter(p => p >= fuelFrom && p <= fuelTo);
+              }
+              return [fuelBasePeriod];
+            })();
+            // 標籤（頁首 / 表格標題用）
+            const fuelRangeLabel = fuelRange === 'month' ? fuelBasePeriod
+              : fuelRange === 'quarter' ? (() => { const [fy2,fm2] = fuelBasePeriod.split('-').map(Number); return `${fy2} Q${Math.ceil(fm2/3)}`; })()
+              : fuelRange === 'year'    ? `${fuelBasePeriod.slice(0,4)} 年`
+              : (fuelFrom && fuelTo)   ? `${fuelFrom} ～ ${fuelTo}`
+              : fuelBasePeriod;
 
             const filtered = computeKml(fuelRecords).filter(r =>
-              (!curPeriod || r.period === curPeriod) &&
+              (fuelActivePeriods.length === 0 || fuelActivePeriods.includes(r.period)) &&
               (fuelDashDept === 'all' || (vehicles.find(v=>v.plate===r.vehiclePlate)||{}).deptId === fuelDashDept)
             );
 
@@ -1992,9 +2027,12 @@ const MileageTool = ({ onBack, windowHeight }) => {
               deptName: (departments.find(d=>d.id==(vehicles.find(v=>v.plate===p.plate)||{}).deptId)||{name:'—'}).name,
             })).sort((a,b)=>b.cost-a.cost);
 
-            // km/L 月趨勢（過去6個月）
-            const last6 = fuelPeriodList.slice(0,6).reverse();
-            const kmlTrend = last6.map(p => {
+            // km/L 油耗趨勢
+            // 趨勢：若多個期別（季/年/自訂），顯示每月均值；單月則顯示各車
+            const trendPeriods = fuelRange === 'month'
+              ? fuelPeriodList.slice(0,6).reverse()   // 月模式：保持過去6個月縱覽
+              : [...fuelActivePeriods].sort();          // 其他：顯示所選範圍每月
+            const kmlTrend = trendPeriods.map(p => {
               const rs = computeKml(fuelRecords.filter(r=>r.period===p)).filter(r=>r.kml!=null&&!r.isAnomaly);
               return { p, v: rs.length?Math.round(rs.reduce((s,r)=>s+r.kml,0)/rs.length*10)/10:null };
             });
@@ -2002,7 +2040,7 @@ const MileageTool = ({ onBack, windowHeight }) => {
             const tMin=validT.length?Math.min(...validT.map(d=>d.v))-0.5:0;
             const tMax=validT.length?Math.max(...validT.map(d=>d.v))+0.5:10;
             const tW=320,tH=90,tPad=30;
-            const tx=i=>tPad+i*((tW-tPad*2)/(Math.max(last6.length-1,1)));
+            const tx=i=>tPad+i*((tW-tPad*2)/(Math.max(trendPeriods.length-1,1)));
             const ty=v=>tH-14-((v-tMin)/(tMax-tMin||1))*(tH-26);
             const tPts=kmlTrend.map((d,i)=>d.v!=null?`${tx(i).toFixed(1)},${ty(d.v).toFixed(1)}`:null).filter(Boolean);
 
@@ -2027,11 +2065,32 @@ const MileageTool = ({ onBack, windowHeight }) => {
                       <option value="all">全部門</option>
                       {departments.map(d=><option key={d.id} value={d.id}>{d.name}</option>)}
                     </select>
-                    <select value={fuelDashPeriod} onChange={e=>setFuelDashPeriod(e.target.value)}
-                      className="border border-gray-300 rounded-lg px-3 py-1.5 text-xs">
-                      <option value="">最新期別</option>
-                      {fuelPeriodList.map(p=><option key={p} value={p}>{p}</option>)}
-                    </select>
+                    {/* 週期模式按鈕 */}
+                    <div className="flex gap-1 flex-wrap">
+                      {[['month','月'],['quarter','季'],['year','年'],['custom','自訂']].map(([v,l]) => (
+                        <button key={v} onClick={()=>setFuelRange(v)}
+                          className={'px-2.5 py-1.5 rounded-lg text-xs font-bold border transition-all ' +
+                            (fuelRange===v ? 'bg-blue-600 text-white border-blue-600' : 'bg-white text-gray-500 border-gray-200 hover:border-blue-300')}>
+                          {l}
+                        </button>
+                      ))}
+                    </div>
+                    {/* 基準期別（月模式顯示期別選單；季/年僅需年月定位） */}
+                    {fuelRange !== 'custom' && (
+                      <select value={fuelDashPeriod} onChange={e=>setFuelDashPeriod(e.target.value)}
+                        className="border border-gray-300 rounded-lg px-3 py-1.5 text-xs">
+                        <option value="">最新期別</option>
+                        {fuelPeriodList.map(p=><option key={p} value={p}>{p}</option>)}
+                      </select>
+                    )}
+                    {/* 自訂範圍 */}
+                    {fuelRange === 'custom' && <>
+                      <input type="month" value={fuelFrom} onChange={e=>setFuelFrom(e.target.value)}
+                        className="border border-gray-300 rounded-lg px-2 py-1.5 text-xs" />
+                      <span className="text-gray-400 text-xs">～</span>
+                      <input type="month" value={fuelTo} onChange={e=>setFuelTo(e.target.value)}
+                        className="border border-gray-300 rounded-lg px-2 py-1.5 text-xs" />
+                    </>}
                   </div>
                 </div>
 
@@ -2062,6 +2121,17 @@ const MileageTool = ({ onBack, windowHeight }) => {
                       )}
                     </div>
                   ) : (<>
+
+                    {/* ── 週期標籤 ── */}
+                    <div className="flex items-center justify-between mb-1">
+                      <div className="flex items-center gap-2">
+                        <span className="text-xs font-bold text-gray-700">📅 統計區間：</span>
+                        <span className="text-xs font-mono text-blue-700 bg-blue-50 border border-blue-100 rounded px-2 py-0.5">{fuelRangeLabel || '—'}</span>
+                        {fuelRange !== 'month' && fuelActivePeriods.length > 0 && (
+                          <span className="text-[10px] text-gray-400">（{fuelActivePeriods.length} 個月）</span>
+                        )}
+                      </div>
+                    </div>
 
                     {/* ── KPI 6 格 ── */}
                     <div className="grid grid-cols-2 lg:grid-cols-3 gap-3">
@@ -2119,8 +2189,8 @@ const MileageTool = ({ onBack, windowHeight }) => {
                       {/* km/L 趨勢折線圖 */}
                       {validT.length>=2 && (
                         <div className="lg:col-span-2 bg-white rounded-xl border border-gray-200 shadow-sm p-4">
-                          <div className="text-sm font-bold text-gray-700 mb-1">📈 月均油耗趨勢（km/L）</div>
-                          <div className="text-[10px] text-gray-400 mb-2">異常值已排除，僅計算有效記錄</div>
+                          <div className="text-sm font-bold text-gray-700 mb-1">📈 油耗趨勢（km/L）・{fuelRangeLabel}</div>
+                          <div className="text-[10px] text-gray-400 mb-2">{fuelRange==='month'?'顯示過去6個月均值':'所選期間每月均值'} ／ 異常值已排除</div>
                           <svg width="100%" viewBox={`0 0 ${tW} ${tH}`} style={{overflow:'visible'}}>
                             {[0,1,2,3].map(i=>{
                               const y=tH-14-i*((tH-26)/3);
@@ -2161,7 +2231,7 @@ const MileageTool = ({ onBack, windowHeight }) => {
                     {/* ── 各車油耗明細表 ── */}
                     <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-x-auto">
                       <div className="px-4 pt-4 pb-2 flex items-center justify-between">
-                        <span className="text-sm font-bold text-gray-700">各車油耗明細{curPeriod?`（${curPeriod}）`:''}</span>
+                        <span className="text-sm font-bold text-gray-700">各車油耗明細（{fuelRangeLabel}）</span>
                         <span className="text-xs text-gray-400">{plateList.length} 台車</span>
                       </div>
                       <table className="w-full text-xs">
@@ -2306,7 +2376,7 @@ const MileageTool = ({ onBack, windowHeight }) => {
                     <div className="px-4 pt-4 pb-2 flex items-center justify-between">
                       <span className="text-sm font-bold text-gray-700">
                         加油記錄 <span className="text-indigo-600">{filtered.length}</span> 筆
-                        {curPeriod&&<span className="text-gray-400 font-normal">（{curPeriod}）</span>}
+                        {fuelRangeLabel&&<span className="text-gray-400 font-normal">（{fuelRangeLabel}）</span>}
                       </span>
                     </div>
                     <table className="w-full text-xs">
@@ -2359,6 +2429,7 @@ const MileageTool = ({ onBack, windowHeight }) => {
                   <option value="edit">修改 / 覆蓋</option>
                   <option value="approve">審核通過</option>
                   <option value="delete">刪除</option>
+                  <option value="fuel">⛽ 油耗匯入</option>
                 </select>
                 <span className="text-xs text-gray-400">共 {auditLog.filter(l => logFilter === 'all' || l.category === logFilter).length} 筆</span>
               </div>
@@ -2388,6 +2459,7 @@ const MileageTool = ({ onBack, windowHeight }) => {
                           edit: 'bg-purple-100 text-purple-700',
                           approve: 'bg-green-100 text-green-700',
                           delete: 'bg-gray-200 text-gray-600',
+                          fuel: 'bg-orange-100 text-orange-700',
                           login: l.action.includes('錯誤') ? 'bg-red-100 text-red-700'
                                : l.action.includes('登出') ? 'bg-slate-200 text-slate-600'
                                : l.action.includes('管理者') ? 'bg-amber-100 text-amber-700'
