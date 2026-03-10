@@ -66,11 +66,24 @@ const DB = {
       const batch=fb.writeBatch(fb.db);
       ops.forEach(op=>{
         const ref=fb.doc(fb.db,op.coll,op.id);
-        if(op.type==='set') batch.set(ref,{...op.data,_ts:new Date().toISOString()});
-        else if(op.type==='del') batch.delete(ref);
+        const t = op.type || 'set'; // 未指定 type 預設為 set
+        if(t==='set') batch.set(ref,{...op.data,_ts:new Date().toISOString()});
+        else if(t==='del') batch.delete(ref);
       });
       await batch.commit(); return true;
     } catch(e){ console.warn('[DB.batchOps]',e); return false; }
+  },
+  // 即時監聽 collection 變更（onSnapshot）
+  async subscribe(coll, callback) {
+    const fb = await initLeaveFirebase(); if (!fb) return ()=>{};
+    try {
+      const colRef = fb.collection(fb.db, coll);
+      const unsub  = fb.onSnapshot(colRef, snap => {
+        const docs = snap.docs.map(d => d.data());
+        callback(docs);
+      });
+      return unsub;
+    } catch(e){ console.warn('[DB.subscribe]',coll,e); return ()=>{}; }
   },
 };
 
@@ -463,20 +476,23 @@ const LeaveTool = ({ onBack, windowHeight }) => {
   const saveBlock = useCallback(async(dateStr,data)=>{setSaving();const ok=await DB.set(COLL.block,dateStr,{date:dateStr,...data});ok?setSaved():setDbErr();return ok;},[setSaving,setSaved,setDbErr]);
   const delBlock  = useCallback(async dateStr=>{setSaving();const ok=await DB.del(COLL.block,dateStr);ok?setSaved():setDbErr();return ok;},[setSaving,setSaved,setDbErr]);
 
-  // ── Load from Firestore ────────────────────────────────────────────
+  // ── Load from Firestore + 即時監聽 ────────────────────────────────
   useEffect(()=>{
     let cancelled = false;
+    const unsubscribers = [];
+
     (async()=>{
       setDataLoading(true);
-      const [reqs, pers, cfg, logs, blocks] = await Promise.all([
-        DB.getAll(COLL.req),
+
+      // 靜態資料（一次性讀取）
+      const [pers, cfg, logs, blocks] = await Promise.all([
         DB.getAll(COLL.pers),
         DB.getOne(COLL.cfg,'settings'),
         DB.getAll(COLL.log),
         DB.getAll(COLL.block),
       ]);
       if (cancelled) return;
-      if (reqs.length>0)   setLeaveRequests(reqs.sort((a,b)=>(b.createdAt||'').localeCompare(a.createdAt||'')));
+
       if (pers.length>0) {
         setPersonnel(pers);
       } else {
@@ -494,9 +510,21 @@ const LeaveTool = ({ onBack, windowHeight }) => {
         blocks.forEach(b=>{ bMap[b.date]=b; });
         setCalBlockedDates(bMap);
       }
+
+      // ── 即時監聽：leave_requests（最重要，跨裝置同步） ──
+      const unsubReqs = await DB.subscribe(COLL.req, docs => {
+        if (cancelled) return;
+        setLeaveRequests(docs.sort((a,b)=>(b.createdAt||'').localeCompare(a.createdAt||'')));
+      });
+      unsubscribers.push(unsubReqs);
+
       setDataLoading(false);
     })();
-    return ()=>{cancelled=true;};
+
+    return ()=>{
+      cancelled = true;
+      unsubscribers.forEach(fn=>{ try{ fn(); }catch(e){} });
+    };
   },[]);
 
   // ── logAction ─────────────────────────────────────────────────────
@@ -531,19 +559,20 @@ const LeaveTool = ({ onBack, windowHeight }) => {
     // ── 先宣告 isHourUnit，避免 Temporal Dead Zone ──
     const isHourUnit = applyUnit === 'hour' && applyType !== 'compensatory';
 
+    setApplySubmitting(true);
     const targetPerson = isAdmin && applyFor
       ? personnel.find(p=>p.id===applyFor)
       : currentUser;
-    if (!targetPerson) return alert('請選擇申請人');
-    if (!applyStart || !applyEnd) return alert('請填寫休假日期');
-    if (applyStart > applyEnd) return alert('開始日期不能晚於結束日期');
+    if (!targetPerson) { setApplySubmitting(false); return alert('請選擇申請人'); }
+    if (!applyStart || !applyEnd) { setApplySubmitting(false); return alert('請填寫休假日期'); }
+    if (applyStart > applyEnd) { setApplySubmitting(false); return alert('開始日期不能晚於結束日期'); }
     if (isHourUnit) {
-      if (!applyTimeStart || !applyTimeEnd) return alert('請填寫起始和結束時間');
+      if (!applyTimeStart || !applyTimeEnd) { setApplySubmitting(false); return alert('請填寫起始和結束時間'); }
       const [sh,sm] = applyTimeStart.split(':').map(Number);
       const [eh,em] = applyTimeEnd.split(':').map(Number);
-      if (eh*60+em <= sh*60+sm) return alert('結束時間必須晚於起始時間');
+      if (eh*60+em <= sh*60+sm) { setApplySubmitting(false); return alert('結束時間必須晚於起始時間'); }
       const diff = ((eh*60+em)-(sh*60+sm))/60;
-      if (diff > WORK_HOURS_PER_DAY) return alert(`請假時數不可超過每日標準工時（${WORK_HOURS_PER_DAY}H）`);
+      if (diff > WORK_HOURS_PER_DAY) { setApplySubmitting(false); return alert(`請假時數不可超過每日標準工時（${WORK_HOURS_PER_DAY}H）`); }
     }
 
     const leaveTypeDef = LEAVE_TYPES.find(t=>t.id===applyType);
@@ -568,9 +597,9 @@ const LeaveTool = ({ onBack, windowHeight }) => {
       if (isConsecutive) {
         const workDayList = getWorkingDaysInRange(applyStart, applyEnd);
         const missing = workDayList.filter(d => !applyProxySched[d]);
-        if (missing.length > 0) return alert(`⚠️ 連休假單需為每個工作日指定職務代理人\n缺少：${missing.join('、')}`);
+        if (missing.length > 0) { setApplySubmitting(false); return alert(`⚠️ 連休假單需為每個工作日指定職務代理人\n缺少：${missing.join('、')}`); }
       } else {
-        if (!applyProxy) return alert('⚠️ 請指定職務代理人');
+        if (!applyProxy) { setApplySubmitting(false); return alert('⚠️ 請指定職務代理人'); }
       }
     }
 
@@ -632,6 +661,7 @@ const LeaveTool = ({ onBack, windowHeight }) => {
     // 顯示知會提醒彈窗（送出前必看）
     const prevDay = getPrevWorkingDay(applyStart);
     setNoticeModal({ req: newReq, prevDay });
+    setApplySubmitting(false);
   }, [currentUser, isAdmin, applyFor, applyType, applyStart, applyEnd, applyHours,
       applyUnit, applyTimeStart, applyTimeEnd, applyReason, applyProxy, applyProxySched, personnel, leaveConfig,
       detectConflicts, calBlockedDates]);
@@ -1280,7 +1310,7 @@ const LeaveTool = ({ onBack, windowHeight }) => {
           )}
 
           <button onClick={handleSubmitLeave}
-            disabled={!applyStart||!applyEnd||applyStart>applyEnd||(isAdmin&&!applyFor&&currentUser?.isAdmin)||applySubmitting}
+            disabled={!applyStart||!applyEnd||applyStart>applyEnd||(isAdmin&&!applyFor)||applySubmitting}
             className="w-full py-3 rounded-xl text-sm font-bold text-white transition-all disabled:opacity-40"
             style={{backgroundColor: leaveTypeDef?.color||'#7c3aed'}}>
             {conflicts.length>0||isConsecutive?'⚠️ 送出申請（需主管審核）':'送出申請'}
@@ -1556,7 +1586,7 @@ const LeaveTool = ({ onBack, windowHeight }) => {
                   {calDayDetail.leaves.map(r=>{
                     const lt=LEAVE_TYPES.find(t=>t.id===r.leaveType);
                     const isMine = r.employeeId===currentUser?.id;
-                    const canCancel = isMine && r.status!=='rejected';
+                    const canCancel = (isMine || isAdmin) && r.status!=='rejected';
                     return(
                     <div key={r.id} className={"text-xs border rounded-lg p-2"+(isMine?" ring-2 ring-violet-300":"")} style={{borderColor:lt?.border,backgroundColor:lt?.bg}}>
                       <div className="flex items-start justify-between gap-1">
@@ -2141,7 +2171,8 @@ ${(() => {
                         <button onClick={()=>{
                           if(!window.confirm('確認刪除？'))return;
                           const updated=personnel.filter(x=>x.id!==p.id);
-                          setPersonnel(updated); savePersF(personToSave).catch(()=>{});
+                          setPersonnel(updated);
+                          DB.del(COLL.pers, p.id).catch(()=>{});
                           logAction('delete','刪除人員',p.name);
                         }}
                           className="px-2 py-1 bg-gray-100 text-gray-400 rounded text-[10px] hover:bg-red-50 hover:text-red-500 transition-all">刪除</button>
@@ -2297,7 +2328,7 @@ ${(() => {
                     updated=personnel.map(p=>p.id===settingEdit?{...p,...settingForm}:p);
                     logAction('settings','編輯人員',settingForm.name);
                   }
-                  setPersonnel(updated); savePersF(updated.find(x=>x.id===(settingEdit==='new'?updated[updated.length-1]?.id:settingEdit))).catch(()=>{});
+                  setPersonnel(updated); savePersF(updated.find(x=>x.id===(settingEdit==='new_person'?updated[updated.length-1]?.id:settingEdit))).catch(()=>{});
                   setSettingEdit(null); setSettingForm({});
                 }}
                   className="flex-1 py-2.5 bg-violet-600 text-white rounded-xl text-sm font-bold hover:bg-violet-700 transition-all">儲存</button>
@@ -2480,6 +2511,17 @@ ${(() => {
           <div className="flex items-center gap-2">
             <span className="text-xs text-gray-500">{currentUser?.name}</span>
             {isAdmin&&<span className="text-[10px] bg-amber-100 text-amber-700 px-2 py-0.5 rounded-full font-bold">管理者</span>}
+            {isAdmin && (
+              <button onClick={async ()=>{
+                setSyncStatus('saving');
+                const reqs = await DB.getAll(COLL.req);
+                if (reqs.length>0) setLeaveRequests(reqs.sort((a,b)=>(b.createdAt||'').localeCompare(a.createdAt||'')));
+                setSyncStatus('saved');
+                setTimeout(()=>setSyncStatus(''),1500);
+              }} className="text-[10px] text-gray-400 hover:text-violet-600 transition-all border border-gray-200 hover:border-violet-300 px-2 py-0.5 rounded-lg">
+                🔄
+              </button>
+            )}
             <button onClick={()=>{ setCurrentUser(null); setIsAdmin(false); setLoginDept(''); }}
               className="text-xs text-gray-400 hover:text-red-500 transition-all ml-1">登出</button>
           </div>
