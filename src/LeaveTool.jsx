@@ -494,7 +494,7 @@ const LeaveTool = ({ onBack, windowHeight }) => {
       DB.set(COLL.log, entry.id, entry).catch(()=>{});
       return updated;
     });
-  },[currentUser, saveColl]);
+  },[currentUser]);
 
   // ── Conflict detection ────────────────────────────────────────────
   const detectConflicts = useCallback((deptId, start, end, excludeId=null) => {
