@@ -707,8 +707,7 @@ const LeaveTool = ({ onBack, windowHeight }) => {
     const saved = await saveReq(req);
     if (!saved) {
       // 寫入失敗：不更新本機，保留申請畫面讓使用者重試
-      alert('❌ 儲存失敗，請確認網路連線後重試。
-（假單尚未送出，請重新點選「確認送出」）');
+      alert('❌ 儲存失敗，請確認網路連線後重試。\n（假單尚未送出，請重新點選「確認送出」）');
       setNoticeConfirm(false); // 取消確認打勾，讓使用者可以重試
       return;
     }
