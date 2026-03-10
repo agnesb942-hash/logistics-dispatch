@@ -39,8 +39,11 @@ const DB = {
   },
   async set(coll, id, data) {
     const fb = await initLeaveFirebase(); if (!fb) return false;
-    try { await fb.setDoc(fb.doc(fb.db,coll,id),{...data,_ts:new Date().toISOString()}); return true; }
-    catch(e){ console.warn('[DB.set]',coll,id,e); return false; }
+    try {
+      const clean = JSON.parse(JSON.stringify({...data,_ts:new Date().toISOString()}, (_k,v)=>v===undefined?null:v));
+      await fb.setDoc(fb.doc(fb.db,coll,id), clean); return true;
+    }
+    catch(e){ console.error('[DB.set 失敗]',coll,id, '錯誤：',e?.message||e); return false; }
   },
   async del(coll, id) {
     const fb = await initLeaveFirebase(); if (!fb) return false;
@@ -56,7 +59,10 @@ const DB = {
     const fb = await initLeaveFirebase(); if (!fb) return false;
     try {
       const batch=fb.writeBatch(fb.db);
-      items.forEach(item=>batch.set(fb.doc(fb.db,coll,item.id),{...item,_ts:new Date().toISOString()}));
+      items.forEach(item=>{
+        const clean = JSON.parse(JSON.stringify({...item,_ts:new Date().toISOString()}, (_k,v)=>v===undefined?null:v));
+        batch.set(fb.doc(fb.db,coll,item.id), clean);
+      });
       await batch.commit(); return true;
     } catch(e){ console.warn('[DB.batchSet]',coll,e); return false; }
   },
@@ -67,23 +73,33 @@ const DB = {
       ops.forEach(op=>{
         const ref=fb.doc(fb.db,op.coll,op.id);
         const t = op.type || 'set'; // 未指定 type 預設為 set
-        if(t==='set') batch.set(ref,{...op.data,_ts:new Date().toISOString()});
+        if(t==='set'){
+          const clean = JSON.parse(JSON.stringify({...op.data,_ts:new Date().toISOString()}, (_k,v)=>v===undefined?null:v));
+          batch.set(ref, clean);
+        }
         else if(t==='del') batch.delete(ref);
       });
       await batch.commit(); return true;
     } catch(e){ console.warn('[DB.batchOps]',e); return false; }
   },
   // 即時監聽 collection 變更（onSnapshot）
-  async subscribe(coll, callback) {
+  async subscribe(coll, callback, onError) {
     const fb = await initLeaveFirebase(); if (!fb) return ()=>{};
     try {
       const colRef = fb.collection(fb.db, coll);
-      const unsub  = fb.onSnapshot(colRef, snap => {
-        const docs = snap.docs.map(d => d.data());
-        callback(docs);
-      });
+      const unsub  = fb.onSnapshot(
+        colRef,
+        snap => {
+          const docs = snap.docs.map(d => d.data());
+          callback(docs);
+        },
+        err => {
+          console.error('[DB.subscribe 錯誤]', coll, err?.code, err?.message);
+          if (onError) onError(err);
+        }
+      );
       return unsub;
-    } catch(e){ console.warn('[DB.subscribe]',coll,e); return ()=>{}; }
+    } catch(e){ console.error('[DB.subscribe 初始化失敗]',coll,e); return ()=>{}; }
   },
 };
 
@@ -390,13 +406,13 @@ const LeaveTool = ({ onBack, windowHeight }) => {
   // ── Core Data ─────────────────────────────────────────────────────
   const [personnel,     setPersonnel]     = useState(DEFAULT_LEAVE_PERSONNEL);
   const [leaveRequests, setLeaveRequests] = useState([]);
-  const [leaveConfig,   setLeaveConfig]   = useState({ managerEmail: '', calendarId: '', autoApprove: true, depts: DEFAULT_LEAVE_DEPTS });
+  const [leaveConfig,   setLeaveConfig]   = useState({ autoApprove: true, depts: DEFAULT_LEAVE_DEPTS });
   const [auditLog,      setAuditLog]      = useState([]);
   const [dataLoading,   setDataLoading]   = useState(false);
   const [syncStatus,    setSyncStatus]    = useState('');
 
   // ── UI ────────────────────────────────────────────────────────────
-  const [activeSection, setActiveSection] = useState('dashboard');
+  const [activeSection, setActiveSection] = useState('calendar');
 
   // Apply form
   const [applyType,     setApplyType]     = useState('annual');
@@ -446,7 +462,6 @@ const LeaveTool = ({ onBack, windowHeight }) => {
   // Review
   const [reviewTab,     setReviewTab]     = useState('conflict');
   const [reviewNote,    setReviewNote]    = useState({});
-  const [notifyLoading, setNotifyLoading] = useState(null);
 
   // Logs
   const [logFilter,     setLogFilter]     = useState('all');
@@ -512,13 +527,32 @@ const LeaveTool = ({ onBack, windowHeight }) => {
       }
 
       // ── 即時監聽：leave_requests（最重要，跨裝置同步） ──
-      const unsubReqs = await DB.subscribe(COLL.req, docs => {
-        if (cancelled) return;
-        setLeaveRequests(docs.sort((a,b)=>(b.createdAt||'').localeCompare(a.createdAt||'')));
-      });
+      const unsubReqs = await DB.subscribe(
+        COLL.req,
+        docs => {
+          if (cancelled) return;
+          setLeaveRequests(docs.sort((a,b)=>(b.createdAt||'').localeCompare(a.createdAt||'')));
+        },
+        err => {
+          if (cancelled) return;
+          // 權限錯誤時提示管理者
+          if (err?.code === 'permission-denied') {
+            console.error('[Firestore] 即時監聽被拒絕：請確認 Firestore Security Rules 已設為測試模式或允許讀寫');
+            setSyncStatus('error');
+          }
+        }
+      );
       unsubscribers.push(unsubReqs);
 
       setDataLoading(false);
+
+      // ── Firestore 連線診斷（Dev 模式，生產可移除） ──
+      try {
+        const testSnap = await DB.getAll(COLL.req);
+        console.info('[Firestore] 連線正常，已有', testSnap.length, '筆假單');
+      } catch(e) {
+        console.error('[Firestore] 診斷失敗 — 請確認 Security Rules:', e?.code, e?.message);
+      }
     })();
 
     return ()=>{
@@ -645,7 +679,7 @@ const LeaveTool = ({ onBack, windowHeight }) => {
       isConsecutive,
       // 職務代理人
       proxyId:       isConsecutive ? null : applyProxy,
-      proxyName:     isConsecutive ? null : (personnel.find(p=>p.id===applyProxy)?.name||applyProxy),
+      proxyName:     isConsecutive ? null : (personnel.find(p=>p.id===applyProxy)?.name||applyProxy||''),
       proxySchedule: isConsecutive ? applyProxySched : null, // {日期: personId}
       status,
       conflictWith:  conflicts.map(r=>r.employeeName),
@@ -653,8 +687,7 @@ const LeaveTool = ({ onBack, windowHeight }) => {
       blockedOverlap: isBlockedRange,
       createdAt:     new Date().toISOString(),
       updatedAt:     new Date().toISOString(),
-      reviewedBy: null, reviewedAt: null, reviewNote: '',
-      notified: false, notifiedGmail: false, notifiedGcal: false,
+      reviewedBy: null, reviewedAt: null, reviewNote: null,
       proxyBy: (isAdmin&&applyFor) ? currentUser?.name : null,
     };
 
@@ -670,8 +703,16 @@ const LeaveTool = ({ onBack, windowHeight }) => {
   const handleConfirmSubmit = useCallback(async () => {
     if (!noticeModal) return;
     const { req } = noticeModal;
-    setLeaveRequests(prev=>[req,...prev]);
-    await saveReq(req);
+    // 先嘗試寫入 Firestore，成功後再更新本機狀態
+    const saved = await saveReq(req);
+    if (!saved) {
+      // 寫入失敗：不更新本機，保留申請畫面讓使用者重試
+      alert('❌ 儲存失敗，請確認網路連線後重試。
+（假單尚未送出，請重新點選「確認送出」）');
+      setNoticeConfirm(false); // 取消確認打勾，讓使用者可以重試
+      return;
+    }
+    // 寫入成功：onSnapshot 會自動更新本機清單，無需 optimistic update
     const ltDef = LEAVE_TYPES.find(t=>t.id===req.leaveType);
     logAction('apply','申請休假',
       `${req.employeeName}・${ltDef?.name}・${req.startDate}～${req.endDate}・` +
@@ -765,29 +806,7 @@ const LeaveTool = ({ onBack, windowHeight }) => {
   },[leaveRequests, leaveConfig, delReq, batchReqs, logAction]);
 
 
-  const handleNotify = useCallback(async (id, type) => {
-    setNotifyLoading(id+type);
-    const req = leaveRequests.find(r=>r.id===id);
-    if (!req) { setNotifyLoading(null); return; }
-    try {
-      const endpoint = type==='gmail' ? '/api/leave-notify' : '/api/leave-gcal';
-      const res  = await fetch(endpoint,{method:'POST',headers:{'Content-Type':'application/json'},
-        body:JSON.stringify({request:req, managerEmail:leaveConfig.managerEmail, calendarId:leaveConfig.calendarId})});
-      const data = await res.json();
-      if (data.ok) {
-        const now = new Date().toISOString();
-        const upd = {...req, notified:true, notifiedAt:now, updatedAt:now,
-          notifiedGmail: type==='gmail' ? true : (req.notifiedGmail||false),
-          notifiedGcal:  type==='gcal'  ? true : (req.notifiedGcal||false)};
-        setLeaveRequests(prev=>prev.map(r=>r.id===id?upd:r));
-        await saveReq(upd);
-        logAction('notify', type==='gmail'?'Gmail 通知':'行事曆新增',
-          `${req.employeeName}・${req.leaveTypeName}・${req.startDate}～${req.endDate}`);
-        alert(type==='gmail'?'📧 郵件通知已發送至主管':'📅 已新增至主管 Google Calendar');
-      } else { alert('通知失敗：'+(data.error||'未知錯誤')); }
-    } catch(e){ alert('無法連線：'+e.message); }
-    setNotifyLoading(null);
-  },[leaveRequests, leaveConfig, saveReq, logAction]);
+
 
 
   // ── Derived data ──────────────────────────────────────────────────
@@ -1381,24 +1400,12 @@ const LeaveTool = ({ onBack, windowHeight }) => {
               <div className="flex gap-2">
                 <button onClick={()=>handleReview(r.id,'approve')} className="flex-1 py-2 bg-emerald-500 text-white rounded-xl text-xs font-bold hover:bg-emerald-600 transition-all">✅ 核准</button>
                 <button onClick={()=>handleReview(r.id,'reject')}  className="flex-1 py-2 bg-red-400 text-white rounded-xl text-xs font-bold hover:bg-red-500 transition-all">❌ 駁回</button>
-                <button onClick={()=>handleNotify(r.id,'gmail')} disabled={!leaveConfig.managerEmail||notifyLoading===r.id+'gmail'} className="px-3 py-2 bg-blue-100 text-blue-700 rounded-xl text-xs font-bold hover:bg-blue-200 transition-all disabled:opacity-40">
-                  {notifyLoading===r.id+'gmail'?'…':'📧'}
-                </button>
-                <button onClick={()=>handleNotify(r.id,'gcal')} disabled={!leaveConfig.calendarId||notifyLoading===r.id+'gcal'} className="px-3 py-2 bg-emerald-100 text-emerald-700 rounded-xl text-xs font-bold hover:bg-emerald-200 transition-all disabled:opacity-40">
-                  {notifyLoading===r.id+'gcal'?'…':'📅'}
-                </button>
                 <button onClick={()=>handleDeleteLeave(r.id)} className="px-3 py-2 bg-gray-100 text-gray-500 rounded-xl text-xs font-bold hover:bg-red-50 hover:text-red-500 transition-all">🗑️</button>
               </div>
             </div>
           )}
           {!isPending && (
             <div className="flex gap-2 justify-end">
-              <button onClick={()=>handleNotify(r.id,'gmail')} disabled={!leaveConfig.managerEmail||notifyLoading===r.id+'gmail'} className="px-3 py-1.5 bg-blue-100 text-blue-700 rounded-lg text-xs font-bold hover:bg-blue-200 disabled:opacity-40">
-                {notifyLoading===r.id+'gmail'?'…':'📧 通知'}
-              </button>
-              <button onClick={()=>handleNotify(r.id,'gcal')} disabled={!leaveConfig.calendarId||notifyLoading===r.id+'gcal'} className="px-3 py-1.5 bg-emerald-100 text-emerald-700 rounded-lg text-xs font-bold hover:bg-emerald-200 disabled:opacity-40">
-                {notifyLoading===r.id+'gcal'?'…':'📅 行事曆'}
-              </button>
               <button onClick={()=>handleDeleteLeave(r.id)} className="px-3 py-1.5 bg-gray-100 text-gray-400 rounded-lg text-xs font-bold hover:bg-red-50 hover:text-red-500 transition-all">🗑️</button>
             </div>
           )}
@@ -2057,7 +2064,6 @@ ${(() => {
             <option value="approve">✅ 審核核准</option>
             <option value="reject">❌ 審核駁回</option>
             <option value="delete">🗑️ 刪除</option>
-            <option value="notify">📧 通知</option>
             <option value="export">⬇️ 匯出</option>
             <option value="ai">🤖 AI 分析</option>
           </select>
@@ -2110,28 +2116,15 @@ ${(() => {
 
     return (
       <div className="space-y-5">
-        {/* 通知設定 */}
+        {/* 系統設定 */}
         <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-5">
-          <div className="text-sm font-bold text-gray-700 mb-4">📧 通知設定</div>
-          <div className="space-y-3">
-            <div>
-              <label className="block text-xs font-bold text-gray-500 mb-1.5">主管 Email（Gmail 通知收件人）</label>
-              <input value={leaveConfig.managerEmail||''} onChange={e=>saveConfig({managerEmail:e.target.value})}
-                placeholder="manager@company.com" className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-violet-400"/>
-            </div>
-            <div>
-              <label className="block text-xs font-bold text-gray-500 mb-1.5">Google Calendar ID</label>
-              <input value={leaveConfig.calendarId||''} onChange={e=>saveConfig({calendarId:e.target.value})}
-                placeholder="primary 或 xxxxx@group.calendar.google.com" className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-violet-400"/>
-              <div className="text-[10px] text-gray-400 mt-1">需在 Vercel 環境變數設定 GMAIL_USER / GMAIL_APP_PASSWORD / GCAL_SERVICE_ACCOUNT</div>
-            </div>
-            <div className="flex items-center gap-3">
-              <label className="text-xs font-bold text-gray-500">無衝突假單自動核准</label>
-              <button onClick={()=>saveConfig({autoApprove:!leaveConfig.autoApprove})}
-                className={`w-10 h-5 rounded-full transition-all ${leaveConfig.autoApprove!==false?'bg-violet-500':'bg-gray-300'}`}>
-                <div className={`w-4 h-4 bg-white rounded-full shadow transition-all mx-0.5 ${leaveConfig.autoApprove!==false?'translate-x-5':''}`} style={{transform:leaveConfig.autoApprove!==false?'translateX(20px)':''}}></div>
-              </button>
-            </div>
+          <div className="text-sm font-bold text-gray-700 mb-4">⚙️ 系統設定</div>
+          <div className="flex items-center gap-3">
+            <label className="text-xs font-bold text-gray-500">無衝突假單自動核准</label>
+            <button onClick={()=>saveConfig({autoApprove:!leaveConfig.autoApprove})}
+              className={`w-10 h-5 rounded-full transition-all ${leaveConfig.autoApprove!==false?'bg-violet-500':'bg-gray-300'}`}>
+              <div className={`w-4 h-4 bg-white rounded-full shadow transition-all mx-0.5 ${leaveConfig.autoApprove!==false?'translate-x-5':''}`} style={{transform:leaveConfig.autoApprove!==false?'translateX(20px)':''}}></div>
+            </button>
           </div>
         </div>
 
@@ -2547,20 +2540,14 @@ ${(() => {
         </div>
       </div>
 
-      {/* ── Mobile Bottom Nav ─────────────────────────────────── */}
+      {/* ── Mobile Bottom Nav（水平捲動，顯示全部功能） ─────────── */}
       <div className="lg:hidden fixed bottom-0 left-0 right-0 bg-white border-t border-gray-100 shadow-lg z-40">
-        <div className="flex justify-around">
-          {[
-            {key:'dashboard',icon:'🏠',label:'首頁'},
-            {key:'apply',    icon:'✏️', label:'申請'},
-            ...(isAdmin?[{key:'review',icon:'📋',label:`審核${dashStats.conflictCount>0?`(${dashStats.conflictCount})`:''}` }]:[]),
-            {key:'calendar', icon:'📅',label:'月曆'},
-            ...(isAdmin?[{key:'stats',icon:'📊',label:'統計'}]:[]),
-          ].map(item=>(
+        <div className="flex overflow-x-auto" style={{scrollbarWidth:'none',msOverflowStyle:'none'}}>
+          {menuItems.map(item=>(
             <button key={item.key} onClick={()=>setActiveSection(item.key)}
-              className={`flex flex-col items-center py-2 px-2 text-[10px] font-bold transition-all ${activeSection===item.key?'text-violet-600':'text-gray-400'}`}>
-              <span className="text-xl">{item.icon}</span>
-              <span>{item.label}</span>
+              className={`flex flex-col items-center flex-shrink-0 py-2 px-3 text-[10px] font-bold transition-all min-w-[60px] ${activeSection===item.key?'text-violet-600 border-t-2 border-violet-500':'text-gray-400 border-t-2 border-transparent'}`}>
+              <span className="text-xl leading-tight">{item.icon}</span>
+              <span className="mt-0.5 whitespace-nowrap">{item.label}</span>
             </button>
           ))}
         </div>
