@@ -616,6 +616,15 @@ const MileageTool = ({ onBack, windowHeight }) => {
   const [aiSavedResult, setAiSavedResult] = useState(null); // { result, label, savedAt }
   const [aiUsageCount, setAiUsageCount] = useState(0); // 歷史診斷次數（Firestore 累計）
 
+  // ── 油耗管理 State ───────────────────────────────────────────
+  const [fuelRecords,     setFuelRecords]     = useState([]);
+  const [fuelTab,         setFuelTab]         = useState('dashboard'); // dashboard|import|records
+  const [fuelImportStep,  setFuelImportStep]  = useState('upload');    // upload|preview
+  const [fuelPending,     setFuelPending]     = useState([]);          // 解析後待確認的完整資料
+  const [fuelPreview,     setFuelPreview]     = useState([]);          // 前5筆預覽
+  const [fuelDashDept,    setFuelDashDept]    = useState('all');
+  const [fuelDashPeriod,  setFuelDashPeriod]  = useState('');
+
   // ── Firestore CRUD ──────────────────────────────────────────────
   const saveCollection = async (collName, data) => {
     const fb = await initFirebase();
@@ -646,12 +655,13 @@ const MileageTool = ({ onBack, windowHeight }) => {
     const load = async () => {
       setDataLoading(true);
       try {
-      const [depts, vehs, pers, monthly, adhoc] = await Promise.all([
+      const [depts, vehs, pers, monthly, adhoc, fuel] = await Promise.all([
         loadCollection('departments'),
         loadCollection('vehicles'),
         loadCollection('personnel'),
         loadCollection('monthly_records'),
         loadCollection('adhoc_records'),
+        loadCollection('fuel_records'),
       ]);
       if (depts) setDepartments(depts);
       if (vehs) setVehicles(vehs);
@@ -663,6 +673,7 @@ const MileageTool = ({ onBack, windowHeight }) => {
         setMonthlyRecords([...seedOnly, ...monthly]);
       }
       if (adhoc) setAdhocRecords(adhoc);
+      if (fuel)  setFuelRecords(fuel);
       // 載入已儲存的 AI 診斷結果
       try {
         const fb2 = await initFirebase();
@@ -1304,6 +1315,7 @@ const MileageTool = ({ onBack, windowHeight }) => {
       { key: 'vehicles',  icon: '🔧', label: '車輛管理' },
       { key: 'personnel', icon: '👥', label: '人員管理' },
       { key: 'logs',      icon: '🗂️', label: '操作記錄' },
+      { key: 'fuel',      icon: '⛽', label: '油耗管理' },
       { key: 'export',    icon: '⬇️', label: '匯出報表' },
       { key: 'ai',        icon: '🤖', label: 'AI 診斷' },
     ] : []),
@@ -1314,7 +1326,7 @@ const MileageTool = ({ onBack, windowHeight }) => {
         { key: 'dashboard', icon: '📊', label: '儀表板' },
         { key: 'monthly',   icon: '📋', label: '月報' },
         { key: 'adhoc',     icon: '🚗', label: '用車' },
-        { key: 'export',    icon: '⬇️', label: '報表' },
+        { key: 'fuel',      icon: '⛽', label: '油耗' },
         { key: 'ai',        icon: '🤖', label: 'AI 診斷' },
       ]
     : [
@@ -1355,7 +1367,7 @@ const MileageTool = ({ onBack, windowHeight }) => {
       {isAdmin && (
         <div className="flex lg:hidden bg-slate-800 border-b border-slate-700 overflow-x-auto flex-shrink-0" style={{scrollbarWidth:'none'}}>
           <div className="flex px-2 py-1 gap-1 min-w-max">
-            {[{key:'vehicles',icon:'🔧',label:'車輛管理'},{key:'personnel',icon:'👥',label:'人員管理'},{key:'logs',icon:'🗂️',label:'操作記錄'},{key:'export',icon:'⬇️',label:'匯出報表'},{key:'ai',icon:'🤖',label:'AI診斷'}].map(item => (
+            {[{key:'vehicles',icon:'🔧',label:'車輛管理'},{key:'personnel',icon:'👥',label:'人員管理'},{key:'logs',icon:'🗂️',label:'操作記錄'},{key:'fuel',icon:'⛽',label:'油耗管理'},{key:'export',icon:'⬇️',label:'匯出報表'},{key:'ai',icon:'🤖',label:'AI診斷'}].map(item => (
               <button key={item.key} onClick={() => setActiveSection(item.key)}
                 className={`flex-shrink-0 flex items-center gap-1.5 px-3 rounded-lg font-bold transition-all ${activeSection === item.key ? 'bg-emerald-500 text-white' : 'text-slate-400 hover:bg-slate-700'}`}
                 style={{fontSize:'13px',height:'36px',minWidth:'fit-content'}}>
@@ -1765,6 +1777,522 @@ const MileageTool = ({ onBack, windowHeight }) => {
             </div>
           </>}
 
+
+          {/* ═══ FUEL ═══ */}
+          {activeSection === 'fuel' && isAdmin && (() => {
+
+            // ══════════════════════════════════════════════════════════
+            // 解析工具：廠商固定格式（CPC 中油加油卡 CSV）
+            // ══════════════════════════════════════════════════════════
+            const stripDollar = (s) => parseFloat(String(s||'').replace(/[$,]/g,''))||0;
+            const parseOdo    = (s) => { const v=parseInt(String(s||'').replace(/,/g,'')); return (v&&v>0)?v:null; };
+            const parseFuelType = (s) => String(s||'').replace(/^\d{4}\s*/,'').trim();  // 去除 "0006 " 代碼前綴
+            const parseStation  = (s) => String(s||'').replace(/^[A-Z0-9]{5}\s*/,'').trim(); // 去除站碼
+
+            const parseRows = (rows) =>
+              rows.map(r => {
+                const type = parseFuelType(r['油品']||r['油品 ']||'');
+                if (type.includes('尿素')) return null;   // 排除 AdBlue
+                const dateRaw = String(r['交易日期時間']||'').slice(0,10).replace(/\//g,'-');
+                const plate   = String(r['車號']||'').trim().toUpperCase();
+                if (!plate || !dateRaw || dateRaw.length < 7) return null;
+                const liters = parseFloat(String(r['油量']||''))||0;
+                if (liters <= 0) return null;
+                return {
+                  id:           `fuel_${plate}_${dateRaw}_${liters}_${Math.random().toString(36).slice(2,6)}`,
+                  vehiclePlate: plate,
+                  date:         dateRaw,
+                  period:       dateRaw.slice(0,7),
+                  fuelType:     type,
+                  station:      parseStation(r['油站']||''),
+                  fuelLiters:   liters,
+                  fuelPrice:    stripDollar(r['參考單價']),
+                  fuelAmount:   stripDollar(r['參考金額']),
+                  odometer:     parseOdo(r['里程數']),
+                  co2Factor:    parseFloat(r['排放係數'])||0,
+                  co2Kg:        parseFloat(r['碳排放量(kg)']||r['碳排放量'])||0,
+                };
+              }).filter(Boolean);
+
+            // ── 載入 XLSX CDN ──────────────────────────────────────
+            const loadXLSX = () => new Promise((res,rej) => {
+              if (window.XLSX) { res(); return; }
+              const s=document.createElement('script');
+              s.src='https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js';
+              s.onload=res; s.onerror=rej; document.head.appendChild(s);
+            });
+
+            const handleFileUpload = async (e) => {
+              const file = e.target.files[0]; if(!file) return;
+              e.target.value = '';
+              let parsed = [];
+              try {
+                if (file.name.endsWith('.csv')) {
+                  // Big5 / UTF-8 自動偵測
+                  const ab = await file.arrayBuffer();
+                  let text = '';
+                  for (const enc of ['big5','utf-8','utf-8-sig','cp950']) {
+                    try { text = new TextDecoder(enc).decode(ab); if(text.includes('交易日期')) break; }
+                    catch(_){}
+                  }
+                  const lines = text.trim().split('\n');
+                  const headers = lines[0].split(',').map(h=>h.trim().replace(/^"|"$/g,''));
+                  const dataRows = lines.slice(1).map(l => {
+                    const vals = l.split(',').map(v=>v.trim().replace(/^"|"$/g,''));
+                    const obj = {};
+                    headers.forEach((h,i) => { obj[h] = vals[i]||''; });
+                    return obj;
+                  }).filter(r => r['車號']?.trim());
+                  parsed = parseRows(dataRows);
+                } else {
+                  await loadXLSX();
+                  const ab = await file.arrayBuffer();
+                  const wb = window.XLSX.read(ab, { type:'array', cellDates:true });
+                  const ws = wb.Sheets[wb.SheetNames[0]];
+                  const dataRows = window.XLSX.utils.sheet_to_json(ws, { defval:'' });
+                  parsed = parseRows(dataRows);
+                }
+              } catch(err) { alert('解析失敗：'+err.message); return; }
+              if (parsed.length===0) { alert('未解析到有效資料，請確認檔案格式'); return; }
+              setFuelPending(parsed);
+              setFuelPreview(parsed.slice(0,5));
+              setFuelImportStep('preview');
+            };
+
+            const handleConfirmImport = () => {
+              const existKey = new Set(fuelRecords.map(r=>`${r.vehiclePlate}_${r.date}_${r.fuelLiters}`));
+              const newOnly  = fuelPending.filter(r=>!existKey.has(`${r.vehiclePlate}_${r.date}_${r.fuelLiters}`));
+              const merged   = [...fuelRecords, ...newOnly];
+              autoSave('fuel_records', merged, setFuelRecords);
+              setFuelImportStep('upload');
+              setFuelPending([]); setFuelPreview([]);
+              setFuelTab('dashboard');
+              alert(`✅ 匯入完成：新增 ${newOnly.length} 筆，跳過重複 ${fuelPending.length-newOnly.length} 筆`);
+            };
+
+            // ══════════════════════════════════════════════════════════
+            // km/L 計算：fill-to-fill（加滿到加滿法）
+            // 兩個有效里程之間夾住的所有加油量一起除
+            // ══════════════════════════════════════════════════════════
+            const computeKml = (records) => {
+              // 依車牌分組，每組依日期排序
+              const byPlate = {};
+              records.forEach(r => {
+                if (!byPlate[r.vehiclePlate]) byPlate[r.vehiclePlate]=[];
+                byPlate[r.vehiclePlate].push(r);
+              });
+              const resultMap = {}; // id → kmPerLiter
+              Object.values(byPlate).forEach(recs => {
+                recs.sort((a,b)=>a.date.localeCompare(b.date)||a.id.localeCompare(b.id));
+                // 找出所有有效里程的 index
+                const validIdx = recs.map((r,i)=>r.odometer?i:null).filter(i=>i!==null);
+                for (let vi=1; vi<validIdx.length; vi++) {
+                  const prevI = validIdx[vi-1];
+                  const currI = validIdx[vi];
+                  const dist  = recs[currI].odometer - recs[prevI].odometer;
+                  // 夾住的加油量：prevI+1 到 currI（含）
+                  const fuelSum = recs.slice(prevI+1, currI+1).reduce((s,r)=>s+(r.fuelLiters||0),0);
+                  if (dist > 0 && fuelSum > 0) {
+                    const kml = Math.round(dist/fuelSum*10)/10;
+                    // 標記異常（里程疑似打錯）
+                    const isAnomaly = kml < 2 || kml > 25;
+                    resultMap[recs[currI].id] = { kml, isAnomaly };
+                  }
+                }
+              });
+              return records.map(r => ({ ...r, ...(resultMap[r.id]||{kml:null,isAnomaly:false}) }));
+            };
+
+            // ══════════════════════════════════════════════════════════
+            // 統計計算
+            // ══════════════════════════════════════════════════════════
+            const fuelPeriodList = [...new Set(fuelRecords.map(r=>r.period))].sort().reverse();
+            const curPeriod      = fuelDashPeriod || fuelPeriodList[0] || '';
+
+            const filtered = computeKml(fuelRecords).filter(r =>
+              (!curPeriod || r.period === curPeriod) &&
+              (fuelDashDept === 'all' || (vehicles.find(v=>v.plate===r.vehiclePlate)||{}).deptId === fuelDashDept)
+            );
+
+            const totalLiters = filtered.reduce((s,r)=>s+(r.fuelLiters||0),0);
+            const totalCost   = filtered.reduce((s,r)=>s+(r.fuelAmount||0),0);
+            const totalCO2    = filtered.reduce((s,r)=>s+(r.co2Kg||0),0);
+            const validKml    = filtered.filter(r=>r.kml!=null&&!r.isAnomaly);
+            const avgKml      = validKml.length ? Math.round(validKml.reduce((s,r)=>s+r.kml,0)/validKml.length*10)/10 : null;
+            const anomalyRecs = filtered.filter(r=>r.isAnomaly);
+            // 里程登錄率
+            const odoRate     = filtered.length ? Math.round(filtered.filter(r=>r.odometer).length/filtered.length*100) : 0;
+            // 柴油 vs 汽油分類
+            const dieselL  = filtered.filter(r=>r.fuelType.includes('柴油')).reduce((s,r)=>s+r.fuelLiters,0);
+            const gasolineL= filtered.filter(r=>!r.fuelType.includes('柴油')).reduce((s,r)=>s+r.fuelLiters,0);
+            // 平均油價
+            const avgPriceDiesel = (() => { const rs=filtered.filter(r=>r.fuelType.includes('柴油')&&r.fuelPrice>0); return rs.length?Math.round(rs.reduce((s,r)=>s+r.fuelPrice,0)/rs.length*10)/10:null; })();
+            const avgPriceGasoline = (() => { const rs=filtered.filter(r=>!r.fuelType.includes('柴油')&&r.fuelPrice>0); return rs.length?Math.round(rs.reduce((s,r)=>s+r.fuelPrice,0)/rs.length*10)/10:null; })();
+
+            // 各車統計
+            const plateStats = {};
+            filtered.forEach(r => {
+              if (!plateStats[r.vehiclePlate]) plateStats[r.vehiclePlate]={plate:r.vehiclePlate,liters:0,cost:0,co2:0,kmlArr:[],count:0,anomalyCount:0};
+              const p=plateStats[r.vehiclePlate];
+              p.liters+=r.fuelLiters||0; p.cost+=r.fuelAmount||0; p.co2+=r.co2Kg||0; p.count++;
+              if(r.kml!=null){ if(!r.isAnomaly) p.kmlArr.push(r.kml); else p.anomalyCount++; }
+            });
+            const plateList = Object.values(plateStats).map(p=>({
+              ...p,
+              avgKml: p.kmlArr.length ? Math.round(p.kmlArr.reduce((s,v)=>s+v,0)/p.kmlArr.length*10)/10 : null,
+              deptName: (departments.find(d=>d.id==(vehicles.find(v=>v.plate===p.plate)||{}).deptId)||{name:'—'}).name,
+            })).sort((a,b)=>b.cost-a.cost);
+
+            // km/L 月趨勢（過去6個月）
+            const last6 = fuelPeriodList.slice(0,6).reverse();
+            const kmlTrend = last6.map(p => {
+              const rs = computeKml(fuelRecords.filter(r=>r.period===p)).filter(r=>r.kml!=null&&!r.isAnomaly);
+              return { p, v: rs.length?Math.round(rs.reduce((s,r)=>s+r.kml,0)/rs.length*10)/10:null };
+            });
+            const validT = kmlTrend.filter(d=>d.v!=null);
+            const tMin=validT.length?Math.min(...validT.map(d=>d.v))-0.5:0;
+            const tMax=validT.length?Math.max(...validT.map(d=>d.v))+0.5:10;
+            const tW=320,tH=90,tPad=30;
+            const tx=i=>tPad+i*((tW-tPad*2)/(Math.max(last6.length-1,1)));
+            const ty=v=>tH-14-((v-tMin)/(tMax-tMin||1))*(tH-26);
+            const tPts=kmlTrend.map((d,i)=>d.v!=null?`${tx(i).toFixed(1)},${ty(d.v).toFixed(1)}`:null).filter(Boolean);
+
+            // 柴油/汽油佔比 SVG 圓餅
+            const pieTotal = dieselL+gasolineL||1;
+            const dieselPct = dieselL/pieTotal;
+            const r2=38, cx2=45, cy2=45;
+            const arc = (pct) => { const a=(pct*2*Math.PI-Math.PI/2); return [cx2+r2*Math.cos(a), cy2+r2*Math.sin(a)]; };
+            const [dx,dy]=arc(dieselPct); const large=dieselPct>0.5?1:0;
+
+            // ══════════════════════════════════════════════════════════
+            // 渲染
+            // ══════════════════════════════════════════════════════════
+            return (
+              <div className="space-y-4 pb-12">
+                {/* 頁首 */}
+                <div className="flex items-center justify-between flex-wrap gap-2">
+                  <h2 className="text-lg font-bold text-gray-800">⛽ 油耗管理</h2>
+                  <div className="flex items-center gap-2">
+                    <select value={fuelDashDept} onChange={e=>setFuelDashDept(e.target.value)}
+                      className="border border-gray-300 rounded-lg px-3 py-1.5 text-xs">
+                      <option value="all">全部門</option>
+                      {departments.map(d=><option key={d.id} value={d.id}>{d.name}</option>)}
+                    </select>
+                    <select value={fuelDashPeriod} onChange={e=>setFuelDashPeriod(e.target.value)}
+                      className="border border-gray-300 rounded-lg px-3 py-1.5 text-xs">
+                      <option value="">最新期別</option>
+                      {fuelPeriodList.map(p=><option key={p} value={p}>{p}</option>)}
+                    </select>
+                  </div>
+                </div>
+
+                {/* Tab */}
+                <div className="flex gap-0 border-b border-gray-200">
+                  {[['dashboard','📊 儀表板'],['import','📥 匯入數據'],['records','📋 加油記錄']].map(([k,l])=>(
+                    <button key={k} onClick={()=>setFuelTab(k)}
+                      className={`px-4 py-2 text-xs font-bold border-b-2 transition-all -mb-px ${fuelTab===k?'border-indigo-500 text-indigo-600':'border-transparent text-gray-500 hover:text-gray-700'}`}>
+                      {l}
+                    </button>
+                  ))}
+                </div>
+
+                {/* ─── 儀表板 Tab ─── */}
+                {fuelTab==='dashboard' && (<>
+                  {fuelRecords.length===0 ? (
+                    <div className="bg-white rounded-xl border-2 border-dashed border-gray-200 p-12 text-center">
+                      <div className="text-4xl mb-3">⛽</div>
+                      <div className="text-sm font-bold text-gray-600 mb-1">尚未匯入加油數據</div>
+                      <div className="text-xs text-gray-400 mb-4">請至「匯入數據」上傳中油加油卡 CSV 或 Excel</div>
+                      <button onClick={()=>setFuelTab('import')}
+                        className="px-5 py-2 bg-indigo-500 text-white rounded-lg text-xs font-bold hover:bg-indigo-600">
+                        前往匯入 →
+                      </button>
+                    </div>
+                  ) : (<>
+
+                    {/* ── KPI 6 格 ── */}
+                    <div className="grid grid-cols-2 lg:grid-cols-3 gap-3">
+                      {[
+                        { label:'總加油量', value:`${totalLiters.toFixed(1)}`, unit:'公升', color:'text-blue-600', bg:'bg-blue-50', border:'border-blue-100' },
+                        { label:'總燃料成本', value:`NT$${fmtNum(Math.round(totalCost))}`, unit:'元', color:'text-rose-600', bg:'bg-rose-50', border:'border-rose-100' },
+                        { label:'平均油耗', value: avgKml!=null?`${avgKml}`:'—', unit:'km/L'+(validKml.length===0?' ・未登錄里程':''), color:'text-emerald-600', bg:'bg-emerald-50', border:'border-emerald-100' },
+                        { label:'CO₂ 碳排放', value:`${Math.round(totalCO2).toLocaleString()}`, unit:'kg', color:'text-amber-600', bg:'bg-amber-50', border:'border-amber-100' },
+                        { label:'平均油價',
+                          value: [avgPriceDiesel&&`柴 $${avgPriceDiesel}`, avgPriceGasoline&&`汽 $${avgPriceGasoline}`].filter(Boolean).join(' / ') || '—',
+                          unit:'元/公升', color:'text-purple-600', bg:'bg-purple-50', border:'border-purple-100' },
+                        { label:'里程登錄率', value:`${odoRate}%`, unit:`${filtered.filter(r=>r.odometer).length}/${filtered.length} 筆`, color: odoRate>=70?'text-emerald-600':odoRate>=40?'text-amber-600':'text-red-500', bg:'bg-gray-50', border:'border-gray-200' },
+                      ].map((k,i)=>(
+                        <div key={i} className={`rounded-xl p-4 border ${k.bg} ${k.border}`}>
+                          <div className="text-xs text-gray-500 mb-1">{k.label}</div>
+                          <div className={`text-xl font-bold ${k.color} leading-tight`}>{k.value}</div>
+                          <div className="text-[10px] text-gray-400 mt-1">{k.unit}</div>
+                        </div>
+                      ))}
+                    </div>
+
+                    {/* ── 異常預警 ── */}
+                    {anomalyRecs.length>0 && (
+                      <div className="bg-amber-50 border border-amber-300 rounded-xl p-4">
+                        <div className="flex items-center gap-2 mb-2">
+                          <span className="text-base">⚠️</span>
+                          <span className="font-bold text-amber-800 text-sm">km/L 異常記錄（疑似里程輸入錯誤）</span>
+                          <span className="text-[10px] bg-amber-200 text-amber-700 px-2 py-0.5 rounded-full">{anomalyRecs.length} 筆</span>
+                        </div>
+                        <div className="text-xs text-amber-700 mb-2">計算值 &lt; 2 或 &gt; 25 km/L，資料保留但不納入均值計算。</div>
+                        <div className="overflow-x-auto">
+                          <table className="w-full text-xs">
+                            <thead><tr className="border-b border-amber-200">
+                              {['車牌','日期','油量(L)','里程數','計算 km/L','可能原因'].map(h=>(
+                                <th key={h} className="text-left px-3 py-1.5 font-bold text-amber-700">{h}</th>
+                              ))}
+                            </tr></thead>
+                            <tbody>{anomalyRecs.map((r,i)=>(
+                              <tr key={i} className="border-b border-amber-100">
+                                <td className="px-3 py-1.5 font-bold">{r.vehiclePlate}</td>
+                                <td className="px-3 py-1.5 font-mono">{r.date}</td>
+                                <td className="px-3 py-1.5 text-right font-mono">{r.fuelLiters.toFixed(1)}</td>
+                                <td className="px-3 py-1.5 text-right font-mono">{r.odometer?fmtNum(r.odometer):'—'}</td>
+                                <td className="px-3 py-1.5 text-right font-mono font-bold text-amber-700">{r.kml}</td>
+                                <td className="px-3 py-1.5 text-amber-600">{r.kml>25?'里程數疑似少打一位':'里程跳躍異常'}</td>
+                              </tr>
+                            ))}</tbody>
+                          </table>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* ── 圖表區（趨勢 + 佔比） ── */}
+                    <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+                      {/* km/L 趨勢折線圖 */}
+                      {validT.length>=2 && (
+                        <div className="lg:col-span-2 bg-white rounded-xl border border-gray-200 shadow-sm p-4">
+                          <div className="text-sm font-bold text-gray-700 mb-1">📈 月均油耗趨勢（km/L）</div>
+                          <div className="text-[10px] text-gray-400 mb-2">異常值已排除，僅計算有效記錄</div>
+                          <svg width="100%" viewBox={`0 0 ${tW} ${tH}`} style={{overflow:'visible'}}>
+                            {[0,1,2,3].map(i=>{
+                              const y=tH-14-i*((tH-26)/3);
+                              const v=(tMin+(tMax-tMin)*i/3).toFixed(1);
+                              return <g key={i}><line x1={tPad} y1={y} x2={tW-tPad+8} y2={y} stroke="#f1f5f9" strokeWidth="1"/>
+                                <text x={tPad-4} y={y+3} textAnchor="end" fontSize="6.5" fill="#94a3b8">{v}</text></g>;
+                            })}
+                            {kmlTrend.map((d,i)=>(
+                              <text key={d.p} x={tx(i)} y={tH} textAnchor="middle" fontSize="7" fill="#94a3b8">{d.p.slice(5)}</text>
+                            ))}
+                            <polyline points={tPts.join(' ')} fill="none" stroke="#10b981" strokeWidth="2.5" strokeLinejoin="round" strokeLinecap="round"/>
+                            {kmlTrend.map((d,i)=>d.v!=null?(
+                              <g key={d.p}>
+                                <circle cx={tx(i)} cy={ty(d.v)} r="4" fill="#10b981" stroke="white" strokeWidth="1.5"/>
+                                <text x={tx(i)} y={ty(d.v)-8} textAnchor="middle" fontSize="8" fill="#059669" fontWeight="700">{d.v}</text>
+                              </g>
+                            ):null)}
+                          </svg>
+                        </div>
+                      )}
+
+                      {/* 柴油/汽油佔比圓餅 */}
+                      {dieselL>0 && gasolineL>0 && (
+                        <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-4 flex flex-col items-center justify-center">
+                          <div className="text-sm font-bold text-gray-700 mb-2">🥧 油品結構</div>
+                          <svg width="90" height="90" viewBox="0 0 90 90">
+                            <path d={`M${cx2},${cy2} L${cx2},${cy2-r2} A${r2},${r2} 0 ${large},1 ${dx.toFixed(1)},${dy.toFixed(1)} Z`} fill="#6366f1"/>
+                            <path d={`M${cx2},${cy2} L${dx.toFixed(1)},${dy.toFixed(1)} A${r2},${r2} 0 ${1-large},1 ${cx2},${cy2-r2} Z`} fill="#f59e0b"/>
+                          </svg>
+                          <div className="text-[10px] mt-2 space-y-1 text-center">
+                            <div><span className="inline-block w-2.5 h-2.5 rounded-sm bg-indigo-500 mr-1"/>柴油 {dieselL.toFixed(0)}L（{Math.round(dieselPct*100)}%）</div>
+                            <div><span className="inline-block w-2.5 h-2.5 rounded-sm bg-amber-400 mr-1"/>汽油 {gasolineL.toFixed(0)}L（{Math.round((1-dieselPct)*100)}%）</div>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+
+                    {/* ── 各車油耗明細表 ── */}
+                    <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-x-auto">
+                      <div className="px-4 pt-4 pb-2 flex items-center justify-between">
+                        <span className="text-sm font-bold text-gray-700">各車油耗明細{curPeriod?`（${curPeriod}）`:''}</span>
+                        <span className="text-xs text-gray-400">{plateList.length} 台車</span>
+                      </div>
+                      <table className="w-full text-xs">
+                        <thead><tr className="bg-gray-50 border-b border-gray-200">
+                          {['車牌','部門','加油次數','加油量(L)','燃料成本(元)','平均油耗','CO₂(kg)'].map(h=>(
+                            <th key={h} className={`px-4 py-2.5 font-bold text-gray-600 ${h.startsWith('車')||h.startsWith('部')?'text-left':'text-right'}`}>{h}</th>
+                          ))}
+                        </tr></thead>
+                        <tbody>
+                          {plateList.map(p=>(
+                            <tr key={p.plate} className="border-b border-gray-100 hover:bg-gray-50">
+                              <td className="px-4 py-2.5 font-bold text-gray-800">{p.plate}</td>
+                              <td className="px-4 py-2.5 text-gray-500">{p.deptName}</td>
+                              <td className="px-4 py-2.5 text-right">{p.count}</td>
+                              <td className="px-4 py-2.5 text-right font-mono">{p.liters.toFixed(1)}</td>
+                              <td className="px-4 py-2.5 text-right font-mono text-rose-600">{p.cost>0?`NT$${fmtNum(Math.round(p.cost))}`:'—'}</td>
+                              <td className="px-4 py-2.5 text-right font-mono font-bold">
+                                {p.avgKml!=null
+                                  ? <span className={p.avgKml<5?'text-red-500':p.avgKml<6?'text-amber-500':'text-emerald-600'}>{p.avgKml} km/L</span>
+                                  : <span className="text-gray-300">未登錄</span>}
+                                {p.anomalyCount>0 && <span className="ml-1 text-amber-500">⚠️{p.anomalyCount}</span>}
+                              </td>
+                              <td className="px-4 py-2.5 text-right font-mono text-gray-500">{p.co2>0?Math.round(p.co2).toLocaleString():'—'}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+
+                  </>)}
+                </>)}
+
+                {/* ─── 匯入 Tab ─── */}
+                {fuelTab==='import' && (
+                  <div className="space-y-4">
+
+                    {/* Step 1：上傳 */}
+                    {fuelImportStep==='upload' && (
+                      <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-6 space-y-5">
+                        <div>
+                          <div className="font-bold text-sm text-gray-700 mb-1">📥 匯入中油加油卡數據</div>
+                          <div className="text-xs text-gray-500">支援 CSV（Big5）或 Excel（.xlsx）格式。系統依固定欄位自動解析，無需手動對應。</div>
+                        </div>
+                        <div className="bg-slate-50 border border-slate-200 rounded-lg px-4 py-3 text-xs text-slate-600 space-y-1">
+                          <div className="font-bold text-slate-700 mb-1">✅ 自動處理規則</div>
+                          <div>• 油品「尿素溶液（AdBlue）」自動排除，不計入油耗</div>
+                          <div>• 里程數 = 0 視為未登錄，仍保留加油量與成本紀錄</div>
+                          <div>• km/L 計算採「加滿到加滿法」，兩次有效里程夾住的加油量一起除</div>
+                          <div>• 計算結果 &lt; 2 或 &gt; 25 km/L 自動標記異常警示</div>
+                          <div>• 重複資料（相同車牌＋日期＋油量）自動跳過</div>
+                        </div>
+                        <div className="grid grid-cols-2 gap-4">
+                          <label className="flex flex-col items-center gap-3 border-2 border-dashed border-indigo-200 rounded-xl p-8 cursor-pointer hover:border-indigo-400 hover:bg-indigo-50 transition-all">
+                            <span className="text-4xl">📗</span>
+                            <span className="text-sm font-bold text-gray-700">Excel (.xlsx)</span>
+                            <span className="text-[10px] text-gray-400">中油加油卡系統匯出</span>
+                            <input type="file" accept=".xlsx,.xls" className="hidden" onChange={handleFileUpload}/>
+                          </label>
+                          <label className="flex flex-col items-center gap-3 border-2 border-dashed border-indigo-200 rounded-xl p-8 cursor-pointer hover:border-indigo-400 hover:bg-indigo-50 transition-all">
+                            <span className="text-4xl">📄</span>
+                            <span className="text-sm font-bold text-gray-700">CSV (.csv)</span>
+                            <span className="text-[10px] text-gray-400">支援 Big5 / UTF-8 編碼</span>
+                            <input type="file" accept=".csv" className="hidden" onChange={handleFileUpload}/>
+                          </label>
+                        </div>
+                        {fuelRecords.length>0 && (
+                          <div className="flex items-center justify-between text-xs text-gray-400 bg-gray-50 rounded-lg px-4 py-2.5">
+                            <span>目前資料庫已有 <strong className="text-gray-600">{fuelRecords.length}</strong> 筆加油記錄</span>
+                            <button onClick={()=>{ if(window.confirm('確認清除所有加油記錄？此動作無法復原。')) autoSave('fuel_records',[],setFuelRecords); }}
+                              className="text-red-400 hover:text-red-600 font-bold">清除全部</button>
+                          </div>
+                        )}
+                      </div>
+                    )}
+
+                    {/* Step 2：預覽確認 */}
+                    {fuelImportStep==='preview' && (
+                      <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-6 space-y-4">
+                        <div>
+                          <div className="font-bold text-sm text-gray-700">✅ 解析完成，請確認後匯入</div>
+                          <div className="text-xs text-gray-500 mt-1">
+                            共解析 <strong className="text-indigo-600">{fuelPending.length}</strong> 筆有效記錄
+                            （前 5 筆預覽如下）
+                          </div>
+                        </div>
+
+                        {/* 解析摘要 */}
+                        <div className="grid grid-cols-3 gap-3">
+                          {[
+                            ['🚛','不重複車牌', new Set(fuelPending.map(r=>r.vehiclePlate)).size+'台'],
+                            ['📅','日期範圍', fuelPending.length?fuelPending[0].period+'～'+fuelPending[fuelPending.length-1].period:'—'],
+                            ['⛽','總加油量', fuelPending.reduce((s,r)=>s+r.fuelLiters,0).toFixed(1)+' L'],
+                          ].map(([ico,lbl,val])=>(
+                            <div key={lbl} className="bg-indigo-50 border border-indigo-100 rounded-lg p-3 text-center">
+                              <div className="text-xl mb-1">{ico}</div>
+                              <div className="text-[10px] text-gray-500">{lbl}</div>
+                              <div className="text-sm font-bold text-indigo-700">{val}</div>
+                            </div>
+                          ))}
+                        </div>
+
+                        {/* 預覽表格 */}
+                        <div className="overflow-x-auto rounded-lg border border-gray-200">
+                          <table className="w-full text-xs">
+                            <thead><tr className="bg-gray-50 border-b">
+                              {['車牌','日期','油品','加油量(L)','金額(元)','油站','里程數'].map(h=>(
+                                <th key={h} className="px-3 py-2 text-left font-bold text-gray-600">{h}</th>
+                              ))}
+                            </tr></thead>
+                            <tbody>{fuelPreview.map((r,i)=>(
+                              <tr key={i} className="border-b border-gray-100">
+                                <td className="px-3 py-2 font-bold">{r.vehiclePlate}</td>
+                                <td className="px-3 py-2 font-mono">{r.date}</td>
+                                <td className="px-3 py-2">{r.fuelType}</td>
+                                <td className="px-3 py-2 text-right font-mono">{r.fuelLiters.toFixed(3)}</td>
+                                <td className="px-3 py-2 text-right font-mono">{r.fuelAmount>0?`$${Math.round(r.fuelAmount)}`:'—'}</td>
+                                <td className="px-3 py-2 text-gray-500 max-w-[100px] truncate">{r.station||'—'}</td>
+                                <td className="px-3 py-2 text-right font-mono">{r.odometer?fmtNum(r.odometer):<span className="text-gray-300">未登錄</span>}</td>
+                              </tr>
+                            ))}</tbody>
+                          </table>
+                        </div>
+
+                        <div className="flex gap-3">
+                          <button onClick={()=>{ setFuelImportStep('upload'); setFuelPending([]); setFuelPreview([]); }}
+                            className="flex-1 py-2.5 border border-gray-300 rounded-lg text-gray-600 text-xs font-bold hover:bg-gray-50">
+                            ← 重新上傳
+                          </button>
+                          <button onClick={handleConfirmImport}
+                            className="flex-1 py-2.5 bg-emerald-500 text-white rounded-lg text-xs font-bold hover:bg-emerald-600 shadow-sm">
+                            確認匯入 {fuelPending.length} 筆 ✓
+                          </button>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {/* ─── 加油記錄 Tab ─── */}
+                {fuelTab==='records' && (
+                  <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-x-auto">
+                    <div className="px-4 pt-4 pb-2 flex items-center justify-between">
+                      <span className="text-sm font-bold text-gray-700">
+                        加油記錄 <span className="text-indigo-600">{filtered.length}</span> 筆
+                        {curPeriod&&<span className="text-gray-400 font-normal">（{curPeriod}）</span>}
+                      </span>
+                    </div>
+                    <table className="w-full text-xs">
+                      <thead><tr className="bg-gray-50 border-b border-gray-200">
+                        {['日期','車牌','油品','加油量(L)','金額(元)','油站','里程數','km/L'].map(h=>(
+                          <th key={h} className={`px-4 py-2.5 font-bold text-gray-600 ${['日期','車牌','油品','油站'].includes(h)?'text-left':'text-right'}`}>{h}</th>
+                        ))}
+                      </tr></thead>
+                      <tbody>
+                        {[...filtered].sort((a,b)=>b.date.localeCompare(a.date)).map(r=>(
+                          <tr key={r.id} className={`border-b border-gray-100 hover:bg-gray-50 ${r.isAnomaly?'bg-amber-50':''}`}>
+                            <td className="px-4 py-2 font-mono">{r.date}</td>
+                            <td className="px-4 py-2 font-bold">{r.vehiclePlate}</td>
+                            <td className="px-4 py-2 text-gray-500">{r.fuelType}</td>
+                            <td className="px-4 py-2 text-right font-mono">{r.fuelLiters.toFixed(3)}</td>
+                            <td className="px-4 py-2 text-right font-mono text-rose-600">{r.fuelAmount>0?`NT$${Math.round(r.fuelAmount)}`:'—'}</td>
+                            <td className="px-4 py-2 text-gray-500 max-w-[110px] truncate">{r.station||'—'}</td>
+                            <td className="px-4 py-2 text-right font-mono">{r.odometer?fmtNum(r.odometer):<span className="text-gray-200">—</span>}</td>
+                            <td className="px-4 py-2 text-right font-mono font-bold">
+                              {r.kml!=null
+                                ? r.isAnomaly
+                                  ? <span className="text-amber-500">{r.kml} ⚠️</span>
+                                  : <span className={r.kml<5?'text-red-500':r.kml<6?'text-amber-500':'text-emerald-600'}>{r.kml}</span>
+                                : <span className="text-gray-200">—</span>}
+                            </td>
+                          </tr>
+                        ))}
+                        {filtered.length===0 && (
+                          <tr><td colSpan={8} className="px-4 py-10 text-center text-gray-400">無符合條件的加油記錄</td></tr>
+                        )}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+
+              </div>
+            );
+          })()}
+
           {/* ═══ LOGS ═══ */}
           {activeSection === 'logs' && isAdmin && <>
             <div className="flex items-center justify-between flex-wrap gap-3">
@@ -2030,7 +2558,33 @@ const MileageTool = ({ onBack, windowHeight }) => {
                 );
               }).join('\n\n');
 
-              const prompt = `你是一位專業的物流車隊管理顧問，請根據以下里程數據進行專業診斷分析，並以繁體中文（台灣用語）回覆。
+              // ── 整理油耗摘要（供 AI 分析用）──────────────────────
+              const fuelInPeriod = fuelRecords.filter(r => aiPeriods.includes(r.period) &&
+                (!deptFilter || (vehicles.find(v=>v.plate===r.vehiclePlate)||{}).deptId===deptFilter));
+              const fuelByPlate = {};
+              fuelInPeriod.forEach(r => {
+                if (!fuelByPlate[r.vehiclePlate]) fuelByPlate[r.vehiclePlate] = { liters:0, cost:0 };
+                fuelByPlate[r.vehiclePlate].liters += r.fuelLiters||0;
+                fuelByPlate[r.vehiclePlate].cost   += r.fuelAmount||0;
+              });
+              // km/L 計算（相同車牌在期間內連續加油）
+              const fuelKmlMap = {};
+              Object.entries(fuelByPlate).forEach(([plate, f]) => {
+                const odoRecs = fuelInPeriod.filter(r=>r.vehiclePlate===plate&&r.odometer).sort((a,b)=>a.date.localeCompare(b.date));
+                if (odoRecs.length >= 2) {
+                  const dist = odoRecs[odoRecs.length-1].odometer - odoRecs[0].odometer;
+                  if (dist>0 && f.liters>0) fuelKmlMap[plate] = Math.round(dist/f.liters*10)/10;
+                }
+              });
+              const totalFuelLiters = Object.values(fuelByPlate).reduce((s,f)=>s+f.liters,0);
+              const totalFuelCost   = Object.values(fuelByPlate).reduce((s,f)=>s+f.cost,0);
+              const avgKml2 = Object.values(fuelKmlMap).length
+                ? Math.round(Object.values(fuelKmlMap).reduce((s,v)=>s+v,0)/Object.values(fuelKmlMap).length*10)/10 : null;
+              const fuelSummary = totalFuelLiters > 0
+                ? `\n【油耗數據】\n- 期間總加油量：${totalFuelLiters.toFixed(1)} 公升\n- 期間燃料成本：${totalFuelCost>0?('NT$'+Math.round(totalFuelCost).toLocaleString()):'未登錄'}\n- 車隊平均油耗：${avgKml2!=null?(avgKml2+' km/L'):'里程數未登錄，無法計算'}\n- 高油耗警示（低於均值80%）：${avgKml2?Object.entries(fuelKmlMap).filter(([,v])=>v<avgKml2*0.8).map(([p,v])=>p+' '+v+'km/L').join('、')||'無':'—'}\n- 低油耗異常（高於均值130%）：${avgKml2?Object.entries(fuelKmlMap).filter(([,v])=>v>avgKml2*1.3).map(([p,v])=>p+' '+v+'km/L').join('、')||'無':'—'}`
+                : '\n【油耗數據】\n- 本期尚未匯入加油數據';
+
+              const prompt = `你是一位專業的物流車隊管理顧問，請根據以下里程與油耗數據進行專業診斷分析，並以繁體中文（台灣用語）回覆。
 
 【分析設定】
 - 分析類型：${rangeTyp}（${aiRangeLabel}，共 ${periods} 個月）
@@ -2048,11 +2602,13 @@ const MileageTool = ({ onBack, windowHeight }) => {
 
 【各部門詳細數據】
 ${deptAnalysisLines}
+${fuelSummary}
 
 【分析規則】
 1. 每個分析區塊（整體評估除外）都必須依部門分開說明，不可混合
 2. 每個部門的車種規格不同，調度建議必須在同部門內進行，嚴禁跨部門調度
 3. 里程數據為分析期間的累計值，引用時請同時標示累計值與月均換算值
+4. 若有油耗數據，分析時請結合里程與油耗評估車輛效率，並在管理建議中加入燃料成本控管建議
 
 【請依序輸出以下五個區塊，標題格式完全照下方格式，不可更改】
 
