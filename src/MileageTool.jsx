@@ -1306,21 +1306,21 @@ const MileageTool = ({ onBack, windowHeight }) => {
   // ═════════════════════════════════════════════════════════════════
   // RENDER: Main App
   // ═════════════════════════════════════════════════════════════════
-  // 手機底部導覽：一般用戶只看 3 項，管理者才顯示匯出 / AI 診斷
+  // 選單：油耗儀表板（唯讀）所有用戶皆可見，管理者另有管理功能
   const menuItems = [
     { key: 'dashboard', icon: '📊', label: '儀表板' },
     { key: 'monthly',   icon: '📋', label: '月報里程' },
     { key: 'adhoc',     icon: '🚗', label: '用車紀錄' },
+    { key: 'fuel',      icon: '⛽', label: '油耗儀表板' },
     ...(isAdmin ? [
       { key: 'vehicles',  icon: '🔧', label: '車輛管理' },
       { key: 'personnel', icon: '👥', label: '人員管理' },
       { key: 'logs',      icon: '🗂️', label: '操作記錄' },
-      { key: 'fuel',      icon: '⛽', label: '油耗管理' },
       { key: 'export',    icon: '⬇️', label: '匯出報表' },
       { key: 'ai',        icon: '🤖', label: 'AI 診斷' },
     ] : []),
   ];
-  // 手機底部固定顯示的 4 個主要頁籤（一般用戶）
+  // 手機底部固定頁籤：所有用戶皆含油耗
   const mobileBottomItems = isAdmin
     ? [
         { key: 'dashboard', icon: '📊', label: '儀表板' },
@@ -1331,8 +1331,9 @@ const MileageTool = ({ onBack, windowHeight }) => {
       ]
     : [
         { key: 'dashboard', icon: '📊', label: '儀表板' },
-        { key: 'monthly',   icon: '📋', label: '月報里程' },
-        { key: 'adhoc',     icon: '🚗', label: '用車紀錄' },
+        { key: 'monthly',   icon: '📋', label: '月報' },
+        { key: 'adhoc',     icon: '🚗', label: '用車' },
+        { key: 'fuel',      icon: '⛽', label: '油耗' },
       ];
 
   const getDeptName = (deptId) => departments.find(d => d.id === deptId)?.name || deptId;
@@ -1779,7 +1780,7 @@ const MileageTool = ({ onBack, windowHeight }) => {
 
 
           {/* ═══ FUEL ═══ */}
-          {activeSection === 'fuel' && isAdmin && (() => {
+          {activeSection === 'fuel' && (() => {
 
             // ══════════════════════════════════════════════════════════
             // 解析工具：廠商固定格式（CPC 中油加油卡 CSV）
@@ -1986,9 +1987,9 @@ const MileageTool = ({ onBack, windowHeight }) => {
                   </div>
                 </div>
 
-                {/* Tab */}
+                {/* Tab：儀表板全員可見；匯入/記錄 Tab 僅管理者 */}
                 <div className="flex gap-0 border-b border-gray-200">
-                  {[['dashboard','📊 儀表板'],['import','📥 匯入數據'],['records','📋 加油記錄']].map(([k,l])=>(
+                  {[['dashboard','📊 儀表板'], ...(isAdmin?[['import','📥 匯入數據'],['records','📋 加油記錄']]:[])].map(([k,l])=>(
                     <button key={k} onClick={()=>setFuelTab(k)}
                       className={`px-4 py-2 text-xs font-bold border-b-2 transition-all -mb-px ${fuelTab===k?'border-indigo-500 text-indigo-600':'border-transparent text-gray-500 hover:text-gray-700'}`}>
                       {l}
@@ -2002,11 +2003,15 @@ const MileageTool = ({ onBack, windowHeight }) => {
                     <div className="bg-white rounded-xl border-2 border-dashed border-gray-200 p-12 text-center">
                       <div className="text-4xl mb-3">⛽</div>
                       <div className="text-sm font-bold text-gray-600 mb-1">尚未匯入加油數據</div>
-                      <div className="text-xs text-gray-400 mb-4">請至「匯入數據」上傳中油加油卡 CSV 或 Excel</div>
-                      <button onClick={()=>setFuelTab('import')}
-                        className="px-5 py-2 bg-indigo-500 text-white rounded-lg text-xs font-bold hover:bg-indigo-600">
-                        前往匯入 →
-                      </button>
+                      {isAdmin ? (<>
+                        <div className="text-xs text-gray-400 mb-4">請至「匯入數據」上傳中油加油卡 CSV 或 Excel</div>
+                        <button onClick={()=>setFuelTab('import')}
+                          className="px-5 py-2 bg-indigo-500 text-white rounded-lg text-xs font-bold hover:bg-indigo-600">
+                          前往匯入 →
+                        </button>
+                      </>) : (
+                        <div className="text-xs text-gray-400">管理者尚未上傳本月加油數據，請稍後再查看</div>
+                      )}
                     </div>
                   ) : (<>
 
@@ -2659,6 +2664,22 @@ ${fuelSummary}
                     top5:    top5.map(r=>({plate:r.vehiclePlate, km:r.monthlyMileage})),
                     bottom5: bottom5.map(r=>({plate:r.vehiclePlate, km:r.monthlyMileage})),
                     anomalies: anomalies.map(r=>({plate:r.vehiclePlate, km:r.monthlyMileage})),
+                    // 油耗摘要（供 PDF 使用）
+                    fuelStats: totalFuelLiters > 0 ? {
+                      totalLiters:  Math.round(totalFuelLiters * 10) / 10,
+                      totalCost:    Math.round(totalFuelCost),
+                      avgKml:       avgKml2,
+                      totalCO2:     Math.round(
+                        fuelInPeriod.reduce((s,r)=>s+(r.co2Kg||0), 0)
+                      ),
+                      odoRate:      fuelInPeriod.length
+                        ? Math.round(fuelInPeriod.filter(r=>r.odometer).length / fuelInPeriod.length * 100)
+                        : 0,
+                      anomalyCount: Object.entries(fuelKmlMap).filter(([,v])=>v<2||v>25).length,
+                      lowEffPlates: avgKml2
+                        ? Object.entries(fuelKmlMap).filter(([,v])=>v<avgKml2*0.8).map(([p,v])=>p+' '+v+'km/L')
+                        : [],
+                    } : null,
                   };
                   setAiSavedResult(savedData);
                   try {
@@ -2686,6 +2707,7 @@ ${fuelSummary}
               const t5      = sd.top5    || [];
               const b5      = sd.bottom5 || [];
               const anom    = sd.anomalies || [];
+              const fs      = sd.fuelStats || null;   // 油耗摘要
 
               // ── 解析 5 個分析區塊 ────────────────────────────────────
               const splitSections = (text) => {
@@ -2810,6 +2832,42 @@ ${fuelSummary}
       <div style="font-size:11px;color:#9f1239;">建議立即確認車輛使用狀況、里程紀錄正確性及駕駛行為。</div>
     </div>
   </div>`:''}
+
+  ${fs ? `
+  <!-- 油耗摘要 -->
+  <div data-card style="margin-bottom:10px;">
+    <div style="background:#f0fdf4;border:1.5px solid #bbf7d0;border-radius:10px;padding:14px 16px;">
+      <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px;">
+        <span style="font-size:18px;">⛽</span>
+        <b style="font-size:13.5px;color:#14532d;">燃料 / 油耗摘要</b>
+        ${fs.odoRate < 50 ? `<span style="background:#fef3c7;color:#92400e;border-radius:20px;padding:2px 10px;font-size:10px;font-weight:700;">里程登錄率 ${fs.odoRate}%　建議提升</span>` : `<span style="background:#dcfce7;color:#166534;border-radius:20px;padding:2px 10px;font-size:10px;font-weight:700;">里程登錄率 ${fs.odoRate}%</span>`}
+      </div>
+      <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-bottom:10px;">
+        <div style="background:#fff;border:1.5px solid #d1fae5;border-radius:8px;padding:10px;text-align:center;">
+          <div style="font-size:17px;font-weight:800;color:#059669;">${fs.totalLiters.toLocaleString()}</div>
+          <div style="font-size:9px;color:#10b981;margin-top:3px;">⛽ 總加油量 (L)</div>
+        </div>
+        <div style="background:#fff;border:1.5px solid #fecdd3;border-radius:8px;padding:10px;text-align:center;">
+          <div style="font-size:17px;font-weight:800;color:#be123c;">${fs.totalCost > 0 ? 'NT$' + fs.totalCost.toLocaleString() : '—'}</div>
+          <div style="font-size:9px;color:#e11d48;margin-top:3px;">💰 燃料成本 (元)</div>
+        </div>
+        <div style="background:#fff;border:1.5px solid #a5f3fc;border-radius:8px;padding:10px;text-align:center;">
+          <div style="font-size:17px;font-weight:800;color:#0e7490;">${fs.avgKml != null ? fs.avgKml + ' km/L' : '—'}</div>
+          <div style="font-size:9px;color:#0891b2;margin-top:3px;">📈 車隊平均油耗</div>
+        </div>
+        <div style="background:#fff;border:1.5px solid #fed7aa;border-radius:8px;padding:10px;text-align:center;">
+          <div style="font-size:17px;font-weight:800;color:#c2410c;">${fs.totalCO2.toLocaleString()}</div>
+          <div style="font-size:9px;color:#ea580c;margin-top:3px;">🌿 CO₂ 排放 (kg)</div>
+        </div>
+      </div>
+      ${fs.lowEffPlates && fs.lowEffPlates.length > 0 ? `
+      <div style="background:#fef9c3;border:1px solid #fde047;border-radius:6px;padding:8px 12px;">
+        <span style="font-size:11px;font-weight:700;color:#713f12;">⚠️ 低效油耗車輛（低於均值 80%）：</span>
+        ${fs.lowEffPlates.map(p => `<span style="background:#eab308;color:#fff;border-radius:4px;padding:2px 8px;font-size:10px;font-weight:700;margin-left:4px;">${p}</span>`).join('')}
+      </div>` : `<div style="font-size:11px;color:#16a34a;">✅ 無低效油耗異常車輛</div>`}
+      ${fs.anomalyCount > 0 ? `<div style="margin-top:6px;font-size:11px;color:#b45309;">⚠️ 另有 ${fs.anomalyCount} 筆 km/L 異常記錄（疑似里程輸入錯誤，已排除於均值計算）</div>` : ''}
+    </div>
+  </div>` : ''}
 
   ${allEmpty
     ? `<div data-card style="margin-bottom:10px;"><div style="background:#eef2ff;border-left:5px solid #4f46e5;border-radius:10px;padding:14px 16px;"><div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;"><span style="font-size:18px;">📋</span><b style="font-size:13.5px;color:#3730a3;">完整 AI 診斷報告</b></div><div style="font-size:12px;line-height:1.85;color:#374151;">${R(displayResult)}</div></div></div>`
