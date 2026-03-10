@@ -550,6 +550,7 @@ const MileageTool = ({ onBack, windowHeight }) => {
   const [showAdminPw, setShowAdminPw] = useState(false);
   const [adminPwInput, setAdminPwInput] = useState('');
   const [adminPwError, setAdminPwError] = useState(false);
+  const [adminPwFailCount, setAdminPwFailCount] = useState(0); // 累計密碼錯誤次數（記錄於 log）
   const [loginDept, setLoginDept] = useState('');
   const [customName, setCustomName] = useState('');
 
@@ -655,13 +656,14 @@ const MileageTool = ({ onBack, windowHeight }) => {
     const load = async () => {
       setDataLoading(true);
       try {
-      const [depts, vehs, pers, monthly, adhoc, fuel] = await Promise.all([
+      const [depts, vehs, pers, monthly, adhoc, fuel, auditData] = await Promise.all([
         loadCollection('departments'),
         loadCollection('vehicles'),
         loadCollection('personnel'),
         loadCollection('monthly_records'),
         loadCollection('adhoc_records'),
         loadCollection('fuel_records'),
+        loadCollection('audit_log'),
       ]);
       if (depts) setDepartments(depts);
       if (vehs) setVehicles(vehs);
@@ -674,6 +676,7 @@ const MileageTool = ({ onBack, windowHeight }) => {
       }
       if (adhoc) setAdhocRecords(adhoc);
       if (fuel)  setFuelRecords(fuel);
+      if (auditData) setAuditLog(auditData);
       // 載入已儲存的 AI 診斷結果
       try {
         const fb2 = await initFirebase();
@@ -892,7 +895,12 @@ const MileageTool = ({ onBack, windowHeight }) => {
       operator: currentUser?.name || '—',
       ts: new Date().toISOString(),
     };
-    setAuditLog(prev => [entry, ...prev].slice(0, 500)); // 保留最近 500 筆
+    setAuditLog(prev => {
+      const updated = [entry, ...prev].slice(0, 500); // 保留最近 500 筆
+      // 非同步持久化到 Firestore（不阻塞 UI）
+      saveCollection('audit_log', updated).catch(e => console.warn('[Log] save failed', e));
+      return updated;
+    });
   };
 
   // ── Delete ────────────────────────────────────────
@@ -1254,7 +1262,14 @@ const MileageTool = ({ onBack, windowHeight }) => {
               </div>
               <div className="grid grid-cols-2 sm:grid-cols-3 gap-1.5">
                 {personnelByDept[loginDept === 'dept_logi' ? 'logi' : 'sale'].map(p => (
-                  <button key={p.id} onClick={() => { setCurrentUser(p); setActiveSection('dashboard'); setLoginDept(''); }}
+                  <button key={p.id} onClick={() => {
+                    setCurrentUser(p);
+                    setActiveSection('dashboard');
+                    setLoginDept('');
+                    // 延遲一個 tick，等 currentUser state 更新後 logAction 才能正確取到 operator
+                    setTimeout(() => logAction('login', '使用者登入',
+                      `${p.name}・${(departments.find(d=>d.id===p.deptId)||{name:p.deptId}).name}・名單登入`), 0);
+                  }}
                     className="py-2.5 px-2 bg-white bg-opacity-5 border border-white border-opacity-10 rounded-lg text-white text-xs font-bold hover:bg-emerald-500 hover:bg-opacity-30 hover:border-emerald-400 transition-all">
                     {p.name}
                   </button>
@@ -1262,10 +1277,25 @@ const MileageTool = ({ onBack, windowHeight }) => {
               </div>
               <div className="flex gap-2 mt-2">
                 <input value={customName} onChange={e => setCustomName(e.target.value)}
-                  onKeyDown={e => { if (e.key === 'Enter' && customName.trim()) { setCurrentUser({ id: `custom_${Date.now()}`, name: customName.trim(), deptId: loginDept, status: 'active' }); setActiveSection('dashboard'); setLoginDept(''); setCustomName(''); } }}
+                  onKeyDown={e => { if (e.key === 'Enter' && customName.trim()) {
+                    const nm = customName.trim();
+                    const dName = (departments.find(d=>d.id===loginDept)||{name:loginDept}).name;
+                    setCurrentUser({ id: `custom_${Date.now()}`, name: nm, deptId: loginDept, status: 'active' });
+                    setActiveSection('dashboard'); setLoginDept(''); setCustomName('');
+                    setTimeout(() => logAction('login', '自訂名稱登入',
+                      `${nm}・${dName}・⚠️ 非名單用戶`), 0);
+                  } }}
                   placeholder="不在名單內？輸入姓名"
                   className="flex-1 p-2 bg-white bg-opacity-5 border border-white border-opacity-10 rounded-lg text-white text-xs outline-none focus:border-emerald-400 placeholder-white placeholder-opacity-20" />
-                <button onClick={() => { if (!customName.trim()) return; setCurrentUser({ id: `custom_${Date.now()}`, name: customName.trim(), deptId: loginDept, status: 'active' }); setActiveSection('dashboard'); setLoginDept(''); setCustomName(''); }}
+                <button onClick={() => {
+                  if (!customName.trim()) return;
+                  const nm = customName.trim();
+                  const dName = (departments.find(d=>d.id===loginDept)||{name:loginDept}).name;
+                  setCurrentUser({ id: `custom_${Date.now()}`, name: nm, deptId: loginDept, status: 'active' });
+                  setActiveSection('dashboard'); setLoginDept(''); setCustomName('');
+                  setTimeout(() => logAction('login', '自訂名稱登入',
+                    `${nm}・${dName}・⚠️ 非名單用戶`), 0);
+                }}
                   disabled={!customName.trim()}
                   className="px-3 py-2 bg-emerald-500 bg-opacity-30 border border-emerald-400 border-opacity-30 rounded-lg text-emerald-300 text-xs font-bold hover:bg-opacity-50 disabled:opacity-30 transition-all">
                   進入
@@ -1289,11 +1319,29 @@ const MileageTool = ({ onBack, windowHeight }) => {
               <div className="bg-slate-800 rounded-2xl p-6 w-80 border border-emerald-500 border-opacity-30 space-y-4" onClick={e => e.stopPropagation()}>
                 <div className="text-sm font-bold text-white">🔐 管理者驗證</div>
                 <input type="password" value={adminPwInput} onChange={e => setAdminPwInput(e.target.value)}
-                  onKeyDown={e => { if (e.key === 'Enter') { if (adminPwInput === ADMIN_PW) { setIsAdmin(true); setCurrentUser({ id: 'admin', name: '管理者', deptId: 'dept_logi' }); setShowAdminPw(false); setAdminPwInput(''); setActiveSection('dashboard'); } else { setAdminPwError(true); setTimeout(() => setAdminPwError(false), 1500); } } }}
+                  onKeyDown={e => { if (e.key === 'Enter') {
+                    if (adminPwInput === ADMIN_PW) {
+                      setIsAdmin(true);
+                      setCurrentUser({ id: 'admin', name: '管理者', deptId: 'dept_logi' });
+                      setShowAdminPw(false); setAdminPwInput(''); setActiveSection('dashboard');
+                    } else {
+                      setAdminPwError(true);
+                      setTimeout(() => setAdminPwError(false), 1500);
+                    }
+                  } }}
                   placeholder="輸入管理者密碼" autoFocus
                   className={`w-full p-2.5 bg-slate-700 border ${adminPwError ? 'border-red-500' : 'border-slate-600'} rounded-lg text-white text-sm outline-none`} />
                 {adminPwError && <div className="text-red-400 text-xs">密碼錯誤</div>}
-                <button onClick={() => { if (adminPwInput === ADMIN_PW) { setIsAdmin(true); setCurrentUser({ id: 'admin', name: '管理者', deptId: 'dept_logi' }); setShowAdminPw(false); setAdminPwInput(''); setActiveSection('dashboard'); } else { setAdminPwError(true); setTimeout(() => setAdminPwError(false), 1500); } }}
+                <button onClick={() => {
+                  if (adminPwInput === ADMIN_PW) {
+                    setIsAdmin(true);
+                    setCurrentUser({ id: 'admin', name: '管理者', deptId: 'dept_logi' });
+                    setShowAdminPw(false); setAdminPwInput(''); setActiveSection('dashboard');
+                  } else {
+                    setAdminPwError(true);
+                    setTimeout(() => setAdminPwError(false), 1500);
+                  }
+                }}
                   className="w-full py-2.5 bg-emerald-500 text-white rounded-lg font-bold text-sm hover:bg-emerald-600">驗證</button>
               </div>
             </div>
@@ -2306,6 +2354,7 @@ const MileageTool = ({ onBack, windowHeight }) => {
                 <select value={logFilter} onChange={e => setLogFilter(e.target.value)}
                   className="border border-gray-300 rounded-lg px-3 py-1.5 text-xs">
                   <option value="all">全部類型</option>
+                  <option value="login">🔐 登入記錄</option>
                   <option value="monthly">里程回報</option>
                   <option value="edit">修改 / 覆蓋</option>
                   <option value="approve">審核通過</option>
@@ -2339,6 +2388,10 @@ const MileageTool = ({ onBack, windowHeight }) => {
                           edit: 'bg-purple-100 text-purple-700',
                           approve: 'bg-green-100 text-green-700',
                           delete: 'bg-gray-200 text-gray-600',
+                          login: l.action.includes('錯誤') ? 'bg-red-100 text-red-700'
+                               : l.action.includes('登出') ? 'bg-slate-200 text-slate-600'
+                               : l.action.includes('管理者') ? 'bg-amber-100 text-amber-700'
+                               : 'bg-emerald-100 text-emerald-700',
                         }[l.category] || 'bg-gray-100 text-gray-500';
                         const ts = new Date(l.ts);
                         const timeStr = `${ts.getFullYear()}-${String(ts.getMonth()+1).padStart(2,'0')}-${String(ts.getDate()).padStart(2,'0')} ${String(ts.getHours()).padStart(2,'0')}:${String(ts.getMinutes()).padStart(2,'0')}:${String(ts.getSeconds()).padStart(2,'0')}`;
