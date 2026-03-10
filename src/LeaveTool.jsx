@@ -661,28 +661,30 @@ const LeaveTool = ({ onBack, windowHeight }) => {
   },[leaveRequests, leaveConfig, delReq, batchReqs, logAction]);
 
 
-  const handleNotify = async (id, type) => {
+  const handleNotify = useCallback(async (id, type) => {
     setNotifyLoading(id+type);
     const req = leaveRequests.find(r=>r.id===id);
+    if (!req) { setNotifyLoading(null); return; }
     try {
-      const endpoint = type === 'gmail' ? '/api/leave-notify' : '/api/leave-gcal';
-      const res = await fetch(endpoint, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ request: req, managerEmail: leaveConfig.managerEmail, calendarId: leaveConfig.calendarId }),
-      });
+      const endpoint = type==='gmail' ? '/api/leave-notify' : '/api/leave-gcal';
+      const res  = await fetch(endpoint,{method:'POST',headers:{'Content-Type':'application/json'},
+        body:JSON.stringify({request:req, managerEmail:leaveConfig.managerEmail, calendarId:leaveConfig.calendarId})});
       const data = await res.json();
       if (data.ok) {
-        // [已在新版 handleNotify 中處理]
+        const now = new Date().toISOString();
+        const upd = {...req, notified:true, notifiedAt:now, updatedAt:now,
+          notifiedGmail: type==='gmail' ? true : (req.notifiedGmail||false),
+          notifiedGcal:  type==='gcal'  ? true : (req.notifiedGcal||false)};
+        setLeaveRequests(prev=>prev.map(r=>r.id===id?upd:r));
+        await saveReq(upd);
         logAction('notify', type==='gmail'?'Gmail 通知':'行事曆新增',
-          `${req?.employeeName}・${req?.leaveTypeName}・${req?.startDate}～${req?.endDate}`);
-        alert(type==='gmail'?'📧 郵件通知已發送':'📅 已新增至主管行事曆');
-      } else {
-        alert('通知失敗：' + (data.error||'未知錯誤'));
-      }
-    } catch(e){ alert('無法連線：' + e.message); }
+          `${req.employeeName}・${req.leaveTypeName}・${req.startDate}～${req.endDate}`);
+        alert(type==='gmail'?'📧 郵件通知已發送至主管':'📅 已新增至主管 Google Calendar');
+      } else { alert('通知失敗：'+(data.error||'未知錯誤')); }
+    } catch(e){ alert('無法連線：'+e.message); }
     setNotifyLoading(null);
-  };
+  },[leaveRequests, leaveConfig, saveReq, logAction]);
+
 
   // ── Derived data ──────────────────────────────────────────────────
   const personnelByDept = useMemo(()=>({
@@ -2162,28 +2164,4 @@ ${(() => {
   );
 };
 
-export default LeaveTool;  const handleNotify = useCallback(async (id, type) => {
-    setNotifyLoading(id+type);
-    const req = leaveRequests.find(r=>r.id===id);
-    if (!req) { setNotifyLoading(null); return; }
-    try {
-      const endpoint = type==='gmail' ? '/api/leave-notify' : '/api/leave-gcal';
-      const res  = await fetch(endpoint,{method:'POST',headers:{'Content-Type':'application/json'},
-        body:JSON.stringify({request:req, managerEmail:leaveConfig.managerEmail, calendarId:leaveConfig.calendarId})});
-      const data = await res.json();
-      if (data.ok) {
-        const now = new Date().toISOString();
-        const upd = {...req, notified:true, notifiedAt:now, updatedAt:now,
-          notifiedGmail: type==='gmail' ? true : (req.notifiedGmail||false),
-          notifiedGcal:  type==='gcal'  ? true : (req.notifiedGcal||false)};
-        setLeaveRequests(prev=>prev.map(r=>r.id===id?upd:r));
-        await saveReq(upd);
-        logAction('notify', type==='gmail'?'Gmail 通知':'行事曆新增',
-          `${req.employeeName}・${req.leaveTypeName}・${req.startDate}～${req.endDate}`);
-        alert(type==='gmail'?'📧 郵件通知已發送至主管':'📅 已新增至主管 Google Calendar');
-      } else { alert('通知失敗：'+(data.error||'未知錯誤')); }
-    } catch(e){ alert('無法連線：'+e.message); }
-    setNotifyLoading(null);
-  },[leaveRequests, leaveConfig, saveReq, logAction]);
-
-
+export default LeaveTool;
