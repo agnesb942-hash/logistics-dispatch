@@ -170,7 +170,7 @@ const STATUS_CFG = {
 const LEAVE_ADMIN_PW = 'admin2024';
 
 const DEFAULT_LEAVE_PERSONNEL = [
-  // 物流部
+  // 物流部（預設人員，管理者可在系統設定新增其他部門人員）
   { id:'lp01',name:'陳承業',deptId:'dept_logi',email:'',status:'active' },
   { id:'lp02',name:'馬一帆',deptId:'dept_logi',email:'',status:'active' },
   { id:'lp03',name:'蕭頎俊',deptId:'dept_logi',email:'',status:'active' },
@@ -188,17 +188,6 @@ const DEFAULT_LEAVE_PERSONNEL = [
   { id:'lp15',name:'郭軒齊',deptId:'dept_logi',email:'',status:'active' },
   { id:'lp16',name:'梁鈞為',deptId:'dept_logi',email:'',status:'active' },
   { id:'lp17',name:'吳冠霖',deptId:'dept_logi',email:'',status:'active' },
-  // 倉儲部
-  { id:'lp18',name:'黃建宏',deptId:'dept_ware',email:'',status:'active' },
-  { id:'lp19',name:'劉韋廷',deptId:'dept_ware',email:'',status:'active' },
-  { id:'lp20',name:'林彥廷',deptId:'dept_ware',email:'',status:'active' },
-  { id:'lp21',name:'陳彥廷',deptId:'dept_ware',email:'',status:'active' },
-  { id:'lp22',name:'蔡承翰',deptId:'dept_ware',email:'',status:'active' },
-  { id:'lp23',name:'張宥銘',deptId:'dept_ware',email:'',status:'active' },
-  { id:'lp24',name:'王俊傑',deptId:'dept_ware',email:'',status:'active' },
-  { id:'lp25',name:'許哲維',deptId:'dept_ware',email:'',status:'active' },
-  { id:'lp26',name:'洪志豪',deptId:'dept_ware',email:'',status:'active' },
-  { id:'lp27',name:'吳承恩',deptId:'dept_ware',email:'',status:'active' },
 ];
 
 // ── Utilities ─────────────────────────────────────────────────────────
@@ -400,7 +389,9 @@ const LeaveTool = ({ onBack, windowHeight }) => {
   const [applyType,     setApplyType]     = useState('annual');
   const [applyStart,    setApplyStart]    = useState('');
   const [applyEnd,      setApplyEnd]      = useState('');
-  const [applyHours,    setApplyHours]    = useState('8');
+  const [applyHours,     setApplyHours]    = useState('8');
+  const [applyTimeStart, setApplyTimeStart] = useState('08:00'); // 小時制：起始時間
+  const [applyTimeEnd,   setApplyTimeEnd]   = useState('12:00'); // 小時制：結束時間
   const [applyUnit,     setApplyUnit]     = useState('day'); // 'day' | 'hour'
   const [applyReason,   setApplyReason]   = useState('');
   const [applyFor,      setApplyFor]      = useState(''); // for admin proxy apply
@@ -486,7 +477,16 @@ const LeaveTool = ({ onBack, windowHeight }) => {
       ]);
       if (cancelled) return;
       if (reqs.length>0)   setLeaveRequests(reqs.sort((a,b)=>(b.createdAt||'').localeCompare(a.createdAt||'')));
-      if (pers.length>0)   setPersonnel(pers);
+      if (pers.length>0) {
+        setPersonnel(pers);
+      } else {
+        // 首次啟動：將預設人員寫入 Firestore
+        setPersonnel(DEFAULT_LEAVE_PERSONNEL);
+        try {
+          const initOps = DEFAULT_LEAVE_PERSONNEL.map(p=>({ coll:COLL.pers, id:p.id, data:p }));
+          await DB.batchOps(initOps);
+        } catch(e) { console.warn('初始化人員寫入失敗', e); }
+      }
       if (cfg)             setLeaveConfig(prev=>({...prev,...cfg}));
       if (logs.length>0)   setAuditLog(logs.sort((a,b)=>(b.ts||'').localeCompare(a.ts||'')));
       if (blocks.length>0) {
@@ -534,15 +534,31 @@ const LeaveTool = ({ onBack, windowHeight }) => {
     if (!targetPerson) return alert('請選擇申請人');
     if (!applyStart || !applyEnd) return alert('請填寫休假日期');
     if (applyStart > applyEnd) return alert('開始日期不能晚於結束日期');
+    if (isHourUnit) {
+      if (!applyTimeStart || !applyTimeEnd) return alert('請填寫起始和結束時間');
+      const [sh,sm] = applyTimeStart.split(':').map(Number);
+      const [eh,em] = applyTimeEnd.split(':').map(Number);
+      if (eh*60+em <= sh*60+sm) return alert('結束時間必須晚於起始時間');
+      const diff = ((eh*60+em)-(sh*60+sm))/60;
+      if (diff > WORK_HOURS_PER_DAY) return alert(`請假時數不可超過每日標準工時（${WORK_HOURS_PER_DAY}H）`);
+    }
 
     const leaveTypeDef = LEAVE_TYPES.find(t=>t.id===applyType);
     const isHourUnit = applyUnit === 'hour' && applyType !== 'compensatory';
     const workDays = applyType==='compensatory'
       ? 0
       : isHourUnit ? 0 : calcWorkingDaysWithHolidays(applyStart, applyEnd);
+    // 小時制：用起迄時間計算時數
+    const calcHoursFromTime = () => {
+      if (!applyTimeStart || !applyTimeEnd) return 0;
+      const [sh,sm] = applyTimeStart.split(':').map(Number);
+      const [eh,em] = applyTimeEnd.split(':').map(Number);
+      return Math.round(((eh*60+em)-(sh*60+sm))/60 * 10) / 10;
+    };
     const hours = applyType==='compensatory'
       ? parseFloat(applyHours)||0
-      : isHourUnit ? parseFloat(applyHours)||0 : workDays*8;
+      : isHourUnit ? calcHoursFromTime()
+      : workDays * WORK_HOURS_PER_DAY;
     const isConsecutive = !isHourUnit && workDays >= CONSECUTIVE_THRESHOLD;
 
     // 職務代理人驗證
@@ -591,6 +607,8 @@ const LeaveTool = ({ onBack, windowHeight }) => {
       endDate:       applyEnd,
       days:          workDays,
       unit:          isHourUnit ? 'hour' : 'day',
+      timeStart:     isHourUnit ? applyTimeStart : null,
+      timeEnd:       isHourUnit ? applyTimeEnd   : null,
       hours,
       reason:        applyReason,
       isConsecutive,
@@ -613,7 +631,7 @@ const LeaveTool = ({ onBack, windowHeight }) => {
     const prevDay = getPrevWorkingDay(applyStart);
     setNoticeModal({ req: newReq, prevDay });
   }, [currentUser, isAdmin, applyFor, applyType, applyStart, applyEnd, applyHours,
-      applyUnit, applyReason, applyProxy, applyProxySched, personnel, leaveConfig,
+      applyUnit, applyTimeStart, applyTimeEnd, applyReason, applyProxy, applyProxySched, personnel, leaveConfig,
       detectConflicts, calBlockedDates]);
 
   // 知會彈窗確認後真正送出
@@ -632,7 +650,7 @@ const LeaveTool = ({ onBack, windowHeight }) => {
     setNoticeModal(null); setNoticeConfirm(false);
     setApplyType('annual'); setApplyStart(''); setApplyEnd('');
     setApplyHours('8'); setApplyReason(''); setApplyFor('');
-    setApplyProxy(''); setApplyProxySched({}); setApplyUnit('day');
+    setApplyProxy(''); setApplyProxySched({}); setApplyUnit('day'); setApplyTimeStart('08:00'); setApplyTimeEnd('12:00');
     setActiveSection('calendar');
     const statusLabel = STATUS_CFG[req.status]?.label || req.status;
     if (req.status==='conflict_pending') alert(`⚠️ 衝突提醒\n同部門 ${req.conflictWith.join('、')} 於該期間已排休。\n申請已送出，等待主管審核。`);
@@ -1118,32 +1136,55 @@ const LeaveTool = ({ onBack, windowHeight }) => {
             </div>
           )}
 
-          {/* 補休／小時制：輸入時數 */}
-          {(applyType==='compensatory' || isHourUnit) && (
+          {/* 補休假：輸入時數 */}
+          {applyType === 'compensatory' && (
             <div>
-              <label className="block text-xs font-bold text-gray-500 mb-1.5">
-                {applyType==='compensatory' ? '補休時數' : '請假時數'}
-              </label>
+              <label className="block text-xs font-bold text-gray-500 mb-1.5">補休時數</label>
               <input type="number" value={applyHours} min="0.5" max="72" step="0.5"
                 onChange={e=>setApplyHours(e.target.value)}
                 className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:border-violet-400"
                 placeholder="例：4（半天）、8（整天）"/>
-              <div className="text-[10px] text-gray-400 mt-1">標準工時 8H/天（08:00–17:00）；半天 = 4H</div>
             </div>
           )}
 
-          {/* 計算天數/時數 + 連休標示 */}
-          {(workDays > 0 || (isHourUnit && parseFloat(applyHours)>0)) && (
+          {/* 小時制：起迄時間選擇 */}
+          {isHourUnit && (
+            <div className="space-y-3">
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-bold text-gray-500 mb-1.5">起始時間</label>
+                  <input type="time" value={applyTimeStart} min="08:00" max="17:00" step="1800"
+                    onChange={e=>setApplyTimeStart(e.target.value)}
+                    className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:border-violet-400"/>
+                </div>
+                <div>
+                  <label className="block text-xs font-bold text-gray-500 mb-1.5">結束時間</label>
+                  <input type="time" value={applyTimeEnd} min="08:00" max="17:00" step="1800"
+                    onChange={e=>setApplyTimeEnd(e.target.value)}
+                    className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:border-violet-400"/>
+                </div>
+              </div>
+              {applyTimeStart && applyTimeEnd && (() => {
+                const [sh,sm]=applyTimeStart.split(':').map(Number);
+                const [eh,em]=applyTimeEnd.split(':').map(Number);
+                const diff = ((eh*60+em)-(sh*60+sm))/60;
+                if (diff <= 0) return <div className="text-xs text-rose-600 font-bold">⚠️ 結束時間必須晚於起始時間</div>;
+                return (
+                  <div className="bg-violet-50 border border-violet-200 rounded-xl px-3 py-2 text-xs text-violet-700 font-bold">
+                    ⏱ 請假時數：{diff} 小時（{applyTimeStart} ～ {applyTimeEnd}）
+                  </div>
+                );
+              })()}
+              <div className="text-[10px] text-gray-400">標準工時 08:00–17:00，最小單位 30 分鐘</div>
+            </div>
+          )}
+
+          {/* 計算天數 + 連休標示（天制） */}
+          {!isHourUnit && workDays > 0 && (
             <div className="flex items-center flex-wrap gap-2">
-              {isHourUnit ? (
-                <span className="text-sm text-gray-500">請假時數：<span className="font-bold text-violet-700">{applyHours} 小時</span>
-                  <span className="text-gray-400 ml-1">（約 {(parseFloat(applyHours)||0)/8 % 1 === 0 ? (parseFloat(applyHours)||0)/8 : ((parseFloat(applyHours)||0)/8).toFixed(1)} 天）</span>
-                </span>
-              ) : (
-                <span className="text-sm text-gray-500">工作天數：<span className="font-bold text-violet-700">{workDays} 天</span>
-                  <span className="text-gray-400 ml-1">（{workDays * WORK_HOURS_PER_DAY} 小時）</span>
-                </span>
-              )}
+              <span className="text-sm text-gray-500">工作天數：<span className="font-bold text-violet-700">{workDays} 天</span>
+                <span className="text-gray-400 ml-1">（{workDays * WORK_HOURS_PER_DAY} 小時）</span>
+              </span>
               {isConsecutive && (
                 <span className="text-xs bg-amber-100 text-amber-700 border border-amber-200 px-2 py-0.5 rounded-full font-bold">
                   🔴 連休（≥{CONSECUTIVE_THRESHOLD}天）— 需主管審核
@@ -1270,7 +1311,9 @@ const LeaveTool = ({ onBack, windowHeight }) => {
                 <span className="font-bold" style={{color:lt?.color}}>{r.leaveTypeName}</span>
                 <span className="ml-2">{r.startDate} ～ {r.endDate}</span>
                 <span className="ml-2">
-                  {r.unit==='hour' || r.leaveType==='compensatory'
+                  {r.unit==='hour'
+                    ? <>{r.timeStart&&r.timeEnd ? `${r.timeStart}–${r.timeEnd}` : ''} ({r.hours}H)</>
+                    : r.leaveType==='compensatory'
                     ? r.hours+'H'
                     : r.days+'天'}
                   {isAdmin && r.unit!=='hour' && r.leaveType!=='compensatory' && r.days>0 &&
@@ -1531,6 +1574,9 @@ const LeaveTool = ({ onBack, windowHeight }) => {
                         {r.startDate}～{r.endDate} ·{' '}
                         {r.unit==='hour'||r.leaveType==='compensatory'?r.hours+'H':r.days+'天'+(isAdmin&&r.days>0?' ('+r.days*WORK_HOURS_PER_DAY+'H)':'')}
                       </div>
+                      {r.unit==='hour' && r.timeStart && r.timeEnd && (
+                        <div className="text-gray-400 mt-0.5">⏱ {r.timeStart} ～ {r.timeEnd}（{r.hours}H）</div>
+                      )}
                       {(r.proxyName||r.proxySchedule) &&
                         <div className="text-gray-400 mt-0.5">代理：{r.proxyName||Object.values(r.proxySchedule||{}).map(id=>personnel.find(p=>p.id===id)?.name||id).join('/')}</div>
                       }
@@ -2292,7 +2338,10 @@ ${(() => {
               <div><span className="text-gray-400">假別：</span><span className="font-bold">{r.leaveTypeName}</span></div>
               <div><span className="text-gray-400">日期：</span><span className="font-bold">{r.startDate} ～ {r.endDate}</span></div>
               <div><span className="text-gray-400">時數：</span><span className="font-bold">
-                {r.unit==='hour'||r.leaveType==='compensatory' ? r.hours+'H' : r.days+'天（'+r.days*WORK_HOURS_PER_DAY+'H）'}
+                {r.unit==='hour'
+                  ? (r.timeStart&&r.timeEnd ? `${r.timeStart} ～ ${r.timeEnd}（${r.hours}H）` : r.hours+'H')
+                  : r.leaveType==='compensatory' ? r.hours+'H'
+                  : r.days+'天（'+r.days*WORK_HOURS_PER_DAY+'H）'}
               </span></div>
               <div><span className="text-gray-400">狀態：</span>
                 <span className={`font-bold px-1.5 py-0.5 rounded-full text-[10px] ${STATUS_CFG[r.status]?.badge}`}>{STATUS_CFG[r.status]?.label}</span>
@@ -2349,6 +2398,11 @@ ${(() => {
               <span className="font-bold text-violet-700">{req.startDate} ～ {req.endDate}</span>
               {req.isConsecutive && <span className="ml-2 text-xs bg-amber-200 text-amber-800 px-1.5 py-0.5 rounded font-bold">連休 {req.days} 天</span>}
             </div>
+            {req.unit==='hour' && req.timeStart && req.timeEnd && (
+              <div className="text-xs text-gray-600 mt-0.5">
+                ⏱ <span className="font-bold text-violet-700">{req.timeStart} ～ {req.timeEnd}（{req.hours}H）</span>
+              </div>
+            )}
             <div className="text-xs text-amber-600">
               ⚠️ 須於 <span className="font-bold text-amber-800">{prevDay}（休假前一工作日）</span> 前完成知會
             </div>
