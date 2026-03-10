@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import MileageTool from './MileageTool';
+import LeaveTool from './LeaveTool';
 
 // ----------------------------------------------------------------------
 // 0. ICONS (Inline SVGs)
@@ -1856,6 +1857,11 @@ const App = () => {
     document.body.removeChild(link);
   };
 
+  // === 休假管理工具 ===
+  if (appMode === 'leave') {
+    return <LeaveTool onBack={() => setAppMode('home')} windowHeight={windowHeight} />;
+  }
+
   // === 車輛里程管理工具 ===
   if (appMode === 'mileage') {
     return <MileageTool onBack={() => setAppMode('home')} windowHeight={windowHeight} />;
@@ -1921,6 +1927,20 @@ const App = () => {
             + '<span>&#9658;</span> \u76f4\u63a5\u9032\u5165'
           + '</div>'
         + '</div>'
+        + '<div id="card-leave" style="' + cardStyle('139,92,246') + '">'
+          + '<div style="position:absolute;top:-1px;left:20px;right:20px;height:2px;background:linear-gradient(90deg,transparent,#8b5cf6,transparent)"></div>'
+          + '<div style="font-size:42px;margin-bottom:22px">&#128197;</div>'
+          + '<div style="font-size:15px;font-weight:700;color:#a78bfa;letter-spacing:3px;margin-bottom:12px;text-transform:uppercase">\u4f11\u5047\u7ba1\u7406</div>'
+          + '<div style="font-size:12px;color:rgba(255,255,255,0.5);line-height:2;margin-bottom:28px">'
+            + '\u4f11\u5047\u7533\u8acb &nbsp;·&nbsp; \u885d\u7a81\u63d0\u9192<br>'
+            + '\u4e3b\u7ba1\u5be9\u6838 &nbsp;·&nbsp; Google \u884c\u4e8b\u66c6<br>'
+            + '\u7d71\u8a08\u5206\u6790 &nbsp;·&nbsp; AI \u5831\u8868'
+          + '</div>'
+          + '<div style="width:100%;height:1px;background:rgba(139,92,246,0.15);margin-bottom:20px"></div>'
+          + '<div style="display:inline-flex;align-items:center;gap:8px;font-size:11px;color:rgba(139,92,246,0.8);border:1px solid rgba(139,92,246,0.35);padding:8px 18px;border-radius:2px;letter-spacing:2px">'
+            + '<span style="font-size:14px">&#128100;</span> \u9078\u64c7\u540c\u4ec1\u767b\u5165'
+          + '</div>'
+        + '</div>'
         + '<div id="card-mileage" style="' + cardStyle('52,211,153') + '">'
           + '<div style="position:absolute;top:-1px;left:20px;right:20px;height:2px;background:linear-gradient(90deg,transparent,#34d399,transparent)"></div>'
           + '<div style="font-size:42px;margin-bottom:22px">&#128202;</div>'
@@ -1942,10 +1962,11 @@ const App = () => {
         style={{minHeight:windowHeight+'px',background:'#080c14',fontFamily:"monospace",display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'flex-start',paddingTop:'40px',paddingBottom:'40px',position:'relative',overflowY:'auto',overflowX:'hidden'}}
         dangerouslySetInnerHTML={{__html:html}}
         onClick={(e) => {
-          const card = e.target.closest && e.target.closest('#card-dispatch,#card-lookup,#card-mileage');
+          const card = e.target.closest && e.target.closest('#card-dispatch,#card-lookup,#card-mileage,#card-leave');
           if (!card) return;
           if (card.id === 'card-dispatch') setAppMode('dispatch_login');
           else if (card.id === 'card-mileage') setAppMode('mileage');
+          else if (card.id === 'card-leave') setAppMode('leave');
           else { setLookupOnly(true); setActiveTab('lookup'); setAppMode('main'); }
         }} />
     );
