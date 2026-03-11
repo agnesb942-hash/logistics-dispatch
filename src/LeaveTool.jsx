@@ -697,7 +697,7 @@ const LeaveTool = ({ onBack, windowHeight }) => {
     setApplySubmitting(false);
   }, [currentUser, isAdmin, applyFor, applyType, applyStart, applyEnd, applyHours,
       applyUnit, applyTimeStart, applyTimeEnd, applyReason, applyProxy, applyProxySched, personnel, leaveConfig,
-      detectConflicts, calBlockedDates, LEAVE_DEPTS]);
+      detectConflicts, calBlockedDates]);
 
   // 知會彈窗確認後真正送出
   const handleConfirmSubmit = useCallback(async () => {
