@@ -65,9 +65,23 @@ const CHIAYI_DEFAULT = JSON.parse('[{"n":"大立電料(斗六)","r":"山線一",
 const KAOHSIUNG_DEFAULT = [];
 // 宜花東區：尚無客戶資料，保留結構供日後擴充
 const YIHUADONG_DEFAULT = [];
-const REGION_MAP = { tainan: TAINAN_DEFAULT, chiayi: CHIAYI_DEFAULT, kaohsiung: KAOHSIUNG_DEFAULT, yihuadong: YIHUADONG_DEFAULT };
+// 預設資料屬性轉換（壓縮格式 → 完整格式）
+const expandPoint = (p, idx) => ({
+  id: idx + 1,
+  name: p.n || p.name || '',
+  route: p.r || p.route || '',
+  address: p.a || p.address || '',
+  lat: p.lt || p.lat || 0,
+  lng: p.lg || p.lng || 0,
+});
+const REGION_MAP = {
+  tainan: TAINAN_DEFAULT.map(expandPoint),
+  chiayi: CHIAYI_DEFAULT.map(expandPoint),
+  kaohsiung: KAOHSIUNG_DEFAULT.map(expandPoint),
+  yihuadong: YIHUADONG_DEFAULT.map(expandPoint),
+};
 // 指送查詢用：預設點位清單（Firestore 不可用時的備援）
-const DEFAULT_ALL_POINTS = [...TAINAN_DEFAULT, ...CHIAYI_DEFAULT, ...KAOHSIUNG_DEFAULT, ...YIHUADONG_DEFAULT];
+const DEFAULT_ALL_POINTS = [...REGION_MAP.tainan, ...REGION_MAP.chiayi, ...REGION_MAP.kaohsiung, ...REGION_MAP.yihuadong];
 const REGION_LABELS = { tainan: '台南區', chiayi: '嘉義區', kaohsiung: '高雄區', yihuadong: '宜花東區', all: '全區' };
 
 const loadExcelLibrary = () => {
@@ -713,8 +727,7 @@ const App = () => {
     setRecalcTrigger(prev => prev + 1);
   };
 
-  // 指送地址查詢
-  const GOOGLE_MAPS_API_KEY = "AIzaSyBW-7BqwddpcRaP5HK5LGwM4K9lryh81qM";
+  // 指送地址查詢（Google API 已改透過後端 /api/google-geo proxy）
 
   // 取得台灣時區當日日期字串（YYYY-MM-DD），用於判斷「當日」重置
   const getTaiwanDateStr = () => {
@@ -770,9 +783,11 @@ const App = () => {
       const prefix = extractPrefix(raw);
       const googleQ = `${intersection.road1} and ${intersection.road2}${prefix ? ', ' + prefix : ''}, 台灣`;
       try {
-        const geoRes = await fetch(
-          `https://maps.googleapis.com/maps/api/geocode/json?address=${encodeURIComponent(googleQ)}&language=zh-TW&region=TW&components=country:TW&key=${GOOGLE_MAPS_API_KEY}`
-        );
+        const geoRes = await fetch('/api/google-geo', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ type: 'geocode', address: googleQ }),
+        });
         if (geoRes.ok) {
           const geoData = await geoRes.json();
           if (geoData.results?.length > 0) {
@@ -811,10 +826,12 @@ const App = () => {
         return { lat, lng, resolved: data[0].display_name };
       }).catch(() => null),
 
-      // Google Geocoding
-      fetch(
-        `https://maps.googleapis.com/maps/api/geocode/json?address=${encodeURIComponent(googleQ)}&language=zh-TW&region=TW&components=country:TW&key=${GOOGLE_MAPS_API_KEY}`
-      ).then(async r => {
+      // Google Geocoding（透過後端 proxy）
+      fetch('/api/google-geo', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ type: 'geocode', address: googleQ }),
+      }).then(async r => {
         if (!r.ok) return null;
         const data = await r.json();
         if (!data?.results?.length) return null;
@@ -965,7 +982,7 @@ const App = () => {
           existingName: best.name, existingRoute: best.route, existingAddress: best.address,
           distM: Math.round(best.dist * 1000),
           resolved: resolvedName, lat: targetLat, lng: targetLng,
-          geoSource, accuracy, accuracyNote, sources, distM, resolvedOSM,
+          geoSource, accuracy, accuracyNote, sources, geoDistM: distM, resolvedOSM,
         });
         // 仍寫入查詢記錄
         logToFirestore(deliveryLookupAddr, resolvedName, false, best.route, '0', '0', geoSource);
@@ -979,13 +996,16 @@ const App = () => {
       let trafficNote = '（即時路況）';
       try {
         const depTs = Math.floor(Date.now() / 1000);
-        const dmRes = await fetch(
-          `https://maps.googleapis.com/maps/api/distancematrix/json` +
-          `?origins=${best.lat},${best.lng}` +
-          `&destinations=${targetLat},${targetLng}` +
-          `&mode=driving&departure_time=${depTs}&traffic_model=best_guess` +
-          `&language=zh-TW&key=${GOOGLE_MAPS_API_KEY}`
-        );
+        const dmRes = await fetch('/api/google-geo', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            type: 'distancematrix',
+            origins: `${best.lat},${best.lng}`,
+            destinations: `${targetLat},${targetLng}`,
+            departure_time: depTs,
+          }),
+        });
         const dmData = await dmRes.json();
         const el = dmData?.rows?.[0]?.elements?.[0];
         if (el?.status === 'OK') {
