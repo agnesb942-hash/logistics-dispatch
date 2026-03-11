@@ -697,7 +697,7 @@ const LeaveTool = ({ onBack, windowHeight }) => {
     setApplySubmitting(false);
   }, [currentUser, isAdmin, applyFor, applyType, applyStart, applyEnd, applyHours,
       applyUnit, applyTimeStart, applyTimeEnd, applyReason, applyProxy, applyProxySched, personnel, leaveConfig,
-      detectConflicts, calBlockedDates]);
+      detectConflicts, calBlockedDates, LEAVE_DEPTS]);
 
   // 知會彈窗確認後真正送出
   const handleConfirmSubmit = useCallback(async () => {
@@ -1801,17 +1801,18 @@ const LeaveTool = ({ onBack, windowHeight }) => {
       const reqs = statsRequests.filter(r=>r.employeeId===p.id);
       const byType = {};
       LEAVE_TYPES.forEach(t=>{ byType[t.id] = reqs.filter(r=>r.leaveType===t.id).reduce((s,r)=>s+(r.days||0),0); });
-      const totalDays = Object.values(byType).reduce((s,v)=>s+v,0);
-      const compHours = reqs.filter(r=>r.leaveType==='compensatory').reduce((s,r)=>s+r.hours,0);
+      const compHours = reqs.filter(r=>r.leaveType==='compensatory').reduce((s,r)=>s+(r.hours||0),0);
+      const totalDays = Object.values(byType).reduce((s,v)=>s+v,0) + compHours / 8;
       return { ...p, byType, totalDays, compHours };
     }).sort((a,b)=>b.totalDays-a.totalDays);
 
     // 部門彙整
     const deptTotals = LEAVE_DEPTS.map(d=>{
       const dReqs = statsRequests.filter(r=>r.deptId===d.id);
-      const total = dReqs.reduce((s,r)=>s+r.days,0);
+      const compH = dReqs.filter(r=>r.leaveType==='compensatory').reduce((s,r)=>s+(r.hours||0),0);
+      const total = dReqs.reduce((s,r)=>s+(r.days||0),0) + compH / 8;
       const byType = {};
-      LEAVE_TYPES.forEach(t=>{ byType[t.id]=dReqs.filter(r=>r.leaveType===t.id).reduce((s,r)=>s+r.days,0); });
+      LEAVE_TYPES.forEach(t=>{ byType[t.id]=dReqs.filter(r=>r.leaveType===t.id).reduce((s,r)=>s+(r.days||0),0); });
       return { ...d, total, byType };
     });
 
@@ -2008,17 +2009,13 @@ ${(() => {
 
 請以條列式、繁體中文呈現，風格專業務實，約500字。`;
 
-        const resp = await fetch('https://api.anthropic.com/v1/messages',{
+        const resp = await fetch('/api/ai-diagnose',{
           method:'POST',
           headers:{'Content-Type':'application/json'},
-          body:JSON.stringify({
-            model:'claude-haiku-4-5-20251001',
-            max_tokens:1500,
-            messages:[{role:'user',content:promptData}]
-          })
+          body:JSON.stringify({ prompt: promptData })
         });
         const data = await resp.json();
-        const text = data.content?.filter(c=>c.type==='text').map(c=>c.text).join('') || '分析失敗，請再試一次。';
+        const text = data.result || data.error || '分析失敗，請再試一次。';
         setAiResult(text);
         logAction('ai','AI 休假分析',`期間 ${periodLabel(aiRange,aiBase,aiFrom,aiTo)}・${totalReqs} 筆`);
       } catch(e){
@@ -2109,14 +2106,10 @@ ${(() => {
       const topPersons = Object.entries(byPerson).sort((a,b)=>b[1]-a[1]).slice(0,10);
 
       try {
-        const resp = await fetch('https://api.anthropic.com/v1/messages',{
+        const resp = await fetch('/api/ai-diagnose',{
           method:'POST',
           headers:{'Content-Type':'application/json'},
-          body:JSON.stringify({
-            model:'claude-haiku-4-5-20251001',
-            max_tokens:3000,
-            messages:[{role:'user',content:`
-請生成一份 HTML 格式的休假管理月報，要求：
+          body:JSON.stringify({ prompt: `請生成一份 HTML 格式的休假管理月報，要求：
 - 繁體中文，排版整齊，適合列印
 - 使用 table、style 標籤，配色沿用紫色系 (#7c3aed)
 - 標題：休假管理報告 · ${expLabel}
@@ -2130,13 +2123,13 @@ ${(() => {
 部門天數：${Object.entries(byDept).map(([k,v])=>k+':'+v+'天').join(' / ')}
 個人前10名：${topPersons.map(([n,d])=>n+':'+d+'天').join(' / ')}
 
-只輸出 HTML 代碼，不要其他說明。`}]
-          })
+只輸出 HTML 代碼，不要其他說明。` })
         });
         const data = await resp.json();
-        let html = data.content?.filter(c=>c.type==='text').map(c=>c.text).join('')||'';
+        let html = data.result || '';
         html = html.replace(/```html|```/g,'').trim();
         const w = window.open('','_blank');
+        if (!w) { alert('瀏覽器封鎖了彈出視窗，請允許後再試'); return; }
         w.document.write(html);
         w.document.close();
         setTimeout(()=>w.print(),500);
