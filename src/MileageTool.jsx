@@ -448,7 +448,7 @@ const DashAnalysis = ({ dashRecords, fmtNum }) => {
 
 const ConflictDisplay = ({ conflictAnalysis, fmtNum }) => {
   if (!conflictAnalysis) return null;
-  const { conflicts, suggestions } = conflictAnalysis;
+  const { conflicts, warnings } = conflictAnalysis;
   if (!conflicts || conflicts.length === 0) return null;
   const TYPE_LABEL = {
     DUPLICATE_SAME: { text: '重複回報（相同數值）', color: 'text-yellow-700 bg-yellow-50 border-yellow-200' },
@@ -464,13 +464,13 @@ const ConflictDisplay = ({ conflictAnalysis, fmtNum }) => {
         return (
           <div key={i} className={'text-xs border rounded-lg p-2.5 ' + meta.color}>
             <div className="font-bold mb-0.5">{meta.text}</div>
-            <div>{c.message}</div>
+            <div>{c.msg}</div>
           </div>
         );
       })}
-      {suggestions && suggestions.length > 0 && (
+      {warnings && warnings.length > 0 && (
         <div className="text-xs text-gray-500 mt-1">
-          {suggestions.map((s, i) => <div key={i}>💡 {s}</div>)}
+          {warnings.map((s, i) => <div key={i}>⚠️ {s}</div>)}
         </div>
       )}
     </div>
@@ -919,6 +919,20 @@ const MileageTool = ({ onBack, windowHeight }) => {
     setDeleteTarget({ id: recordId, type, label });
   };
 
+  const doDelete = () => {
+    if (!deleteTarget) return;
+    const { id, type, label } = deleteTarget;
+    if (type === 'monthly') {
+      const newRecords = monthlyRecords.filter(r => r.id !== id);
+      autoSave('monthly_records', newRecords, setMonthlyRecords);
+    } else {
+      const newRecords = adhocRecords.filter(r => r.id !== id);
+      autoSave('adhoc_records', newRecords, setAdhocRecords);
+    }
+    logAction('delete', '刪除記錄', label);
+    setDeleteTarget(null);
+  };
+
   // ── Export functions ──────────────────────────────────────────
 
   const getExportPeriods = useCallback(() => {
@@ -1327,9 +1341,12 @@ const MileageTool = ({ onBack, windowHeight }) => {
                       setIsAdmin(true);
                       setCurrentUser({ id: 'admin', name: '管理者', deptId: 'dept_logi' });
                       setShowAdminPw(false); setAdminPwInput(''); setActiveSection('dashboard');
+                      setTimeout(() => logAction('login', '管理者登入', ''), 0);
                     } else {
+                      setAdminPwFailCount(c => c + 1);
                       setAdminPwError(true);
                       setTimeout(() => setAdminPwError(false), 1500);
+                      logAction('login', '管理者密碼錯誤', '');
                     }
                   } }}
                   placeholder="輸入管理者密碼" autoFocus
@@ -1340,9 +1357,12 @@ const MileageTool = ({ onBack, windowHeight }) => {
                     setIsAdmin(true);
                     setCurrentUser({ id: 'admin', name: '管理者', deptId: 'dept_logi' });
                     setShowAdminPw(false); setAdminPwInput(''); setActiveSection('dashboard');
+                    setTimeout(() => logAction('login', '管理者登入', ''), 0);
                   } else {
+                    setAdminPwFailCount(c => c + 1);
                     setAdminPwError(true);
                     setTimeout(() => setAdminPwError(false), 1500);
+                    logAction('login', '管理者密碼錯誤', '');
                   }
                 }}
                   className="w-full py-2.5 bg-emerald-500 text-white rounded-lg font-bold text-sm hover:bg-emerald-600">驗證</button>
@@ -1388,6 +1408,10 @@ const MileageTool = ({ onBack, windowHeight }) => {
       ];
 
   const getDeptName = (deptId) => departments.find(d => d.id === deptId)?.name || deptId;
+
+  const statusMap = {
+    submitted: { label: '已提交', color: 'bg-green-100 text-green-700' },
+  };
 
   return (
     <div className="flex flex-col lg:flex-row font-sans text-gray-900 overflow-hidden" style={{ height: windowHeight + 'px' }}>
@@ -1698,7 +1722,7 @@ const MileageTool = ({ onBack, windowHeight }) => {
                   </tr>
                 </thead>
                 <tbody>
-                  {adhocRecords.sort((a, b) => (b.date || '').localeCompare(a.date || '')).map(r => (
+                  {[...adhocRecords].sort((a, b) => (b.date || '').localeCompare(a.date || '')).map(r => (
                     <tr key={r.id} className="border-b border-gray-100 hover:bg-gray-50">
                       <td className="px-4 py-3">{r.date}</td>
                       <td className="px-4 py-3 font-bold">{r.vehiclePlate}</td>
