@@ -928,7 +928,7 @@ export default function VehicleCostTool({ onBack, windowHeight }) {
             ))}
 
             <div style={{fontSize:14,fontWeight:600,color:'#1B2A4A',marginBottom:8,marginTop:16}}>車輛主檔（📷 點擊上傳行照）</div>
-            <input type="file" ref={licenseFileRef} accept="image/*" capture="environment" onChange={handleLicenseUpload} style={{display:'none'}} />
+            <input type="file" ref={licenseFileRef} accept="image/*,application/pdf" onChange={handleLicenseUpload} style={{display:'none'}} />
             {VEHICLES_MASTER.slice(0, isMobile ? 10 : 44).map((v,i) => {
               const fs = fsVehicles[v.id];
               return (
