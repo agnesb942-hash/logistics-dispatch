@@ -648,7 +648,10 @@ export default function VehicleCostTool({ onBack, windowHeight }) {
       alert('✅ 車輛資料已更新！');
       setLicenseResult(null); setLicenseUploadVehicle(null);
       loadAll();
-    } catch (err) { alert('儲存失敗：' + err.message); }
+    } catch (err) {
+      alert('儲存失敗：' + err.message);
+      setLicenseResult(null); setLicenseUploadVehicle(null);
+    }
   };
 
   // ═══ COMPONENTS ═══
