@@ -160,7 +160,8 @@ export default async function handler(req, res) {
         contents: [{ parts }],
         generationConfig: {
           temperature: mode === 'ocr' || mode === 'license' ? 0.1 : 0.7,
-          maxOutputTokens: mode === 'report' ? 4096 : 2048,
+          maxOutputTokens: mode === 'ocr' || mode === 'license' ? 8192 : (mode === 'report' ? 4096 : 2048),
+          ...(mode === 'ocr' || mode === 'license' ? { thinkingConfig: { thinkingBudget: 0 } } : {}),
         },
       }),
     });
