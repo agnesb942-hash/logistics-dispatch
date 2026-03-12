@@ -271,15 +271,17 @@ export default function VehicleCostTool({ onBack, windowHeight }) {
         seeded.current = true;
       }
 
-      // Load all
-      const allSnap = await fb.getDocs(fb.query(col, fb.orderBy('date', 'desc')));
+      // Load all (no orderBy to avoid index requirement)
+      const allSnap = await fb.getDocs(col);
       const txList = [];
       allSnap.forEach(doc => txList.push({ id: doc.id, ...doc.data() }));
+      // Sort client-side
+      txList.sort((a, b) => (b.date || '').localeCompare(a.date || ''));
       setAllTx(txList);
       computeDashboard(txList);
     } catch (e) {
       console.error('Firestore error:', e);
-      setError('無法連線至 Firebase，請檢查網路連線。');
+      setError(`Firebase 錯誤：${e.code || e.message || '未知錯誤'}。請檢查 Firestore 安全規則是否允許讀寫 vc_transactions。`);
     }
     setLoading(false);
   }, []);
