@@ -632,7 +632,7 @@ export default function VehicleCostTool({ onBack, windowHeight }) {
       });
       const data = await callGemini('license', { imageBase64: base64, mimeType: file.type });
       if (data.result && !data.parseError) setLicenseResult(data.result);
-      else alert('行照辨識失敗，請重試');
+      else alert('行照辨識失敗：' + (data.error || data.raw || JSON.stringify(data)));
     } catch (err) { alert('上傳失敗：' + err.message); }
     setLicenseLoading(false);
   };
