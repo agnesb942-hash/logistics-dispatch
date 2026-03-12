@@ -174,7 +174,13 @@ export default async function handler(req, res) {
     }
 
     const data = await geminiRes.json();
-    const text = data?.candidates?.[0]?.content?.parts?.[0]?.text || '';
+    // Gemini 2.5+ may return thinking parts; get the last non-thinking text part
+    const allParts = data?.candidates?.[0]?.content?.parts || [];
+    let text = '';
+    for (const p of allParts) {
+      if (p.text && !p.thought) text = p.text;
+    }
+    if (!text && allParts.length) text = allParts[allParts.length - 1]?.text || '';
 
     if (!text) {
       return res.status(502).json({ error: 'Gemini 回傳空白結果' });
@@ -185,9 +191,16 @@ export default async function handler(req, res) {
       try {
         // Strip markdown code fence if present
         let jsonStr = text.trim();
-        if (jsonStr.startsWith('```')) {
+        // Remove ```json ... ``` wrapper
+        const fenceMatch = jsonStr.match(/```(?:json)?\s*\n?([\s\S]*?)\n?```/);
+        if (fenceMatch) {
+          jsonStr = fenceMatch[1].trim();
+        } else if (jsonStr.startsWith('```')) {
           jsonStr = jsonStr.replace(/^```(?:json)?\s*\n?/, '').replace(/\n?```\s*$/, '');
         }
+        // Try to extract JSON object if there's extra text
+        const jsonMatch = jsonStr.match(/\{[\s\S]*\}/);
+        if (jsonMatch) jsonStr = jsonMatch[0];
         const parsed = JSON.parse(jsonStr);
         return res.status(200).json({ result: parsed, raw: text });
       } catch {
