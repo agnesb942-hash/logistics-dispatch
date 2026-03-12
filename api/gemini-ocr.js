@@ -5,7 +5,7 @@
 // 環境變數（Vercel Dashboard → Settings → Environment Variables）：
 //   GEMINI_API_KEY = 從 Google AI Studio 取得
 
-const GEMINI_MODEL = 'gemini-1.5-flash';
+const GEMINI_MODEL = 'gemini-2.5-flash';
 const GEMINI_URL = `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent`;
 
 // ── 系統 Prompt：OCR 單據辨識 ──
