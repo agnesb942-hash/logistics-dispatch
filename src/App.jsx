@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import MileageTool from './MileageTool';
 import LeaveTool from './LeaveTool';
+import VehicleCostTool from './VehicleCostTool';
 
 // ----------------------------------------------------------------------
 // 0. ICONS (Inline SVGs)
@@ -1887,6 +1888,11 @@ const App = () => {
     return <MileageTool onBack={() => setAppMode('home')} windowHeight={windowHeight} />;
   }
 
+  // === 車輛成本中心 ===
+  if (appMode === 'vehiclecost') {
+    return <VehicleCostTool onBack={() => setAppMode('home')} windowHeight={windowHeight} />;
+  }
+
   // === 入口首頁 ===
   // 首頁即預載 Leaflet，不等進入主介面才開始下載
   if (appMode === 'home' && !document.getElementById('leaflet-script') && !window.L) {
@@ -1975,18 +1981,33 @@ const App = () => {
             + '<span style="font-size:14px">&#128274;</span> \u9700\u8981\u767b\u5165'
           + '</div>'
         + '</div>'
+        + '<div id="card-vehiclecost" style="' + cardStyle('234,179,8') + '">'
+          + '<div style="position:absolute;top:-1px;left:20px;right:20px;height:2px;background:linear-gradient(90deg,transparent,#EAB308,transparent)"></div>'
+          + '<div style="font-size:42px;margin-bottom:22px">&#128176;</div>'
+          + '<div style="font-size:15px;font-weight:700;color:#EAB308;letter-spacing:3px;margin-bottom:12px;text-transform:uppercase">\u8eca\u8f1b\u6210\u672c\u4e2d\u5fc3</div>'
+          + '<div style="font-size:12px;color:rgba(255,255,255,0.5);line-height:2;margin-bottom:28px">'
+            + '\u7dad\u4fee\u55ae\u64da OCR \u8fa8\u8b58<br>'
+            + '\u6210\u672c\u5206\u985e &nbsp;\u00b7&nbsp; \u5ee0\u5546\u5c0d\u5e33<br>'
+            + '\u6708\u5831\u7522\u51fa &nbsp;\u00b7&nbsp; \u7570\u5e38\u5075\u6e2c'
+          + '</div>'
+          + '<div style="width:100%;height:1px;background:rgba(234,179,8,0.15);margin-bottom:20px"></div>'
+          + '<div style="display:inline-flex;align-items:center;gap:8px;font-size:11px;color:rgba(234,179,8,0.8);border:1px solid rgba(234,179,8,0.35);padding:8px 18px;border-radius:2px;letter-spacing:2px">'
+            + '<span style="font-size:14px">&#9658;</span> \u9032\u5165\u7CFB\u7D71'
+          + '</div>'
+        + '</div>'
       + '</div>'
-      + '<div style="margin-top:30px;font-size:10px;color:rgba(255,255,255,0.12);letter-spacing:3px">v2.1 · KAOHSIUNG · ' + yr + '</div>';
+      + '<div style="margin-top:30px;font-size:10px;color:rgba(255,255,255,0.12);letter-spacing:3px">v2.2 · KAOHSIUNG · ' + yr + '</div>';
     return (
       <div
         style={{minHeight:windowHeight+'px',background:'#080c14',fontFamily:"monospace",display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'flex-start',paddingTop:'40px',paddingBottom:'40px',position:'relative',overflowY:'auto',overflowX:'hidden'}}
         dangerouslySetInnerHTML={{__html:html}}
         onClick={(e) => {
-          const card = e.target.closest && e.target.closest('#card-dispatch,#card-lookup,#card-mileage,#card-leave');
+          const card = e.target.closest && e.target.closest('#card-dispatch,#card-lookup,#card-mileage,#card-leave,#card-vehiclecost');
           if (!card) return;
           if (card.id === 'card-dispatch') setAppMode('dispatch_login');
           else if (card.id === 'card-mileage') setAppMode('mileage');
           else if (card.id === 'card-leave') setAppMode('leave');
+          else if (card.id === 'card-vehiclecost') setAppMode('vehiclecost');
           else { setLookupOnly(true); setActiveTab('lookup'); setAppMode('main'); }
         }} />
     );
