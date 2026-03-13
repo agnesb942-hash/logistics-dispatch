@@ -719,8 +719,8 @@ export default function VehicleCostTool({ onBack, windowHeight }) {
   };
 
   // ── Send Chat (Unified Flow) ──
-  const sendChat = async () => {
-    const text = chatInput.trim(); if (!text) return;
+  const sendChat = async (overrideText) => {
+    const text = (overrideText || chatInput).trim(); if (!text) return;
     setChatInput(''); addMsg('user', text); setChatLoading(true);
 
     try {
@@ -735,8 +735,8 @@ export default function VehicleCostTool({ onBack, windowHeight }) {
   };
 
   const quickAction = (a) => {
-    if (a==='monthly') { setChatInput('請給我本月的費用結算報表與分析'); setTimeout(sendChat,100); }
-    else if (a==='anomaly') { setChatInput('有沒有異常高費用的車輛？請分析原因'); setTimeout(sendChat,100); }
+    if (a==='monthly') sendChat('請給我本月的費用結算報表與分析');
+    else if (a==='anomaly') sendChat('有沒有異常高費用的車輛？請分析原因');
     else if (a==='history') addMsg('ai','請輸入要查詢的車號，例如：BUB-0572、BZH-8131、CAF-5712');
     else if (a==='upload') fileInputRef.current?.click();
   };

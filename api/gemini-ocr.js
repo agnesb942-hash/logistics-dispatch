@@ -186,7 +186,7 @@ export default async function handler(req, res) {
         { role: 'user', parts }
       ];
     } else {
-      contents = [{ parts }];
+      contents = [{ role: 'user', parts }];
     }
 
     const geminiRes = await fetch(`${GEMINI_URL}?key=${apiKey}`, {
