@@ -575,6 +575,77 @@ export default function VehicleCostTool({ onBack, windowHeight }) {
     setPdfLoading(false);
   };
 
+  // ═══ FLEET CONTEXT BUILDER ═══
+  const buildFleetContext = useCallback(() => {
+    const yr = String(new Date().getFullYear());
+    const mo = `${new Date().getFullYear()}-${String(new Date().getMonth()+1).padStart(2,'0')}`;
+    const yTx = allTx.filter(t => t.date?.startsWith(yr));
+    const mTx = allTx.filter(t => t.date?.startsWith(mo));
+
+    // Per-vehicle summary
+    const vehicles = allVehicles.map(v => {
+      const vTx = yTx.filter(t => t.vehicleId === v.id);
+      if (!vTx.length) return { id: v.id, type: v.type, ton: v.ton, src: v.src, ytdCost: 0, txCount: 0 };
+      const catBreakdown = {};
+      vTx.forEach(t => { catBreakdown[t.catCode || t.majorCat] = (catBreakdown[t.catCode || t.majorCat] || 0) + (t.amountExTax || 0); });
+      return {
+        id: v.id, type: v.type, ton: v.ton, src: v.src,
+        ytdCost: vTx.reduce((s, t) => s + (t.amountExTax || 0), 0),
+        monthCost: mTx.filter(t => t.vehicleId === v.id).reduce((s, t) => s + (t.amountExTax || 0), 0),
+        txCount: vTx.length,
+        lastDate: vTx.sort((a, b) => (b.date || '').localeCompare(a.date || ''))[0]?.date || null,
+        catBreakdown
+      };
+    });
+
+    // Category totals
+    const catTotals = {};
+    yTx.forEach(t => { const k = t.majorCat || '未分類'; catTotals[k] = (catTotals[k] || 0) + (t.amountExTax || 0); });
+
+    // Vendor totals
+    const vendorTotals = {};
+    yTx.forEach(t => { const k = t.vendor || '未知'; vendorTotals[k] = (vendorTotals[k] || 0) + (t.amountExTax || 0); });
+
+    // All transactions (full detail for querying)
+    const transactions = yTx.map(t => ({
+      date: t.date, vehicleId: t.vehicleId, vendor: t.vendor,
+      catCode: t.catCode, majorCat: t.majorCat, subCat: t.subCat,
+      desc: t.desc, qty: t.qty, unitPrice: t.unitPrice,
+      amountExTax: t.amountExTax, mileage: t.mileage, source: t.source
+    }));
+
+    return {
+      queryDate: new Date().toISOString().substring(0, 10),
+      year: yr, currentMonth: mo,
+      fleetSize: allVehicles.length,
+      activeVehicles: vehicles.filter(v => v.txCount > 0).length,
+      ytdTotalCost: yTx.reduce((s, t) => s + (t.amountExTax || 0), 0),
+      monthTotalCost: mTx.reduce((s, t) => s + (t.amountExTax || 0), 0),
+      ytdTxCount: yTx.length,
+      avgCostPerVehicle: vehicles.filter(v => v.txCount > 0).length ? Math.round(yTx.reduce((s, t) => s + (t.amountExTax || 0), 0) / vehicles.filter(v => v.txCount > 0).length) : 0,
+      vehicles, catTotals, vendorTotals, transactions,
+      categories: CATEGORIES_MASTER.map(c => ({ code: c.code, majorName: c.majorName, sub: c.sub, ref: c.ref })),
+      vendors: VENDORS_MASTER.map(v => ({ name: v.name, taxType: v.taxType }))
+    };
+  }, [allTx, allVehicles]);
+
+  // ═══ CONVERSATION HISTORY BUILDER ═══
+  const buildConversationHistory = useCallback(() => {
+    const stripHtml = (html) => {
+      const tmp = document.createElement('div');
+      tmp.innerHTML = html;
+      return tmp.textContent || tmp.innerText || '';
+    };
+    // Skip welcome message (index 0), keep last 20 messages (10 turns)
+    return chatMessages
+      .slice(1)
+      .slice(-20)
+      .map(m => ({
+        role: m.role === 'ai' ? 'model' : 'user',
+        parts: [{ text: stripHtml(m.html) }]
+      }));
+  }, [chatMessages]);
+
   // ═══ CHAT + OCR ═══
   const sanitizeHtml = (html) => {
     const div = document.createElement('div');
@@ -647,74 +718,25 @@ export default function VehicleCostTool({ onBack, windowHeight }) {
     setChatLoading(false);
   };
 
-  // ── Send Chat ──
+  // ── Send Chat (Unified Flow) ──
   const sendChat = async () => {
     const text = chatInput.trim(); if (!text) return;
     setChatInput(''); addMsg('user', text); setChatLoading(true);
 
     try {
-      const plateMatch = text.match(/[A-Z]{2,3}[-]?\d{3,4}/i);
-      if (plateMatch) {
-        let plate = plateMatch[0].toUpperCase();
-        if (!plate.includes('-')) plate = plate.replace(/(\D+)(\d+)/, '$1-$2');
-        const v = getVehicle(plate);
-        const yr = String(new Date().getFullYear());
-        const vTx = allTx.filter(t=>t.vehicleId===plate && t.date?.startsWith(yr));
-        if (!vTx.length && !VEHICLES_MASTER.find(x=>x.id===plate)) { addMsg('ai', `找不到車號 ${plate} 的資料。`); setChatLoading(false); return; }
-
-        // Call Gemini for deep analysis
-        const history = vTx.slice(0,20).map(t=>({date:t.date,desc:t.desc,cat:t.majorCat,cost:t.amountExTax}));
-        const totalCost = vTx.reduce((s,t)=>s+(t.amountExTax||0),0);
-        const data = await callGemini('analyze', {
-          prompt: `車號 ${plate}（${v.type} ${v.ton}t），年度累計 $${totalCost.toLocaleString()}，共 ${vTx.length} 筆。用戶問：${text}`,
-          vehicleHistory: { vehicle: v, totalCost, txCount: vTx.length, transactions: history }
-        });
-
-        let h = `<strong>${plate}</strong> ${v.type} ${v.ton}t<br/>📊 年度累計：$${totalCost.toLocaleString()} | 📝 ${vTx.length} 筆<br/><br/>`;
-        h += `<strong>🤖 AI 分析：</strong><br/>${(data.result || '暫無分析').replace(/\n/g, '<br/>')}`;
-        // Market price info
-        const cats = [...new Set(vTx.map(t=>t.catCode))];
-        const refs = cats.map(c => CATEGORIES_MASTER.find(x=>x.code===c)).filter(c=>c?.ref);
-        if (refs.length) {
-          h += `<br/><br/><strong>💰 市場參考價：</strong><br/>`;
-          refs.forEach(r => h += `${r.sub}：${r.ref}<br/>`);
-        }
-        addMsg('ai', h);
-      } else if (text.includes('月報') || text.includes('結算')) {
-        // Keep existing local logic + Gemini summary
-        const now = new Date();
-        const mo = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}`;
-        const mTx = allTx.filter(t=>t.date?.startsWith(mo));
-        const mCost = mTx.reduce((s,t)=>s+(t.amountExTax||0),0);
-        const vCosts = {}; mTx.forEach(t=>{vCosts[t.vehicleId]=(vCosts[t.vehicleId]||0)+(t.amountExTax||0);});
-        const top5 = Object.entries(vCosts).sort((a,b)=>b[1]-a[1]).slice(0,5);
-        let h = `<strong>${now.getFullYear()}/${now.getMonth()+1} 月度報表</strong><br/><br/>💰 月度費用：$${mCost.toLocaleString()}<br/>📄 處理單據：${mTx.length} 筆<br/>`;
-        if (top5.length) { h += `<br/><strong>Top 5：</strong><br/>`; top5.forEach(([v,c],i) => h += `${i+1}. ${v} $${c.toLocaleString()}<br/>`); }
-        addMsg('ai', h);
-      } else if (text.includes('異常') || text.includes('警示')) {
-        const yr = String(new Date().getFullYear());
-        const yTx = allTx.filter(t=>t.date?.startsWith(yr));
-        const vCosts = {}; yTx.forEach(t=>{vCosts[t.vehicleId]=(vCosts[t.vehicleId]||0)+(t.amountExTax||0);});
-        const vals = Object.values(vCosts); const avg = vals.length ? vals.reduce((a,b)=>a+b,0)/vals.length : 0;
-        const anomalies = Object.entries(vCosts).filter(([,c]) => c > avg*2);
-        if (!anomalies.length) { addMsg('ai', '✅ 目前沒有偵測到異常車輛。'); }
-        else {
-          let h = `⚠️ <strong>偵測到 ${anomalies.length} 個異常</strong>（車隊平均 $${Math.round(avg).toLocaleString()}）<br/>`;
-          anomalies.forEach(([v,c]) => h += `🔴 <strong>${v}</strong> — 年度 $${c.toLocaleString()}<br/>`);
-          addMsg('ai', h);
-        }
-      } else {
-        // General Gemini chat
-        const data = await callGemini('chat', { prompt: text });
-        addMsg('ai', (data.result || '抱歉，暫時無法回覆。').replace(/\n/g, '<br/>'));
-      }
+      const data = await callGemini('chat', {
+        prompt: text,
+        fleetContext: buildFleetContext(),
+        conversationHistory: buildConversationHistory()
+      });
+      addMsg('ai', (data.result || '抱歉，暫時無法回覆。').replace(/\n/g, '<br/>'));
     } catch (err) { addMsg('ai', `❌ 處理失敗：${err.message}`); }
     setChatLoading(false);
   };
 
   const quickAction = (a) => {
-    if (a==='monthly') { setChatInput('本月結算'); setTimeout(sendChat,100); }
-    else if (a==='anomaly') { setChatInput('異常警示'); setTimeout(sendChat,100); }
+    if (a==='monthly') { setChatInput('請給我本月的費用結算報表與分析'); setTimeout(sendChat,100); }
+    else if (a==='anomaly') { setChatInput('有沒有異常高費用的車輛？請分析原因'); setTimeout(sendChat,100); }
     else if (a==='history') addMsg('ai','請輸入要查詢的車號，例如：BUB-0572、BZH-8131、CAF-5712');
     else if (a==='upload') fileInputRef.current?.click();
   };
