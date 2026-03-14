@@ -308,7 +308,7 @@ export default function VehicleCostTool({ onBack, windowHeight }) {
         const vSnap = await fb.getDocs(vCol);
         const vMap = {}; vSnap.forEach(doc => { const d = doc.data(); if (d.plateNumber) vMap[d.plateNumber] = d; });
         setFsVehicles(vMap);
-      } catch {}
+      } catch (e) { console.warn('[VehicleCost] 車輛覆寫資料載入失敗:', e.message); }
     } catch (e) {
       console.error('Firestore error:', e);
       setError(`Firebase 錯誤：${e.code || e.message}。請檢查 Firestore 安全規則。`);
@@ -664,12 +664,14 @@ export default function VehicleCostTool({ onBack, windowHeight }) {
     if (tab === 'chat' && !chatMessages.length) {
       setChatMessages([{ role:'ai', html:'歡迎使用車輛成本中心 AI 助手 👋<br/><br/>我可以幫您：<br/>• 查詢車輛成本履歷（輸入車號）<br/>• 📎 上傳維修單據（OCR 自動辨識）<br/>• 產出月度結算報表<br/>• 偵測異常維修模式<br/>• 智慧分析與汰換建議<br/><br/><span style="font-size:11px;color:#999">點擊快速按鈕、上傳單據或直接輸入問題。</span>' }]);
     }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tab]);
   useEffect(() => { chatEndRef.current?.scrollIntoView({ behavior: 'smooth' }); }, [chatMessages]);
 
   // ── Gemini API call ──
   const callGemini = async (mode, body) => {
     const res = await fetch('/api/gemini-ocr', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({mode,...body}) });
+    if (!res.ok) throw new Error(`API 異常（HTTP ${res.status}）`);
     return await res.json();
   };
 
@@ -819,11 +821,9 @@ export default function VehicleCostTool({ onBack, windowHeight }) {
   const SIDEBAR_W = 220;
   const hdr = { background:T.navBg,color:'#fff',padding:isMobile?'14px 16px':'16px 24px',display:'flex',alignItems:'center',justifyContent:'space-between',position:'sticky',top:0,zIndex:10 };
   const card = { background:T.cardBg,borderRadius:12,boxShadow:T.shadow,padding:isMobile?14:20,marginBottom:isMobile?12:16,transition:'box-shadow 0.2s,transform 0.2s' };
-  const cardHover = { boxShadow:T.shadowLg,transform:'translateY(-2px)' };
   const tabSt = (a) => ({ flex:1,display:'flex',flexDirection:'column',alignItems:'center',padding:'7px 0',cursor:'pointer',color:a?AX:T.textLight,fontSize:10,transition:'color 0.2s',background:'none',border:'none' });
   const btnPrimary = { padding:isMobile?'6px 14px':'8px 18px',background:AX,color:'#fff',border:'none',borderRadius:8,cursor:'pointer',fontSize:isMobile?12:13,fontWeight:600,transition:'opacity 0.2s' };
   const btnOutline = { padding:isMobile?'6px 14px':'8px 18px',background:'none',border:`1px solid ${AX}`,color:AX,borderRadius:8,cursor:'pointer',fontSize:isMobile?12:13,transition:'all 0.2s' };
-  const btnDanger = { padding:isMobile?'6px 14px':'8px 18px',background:'#e74c3c',color:'#fff',border:'none',borderRadius:8,cursor:'pointer',fontSize:isMobile?12:13,fontWeight:600,transition:'opacity 0.2s' };
   const inputSt = { width:'100%',padding:'9px 12px',border:`1px solid ${T.inputBorder}`,borderRadius:8,fontSize:13,outline:'none',background:T.inputBg,color:T.text,boxSizing:'border-box' };
   const selectSt = { ...inputSt,appearance:'auto' };
   const labelSt = { fontSize:12,color:T.textLight,fontWeight:600,marginBottom:4,display:'block' };

@@ -380,9 +380,7 @@ const App = () => {
   const initFirebase = async () => {
     if (firebaseRef.current) return firebaseRef.current;
     try {
-      const [fbApp] = await Promise.all([
-        import('https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js'),
-      ]);
+      const fbApp = await import('https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js');
       const { getFirestore, doc, getDoc, setDoc, addDoc, collection, increment, updateDoc } =
         await import('https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js');
       const existingApps = fbApp.getApps();
@@ -566,7 +564,7 @@ const App = () => {
   const [errorMessage, setErrorMessage] = useState("");
   const [isLoadingFile, setIsLoadingFile] = useState(false);
   const [showPolygons, setShowPolygons] = useState(true); // Toggle for Convex Hulls
-  const [showAdminBounds, setShowAdminBounds] = useState(true); // Always-on admin boundaries
+  const showAdminBounds = true; // Always-on admin boundaries
   const [adminBoundsLoading, setAdminBoundsLoading] = useState(false);
   const [adminBoundsError, setAdminBoundsError] = useState(false);
   const [adminRefreshKey, setAdminRefreshKey] = useState(0); // 手動強制重整行政區圖層
@@ -805,7 +803,7 @@ const App = () => {
             }
           }
         }
-      } catch(e) {}
+      } catch(e) { console.warn('[geocode] 路口地址解析失敗:', e.message); }
       return null;
     }
 
@@ -1650,7 +1648,7 @@ const App = () => {
             interactive: false
           });
           (hasCustomer ? activeLayers : inactiveLayers).push(fl);
-        } catch(e) {}
+        } catch(e) { console.warn('[adminBounds] GeoJSON 圖層建立失敗:', e.message); }
       });
 
       // 先加無客戶（底層），再加有客戶（上層）
@@ -1680,7 +1678,7 @@ const App = () => {
             interactive: false
           }).addTo(map);
           adminLabelsRef.current.push(label);
-        } catch (e) {}
+        } catch (e) { console.warn('[adminBounds] 行政區標籤建立失敗:', e.message); }
       });
     };
 
@@ -1843,8 +1841,8 @@ const App = () => {
     const csvRows = [headers.join(',')];
     finalClusteredData.forEach(item => {
       const row = [
-        item.id, `"${item.name.split('"').join('""')}"`, `"${item.address.split('"').join('""')}"`,
-        item.lat, item.lng, `"${item.route.split('"').join('""')}"`, getTruckName(item.cluster), item.isManual ? '管理員手動微調' : 'AI演算法最佳化'
+        item.id, `"${item.name.replace(/"/g,'""')}"`, `"${item.address.replace(/"/g,'""')}"`,
+        item.lat, item.lng, `"${item.route.replace(/"/g,'""')}"`, getTruckName(item.cluster), item.isManual ? '管理員手動微調' : 'AI演算法最佳化'
       ];
       csvRows.push(row.join(','));
     });
@@ -1901,7 +1899,6 @@ const App = () => {
     _pl.href = 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js';
     if (!document.querySelector('link[href*="leaflet.min.js"]')) document.head.appendChild(_pl);
   }
-  const currentYear = new Date().getFullYear();
   if (appMode === 'home') {
     const yr = String(new Date().getFullYear());
     const cardStyle = (accent) => [

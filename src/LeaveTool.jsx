@@ -228,20 +228,6 @@ const toDateStr = d => {
 };
 const todayStr = () => toDateStr(getTaiwanDate());
 
-// 計算兩日期間的工作天數（週一～週五）
-const calcWorkingDays = (start, end) => {
-  if (!start || !end || start > end) return 0;
-  let count = 0;
-  const cur = new Date(start + 'T00:00:00');
-  const last = new Date(end + 'T00:00:00');
-  while (cur <= last) {
-    const dow = cur.getDay();
-    if (dow !== 0 && dow !== 6) count++;
-    cur.setDate(cur.getDate() + 1);
-  }
-  return count;
-};
-
 // 計算兩日期是否有重疊
 const dateOverlap = (s1, e1, s2, e2) => s1 <= e2 && e1 >= s2;
 
@@ -283,8 +269,6 @@ const periodLabel = (range, base, from, to) => {
   if (range==='custom' && from && to) return `${from} ～ ${to}`;
   return base;
 };
-
-const fmtNum = n => (n||0).toLocaleString();
 
 // 判斷某日是否為國定假日（非補班日）
 const isTWHoliday = d => {
@@ -546,13 +530,6 @@ const LeaveTool = ({ onBack, windowHeight }) => {
 
       setDataLoading(false);
 
-      // ── Firestore 連線診斷（Dev 模式，生產可移除） ──
-      try {
-        const testSnap = await DB.getAll(COLL.req);
-        console.info('[Firestore] 連線正常，已有', testSnap.length, '筆假單');
-      } catch(e) {
-        console.error('[Firestore] 診斷失敗 — 請確認 Security Rules:', e?.code, e?.message);
-      }
     })();
 
     return ()=>{
@@ -2014,6 +1991,7 @@ ${(() => {
           headers:{'Content-Type':'application/json'},
           body:JSON.stringify({ prompt: promptData })
         });
+        if (!resp.ok) throw new Error(`API 異常（HTTP ${resp.status}）`);
         const data = await resp.json();
         const text = data.result || data.error || '分析失敗，請再試一次。';
         setAiResult(text);
@@ -2125,6 +2103,7 @@ ${(() => {
 
 只輸出 HTML 代碼，不要其他說明。` })
         });
+        if (!resp.ok) throw new Error(`API 異常（HTTP ${resp.status}）`);
         const data = await resp.json();
         let html = data.result || '';
         html = html.replace(/```html|```/g,'').trim();
@@ -2189,14 +2168,15 @@ ${(() => {
   const renderLogs = () => {
     const filtered = auditLog.filter(l=>logFilter==='all'||l.category===logFilter);
     const BADGE = {
-      login:   'bg-emerald-100 text-emerald-700',
-      apply:   'bg-blue-100 text-blue-700',
-      approve: 'bg-green-100 text-green-700',
-      reject:  'bg-red-100 text-red-700',
-      delete:  'bg-gray-200 text-gray-600',
-      notify:  'bg-purple-100 text-purple-700',
-      export:  'bg-amber-100 text-amber-700',
-      ai:      'bg-violet-100 text-violet-700',
+      login:    'bg-emerald-100 text-emerald-700',
+      apply:    'bg-blue-100 text-blue-700',
+      approve:  'bg-green-100 text-green-700',
+      reject:   'bg-red-100 text-red-700',
+      delete:   'bg-gray-200 text-gray-600',
+      cancel:   'bg-orange-100 text-orange-700',
+      settings: 'bg-indigo-100 text-indigo-700',
+      export:   'bg-amber-100 text-amber-700',
+      ai:       'bg-violet-100 text-violet-700',
     };
     return (
       <div className="space-y-3">
@@ -2659,7 +2639,7 @@ ${(() => {
                 🔄
               </button>
             )}
-            <button onClick={()=>{ setCurrentUser(null); setIsAdmin(false); setLoginDept(''); }}
+            <button onClick={()=>{ setCurrentUser(null); setIsAdmin(false); setLoginDept(''); setApplyStart(''); setApplyEnd(''); setApplyType('annual'); setApplyReason(''); setApplyHours(''); setApplyProxy(''); setApplyProxySched({}); }}
               className="text-xs text-gray-400 hover:text-red-500 transition-all ml-1">登出</button>
           </div>
         </div>
