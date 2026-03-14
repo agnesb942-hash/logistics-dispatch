@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react'
 import MileageTool from './MileageTool';
 import LeaveTool from './LeaveTool';
 import VehicleCostTool from './VehicleCostTool';
-import { initFirebase } from './firebase';
+import { initFirebase, hashPassword } from './firebase';
 
 // ----------------------------------------------------------------------
 // 0. ICONS (Inline SVGs)
@@ -328,21 +328,28 @@ const App = () => {
   const [pwNew2, setPwNew2] = useState('');
   const [pwChangeMsg, setPwChangeMsg] = useState('');
 
-  // 密碼：雲端 Firestore 同步（跨裝置一致），本地 localStorage 為備援
-  const cloudPwRef = useRef(null);      // null = 尚未從雲端載入
-  const [pwLoaded, setPwLoaded] = useState(false);  // 防止登入頁在密碼載入前誤判
+  // 密碼：Firestore 存 SHA-256 雜湊，跨裝置一致
+  const pwHashRef = useRef(null);       // null = 尚未從雲端載入
+  const [pwLoaded, setPwLoaded] = useState(false);
 
-  // App 初始化時從 Firestore 拉取密碼
   useEffect(() => {
     let cancelled = false;
     (async () => {
       const fb = await initFirebase();
       if (!cancelled && fb) {
         try {
-          const { db, doc, getDoc } = fb;
-          const snap = await getDoc(doc(db, 'config', 'settings'));
-          if (snap.exists() && snap.data().dispatchPw) {
-            cloudPwRef.current = snap.data().dispatchPw;
+          const { db, doc, getDoc, setDoc } = fb;
+          const snap = await getDoc(doc(db, 'config', 'passwords'));
+          if (snap.exists() && snap.data().dispatchPwHash) {
+            pwHashRef.current = snap.data().dispatchPwHash;
+          } else {
+            // 遷移：舊版明文密碼 → 雜湊
+            let defaultPw = 'logistics2024';
+            const oldSnap = await getDoc(doc(db, 'config', 'settings'));
+            if (oldSnap.exists() && oldSnap.data().dispatchPw) defaultPw = oldSnap.data().dispatchPw;
+            const hash = await hashPassword(defaultPw);
+            pwHashRef.current = hash;
+            await setDoc(doc(db, 'config', 'passwords'), { dispatchPwHash: hash }, { merge: true });
           }
         } catch(e) { console.warn('[Firebase] 密碼載入失敗：', e); }
       }
@@ -352,22 +359,24 @@ const App = () => {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const getStoredPw = () => {
-    if (cloudPwRef.current) return cloudPwRef.current;
-    try { return localStorage.getItem('dispatch_pw') || 'logistics2024'; } catch(e) { return 'logistics2024'; }
+  const verifyPw = async (input) => {
+    const inputHash = await hashPassword(input);
+    if (pwHashRef.current) return inputHash === pwHashRef.current;
+    // 首次（Firestore 尚未初始化）：比對預設
+    return inputHash === await hashPassword('logistics2024');
   };
 
-  const setStoredPw = async (pw) => {
-    cloudPwRef.current = pw;
-    try { localStorage.setItem('dispatch_pw', pw); } catch(e) {}
+  const setStoredPwHash = async (newPw) => {
+    const hash = await hashPassword(newPw);
+    pwHashRef.current = hash;
     const fb = await initFirebase();
     if (!fb) return;
     try {
       const { db, doc, setDoc } = fb;
-      await setDoc(doc(db, 'config', 'settings'), { dispatchPw: pw }, { merge: true });
+      await setDoc(doc(db, 'config', 'passwords'), { dispatchPwHash: hash }, { merge: true });
     } catch(e) {
       console.warn('[Firebase] 密碼儲存失敗：', e);
-      alert('⚠️ 密碼已在本機更新，但雲端同步失敗。其他裝置可能仍使用舊密碼。');
+      alert('⚠️ 密碼雲端同步失敗，其他裝置可能仍使用舊密碼。');
     }
   };
 
@@ -424,8 +433,8 @@ const App = () => {
     }
   };
 
-  const handleDispatchLogin = () => {
-    if (pwInput === getStoredPw()) {
+  const handleDispatchLogin = async () => {
+    if (await verifyPw(pwInput)) {
       setAppMode('main');
       setLookupOnly(false);
       setActiveTab('settings');
@@ -438,11 +447,11 @@ const App = () => {
   };
 
   const handleChangePw = async () => {
-    if (pwOld !== getStoredPw()) { setPwChangeMsg('error:舊密碼錯誤'); return; }
+    if (!(await verifyPw(pwOld))) { setPwChangeMsg('error:舊密碼錯誤'); return; }
     if (pwNew1.length < 6) { setPwChangeMsg('error:新密碼至少 6 位'); return; }
     if (pwNew1 !== pwNew2) { setPwChangeMsg('error:兩次輸入不一致'); return; }
     setPwChangeMsg('ok:儲存中...');
-    await setStoredPw(pwNew1);
+    await setStoredPwHash(pwNew1);
     setPwChangeMsg('ok:密碼已更新（所有裝置同步）');
     setTimeout(() => { setPwChangeMode(false); setPwOld(''); setPwNew1(''); setPwNew2(''); setPwChangeMsg(''); }, 2000);
   };

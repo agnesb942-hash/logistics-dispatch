@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
-import { initFirebase } from './firebase';
+import { initFirebase, hashPassword } from './firebase';
 
 // ════════════════════════════════════════════════════════════════════════
 // 休假管理系統 — Leave Management Tool
@@ -196,7 +196,7 @@ const STATUS_CFG = {
   conflict_pending: { label: '衝突待審', badge: 'bg-orange-100 text-orange-700', dot: '#f97316' },
 };
 
-const LEAVE_ADMIN_PW = 'admin2024';
+// 管理者密碼（SHA-256 雜湊存 Firestore config/passwords.adminPwHash）
 
 const DEFAULT_LEAVE_PERSONNEL = [
   // 物流部（預設人員，管理者可在系統設定新增其他部門人員）
@@ -386,6 +386,12 @@ const LeaveTool = ({ onBack, windowHeight }) => {
   const [showAdminPw,   setShowAdminPw]   = useState(false);
   const [adminPwInput,  setAdminPwInput]  = useState('');
   const [adminPwError,  setAdminPwError]  = useState(false);
+  const adminPwHashRef = useRef(null);
+  const [showChangePw,  setShowChangePw]  = useState(false);
+  const [changePwOld,   setChangePwOld]   = useState('');
+  const [changePwNew1,  setChangePwNew1]  = useState('');
+  const [changePwNew2,  setChangePwNew2]  = useState('');
+  const [changePwMsg,   setChangePwMsg]   = useState('');
 
   // ── Core Data ─────────────────────────────────────────────────────
   const [personnel,     setPersonnel]     = useState(DEFAULT_LEAVE_PERSONNEL);
@@ -475,7 +481,49 @@ const LeaveTool = ({ onBack, windowHeight }) => {
   const saveBlock = useCallback(async(dateStr,data)=>{setSaving();const ok=await DB.set(COLL.block,dateStr,{date:dateStr,...data});ok?setSaved():setDbErr();return ok;},[setSaving,setSaved,setDbErr]);
   const delBlock  = useCallback(async dateStr=>{setSaving();const ok=await DB.del(COLL.block,dateStr);ok?setSaved():setDbErr();return ok;},[setSaving,setSaved,setDbErr]);
 
-  // ── Load from Firestore + 即時監聽 ────────────────────────────────
+  // ── 載入管理者密碼雜湊 ────────────────────────────────────────────
+  useEffect(()=>{
+    (async()=>{
+      const fb = await initLeaveFirebase();
+      if (!fb) return;
+      try {
+        const snap = await fb.getDoc(fb.doc(fb.db, 'config', 'passwords'));
+        if (snap.exists() && snap.data().adminPwHash) {
+          adminPwHashRef.current = snap.data().adminPwHash;
+        } else {
+          const hash = await hashPassword('admin2024');
+          adminPwHashRef.current = hash;
+          await fb.setDoc(fb.doc(fb.db, 'config', 'passwords'), { adminPwHash: hash }, { merge: true });
+        }
+      } catch(e) { console.warn('[LeaveTool] 密碼載入失敗', e); }
+    })();
+  }, []);
+
+  const verifyAdminPw = async (input) => {
+    const inputHash = await hashPassword(input);
+    if (adminPwHashRef.current) return inputHash === adminPwHashRef.current;
+    return inputHash === await hashPassword('admin2024');
+  };
+
+  const handleChangeAdminPw = async () => {
+    if (!(await verifyAdminPw(changePwOld))) { setChangePwMsg('error:舊密碼錯誤'); return; }
+    if (changePwNew1.length < 6) { setChangePwMsg('error:新密碼至少 6 位'); return; }
+    if (changePwNew1 !== changePwNew2) { setChangePwMsg('error:兩次輸入不一致'); return; }
+    setChangePwMsg('ok:儲存中...');
+    const hash = await hashPassword(changePwNew1);
+    adminPwHashRef.current = hash;
+    const fb = await initLeaveFirebase();
+    if (fb) {
+      try {
+        await fb.setDoc(fb.doc(fb.db, 'config', 'passwords'), { adminPwHash: hash }, { merge: true });
+      } catch(e) { console.warn('[LeaveTool] 密碼儲存失敗', e); }
+    }
+    setChangePwMsg('ok:管理者密碼已更新');
+    logAction('settings', '修改管理者密碼', '');
+    setTimeout(() => { setShowChangePw(false); setChangePwOld(''); setChangePwNew1(''); setChangePwNew2(''); setChangePwMsg(''); }, 2000);
+  };
+
+  // ── Load from Firestore + 即時監聯 ────────────────────────────────
   useEffect(()=>{
     let cancelled = false;
     const unsubscribers = [];
@@ -920,13 +968,13 @@ const LeaveTool = ({ onBack, windowHeight }) => {
                 <div className="flex gap-2">
                   <input type="password" value={adminPwInput} onChange={e=>setAdminPwInput(e.target.value)}
                     placeholder="管理者密碼"
-                    onKeyDown={e=>{ if(e.key==='Enter'){
-                      if(adminPwInput===LEAVE_ADMIN_PW){setIsAdmin(true);setCurrentUser({id:'admin',name:'管理者',deptId:'',isAdmin:true});setShowAdminPw(false);setAdminPwInput('');}
+                    onKeyDown={async e=>{ if(e.key==='Enter'){
+                      if(await verifyAdminPw(adminPwInput)){setIsAdmin(true);setCurrentUser({id:'admin',name:'管理者',deptId:'',isAdmin:true});setShowAdminPw(false);setAdminPwInput('');}
                       else{setAdminPwError(true);setTimeout(()=>setAdminPwError(false),2000);}
                     }}}
                     className={`flex-1 bg-white bg-opacity-10 border ${adminPwError?'border-red-400':'border-white border-opacity-20'} rounded-lg px-3 py-2 text-white text-xs focus:outline-none`} />
-                  <button onClick={()=>{
-                    if(adminPwInput===LEAVE_ADMIN_PW){setIsAdmin(true);setCurrentUser({id:'admin',name:'管理者',deptId:'',isAdmin:true});setShowAdminPw(false);setAdminPwInput('');}
+                  <button onClick={async()=>{
+                    if(await verifyAdminPw(adminPwInput)){setIsAdmin(true);setCurrentUser({id:'admin',name:'管理者',deptId:'',isAdmin:true});setShowAdminPw(false);setAdminPwInput('');}
                     else{setAdminPwError(true);setTimeout(()=>setAdminPwError(false),2000);}
                   }} className="px-4 py-2 bg-amber-500 text-white rounded-lg text-xs font-bold hover:bg-amber-600">進入</button>
                 </div>
@@ -2254,6 +2302,38 @@ ${(() => {
               <div className={`w-4 h-4 bg-white rounded-full shadow transition-all mx-0.5 ${leaveConfig.autoApprove!==false?'translate-x-5':''}`} style={{transform:leaveConfig.autoApprove!==false?'translateX(20px)':''}}></div>
             </button>
           </div>
+        </div>
+
+        {/* 修改管理者密碼 */}
+        <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-5">
+          <div className="flex items-center justify-between mb-3">
+            <div className="text-sm font-bold text-gray-700">🔐 管理者密碼</div>
+            <button onClick={()=>{ setShowChangePw(v=>!v); setChangePwOld(''); setChangePwNew1(''); setChangePwNew2(''); setChangePwMsg(''); }}
+              className="px-3 py-1 text-xs font-bold rounded-lg border border-violet-200 text-violet-600 hover:bg-violet-50 transition-all">
+              {showChangePw ? '取消' : '修改密碼'}
+            </button>
+          </div>
+          {showChangePw && (
+            <div className="space-y-2">
+              {['舊密碼','新密碼','確認新密碼'].map((label,idx)=>(
+                <div key={idx}>
+                  <div className="text-[10px] text-gray-400 mb-1">{label}</div>
+                  <input type="password"
+                    value={idx===0?changePwOld:idx===1?changePwNew1:changePwNew2}
+                    onChange={e=>idx===0?setChangePwOld(e.target.value):idx===1?setChangePwNew1(e.target.value):setChangePwNew2(e.target.value)}
+                    onKeyDown={e=>{ if(e.key==='Enter'&&idx===2) handleChangeAdminPw(); }}
+                    className="w-full p-2 border border-gray-200 rounded-lg text-sm outline-none focus:border-violet-400" />
+                </div>
+              ))}
+              {changePwMsg && (
+                <div className={`text-xs px-2 py-1 rounded ${changePwMsg.startsWith('ok')?'bg-emerald-50 text-emerald-600':'bg-red-50 text-red-500'}`}>
+                  {changePwMsg.slice(changePwMsg.indexOf(':')+1)}
+                </div>
+              )}
+              <button onClick={handleChangeAdminPw}
+                className="w-full py-2 bg-violet-500 text-white rounded-lg text-xs font-bold hover:bg-violet-600 transition-all">確認更改</button>
+            </div>
+          )}
         </div>
 
         {/* 人員管理 */}

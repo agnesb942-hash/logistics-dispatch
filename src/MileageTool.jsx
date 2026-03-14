@@ -176,7 +176,7 @@ const DEFAULT_PERSONNEL = [
 ];
 
 // ── Firebase 共用 ─────────────────────────────────────────────────────
-import { initFirebase } from './firebase';
+import { initFirebase, hashPassword } from './firebase';
 
 // ── 工具函式 ──────────────────────────────────────────────────────────
 const getTaiwanPeriod = () => {
@@ -690,7 +690,54 @@ const MileageTool = ({ onBack, windowHeight }) => {
   };
 
   // ── Auth helpers ────────────────────────────────────────────────
-  const ADMIN_PW = 'admin2024';
+  const adminPwHashRef = useRef(null);
+  const [showChangePw, setShowChangePw] = useState(false);
+  const [changePwOld, setChangePwOld] = useState('');
+  const [changePwNew1, setChangePwNew1] = useState('');
+  const [changePwNew2, setChangePwNew2] = useState('');
+  const [changePwMsg, setChangePwMsg] = useState('');
+
+  // 載入管理者密碼雜湊
+  useEffect(() => {
+    (async () => {
+      const fb = await initFirebase();
+      if (!fb) return;
+      try {
+        const snap = await fb.getDoc(fb.doc(fb.db, 'config', 'passwords'));
+        if (snap.exists() && snap.data().adminPwHash) {
+          adminPwHashRef.current = snap.data().adminPwHash;
+        } else {
+          const hash = await hashPassword('admin2024');
+          adminPwHashRef.current = hash;
+          await fb.setDoc(fb.doc(fb.db, 'config', 'passwords'), { adminPwHash: hash }, { merge: true });
+        }
+      } catch(e) { console.warn('[MileageTool] 密碼載入失敗', e); }
+    })();
+  }, []);
+
+  const verifyAdminPw = async (input) => {
+    const inputHash = await hashPassword(input);
+    if (adminPwHashRef.current) return inputHash === adminPwHashRef.current;
+    return inputHash === await hashPassword('admin2024');
+  };
+
+  const handleChangeAdminPw = async () => {
+    if (!(await verifyAdminPw(changePwOld))) { setChangePwMsg('error:舊密碼錯誤'); return; }
+    if (changePwNew1.length < 6) { setChangePwMsg('error:新密碼至少 6 位'); return; }
+    if (changePwNew1 !== changePwNew2) { setChangePwMsg('error:兩次輸入不一致'); return; }
+    setChangePwMsg('ok:儲存中...');
+    const hash = await hashPassword(changePwNew1);
+    adminPwHashRef.current = hash;
+    const fb = await initFirebase();
+    if (fb) {
+      try {
+        await fb.setDoc(fb.doc(fb.db, 'config', 'passwords'), { adminPwHash: hash }, { merge: true });
+      } catch(e) { console.warn('[MileageTool] 密碼儲存失敗', e); }
+    }
+    setChangePwMsg('ok:管理者密碼已更新');
+    logAction('settings', '修改管理者密碼', '', '管理者');
+    setTimeout(() => { setShowChangePw(false); setChangePwOld(''); setChangePwNew1(''); setChangePwNew2(''); setChangePwMsg(''); }, 2000);
+  };
 
   // Group personnel by department for the selection screen
   const personnelByDept = useMemo(() => {
@@ -1322,8 +1369,8 @@ const MileageTool = ({ onBack, windowHeight }) => {
               <div className="bg-slate-800 rounded-2xl p-6 w-80 border border-emerald-500 border-opacity-30 space-y-4" onClick={e => e.stopPropagation()}>
                 <div className="text-sm font-bold text-white">🔐 管理者驗證</div>
                 <input type="password" value={adminPwInput} onChange={e => setAdminPwInput(e.target.value)}
-                  onKeyDown={e => { if (e.key === 'Enter') {
-                    if (adminPwInput === ADMIN_PW) {
+                  onKeyDown={async e => { if (e.key === 'Enter') {
+                    if (await verifyAdminPw(adminPwInput)) {
                       setIsAdmin(true);
                       setCurrentUser({ id: 'admin', name: '管理者', deptId: 'dept_logi' });
                       setShowAdminPw(false); setAdminPwInput(''); setActiveSection('dashboard');
@@ -1337,8 +1384,8 @@ const MileageTool = ({ onBack, windowHeight }) => {
                   placeholder="輸入管理者密碼" autoFocus
                   className={`w-full p-2.5 bg-slate-700 border ${adminPwError ? 'border-red-500' : 'border-slate-600'} rounded-lg text-white text-sm outline-none`} />
                 {adminPwError && <div className="text-red-400 text-xs">密碼錯誤</div>}
-                <button onClick={() => {
-                  if (adminPwInput === ADMIN_PW) {
+                <button onClick={async () => {
+                  if (await verifyAdminPw(adminPwInput)) {
                     setIsAdmin(true);
                     setCurrentUser({ id: 'admin', name: '管理者', deptId: 'dept_logi' });
                     setShowAdminPw(false); setAdminPwInput(''); setActiveSection('dashboard');
@@ -1475,6 +1522,10 @@ const MileageTool = ({ onBack, windowHeight }) => {
             <button onClick={onBack}
               className="flex-1 py-1.5 text-[10px] text-slate-500 border border-slate-700 rounded hover:bg-slate-800 transition-all">首頁</button>
           </div>
+          {isAdmin && (
+            <button onClick={() => setShowChangePw(true)}
+              className="w-full mt-2 py-1.5 text-[10px] text-amber-400 text-opacity-60 border border-amber-500 border-opacity-20 rounded hover:border-opacity-50 hover:text-opacity-100 transition-all">🔐 修改管理者密碼</button>
+          )}
         </div>
       </div>
 
@@ -3590,6 +3641,32 @@ ${fuelSummary}
                 ✓ 確認無誤
               </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── 修改管理者密碼 Modal ── */}
+      {showChangePw && (
+        <div className="fixed inset-0 bg-black bg-opacity-60 z-50 flex items-center justify-center" onClick={() => { setShowChangePw(false); setChangePwOld(''); setChangePwNew1(''); setChangePwNew2(''); setChangePwMsg(''); }}>
+          <div className="bg-slate-800 rounded-2xl p-6 w-80 border border-amber-500 border-opacity-30 space-y-3" onClick={e => e.stopPropagation()}>
+            <div className="text-sm font-bold text-white">🔐 修改管理者密碼</div>
+            {['舊密碼','新密碼','確認新密碼'].map((label, idx) => (
+              <div key={idx}>
+                <div className="text-[10px] text-slate-400 mb-1">{label}</div>
+                <input type="password"
+                  value={idx===0?changePwOld:idx===1?changePwNew1:changePwNew2}
+                  onChange={e => idx===0?setChangePwOld(e.target.value):idx===1?setChangePwNew1(e.target.value):setChangePwNew2(e.target.value)}
+                  onKeyDown={e => { if (e.key === 'Enter' && idx === 2) handleChangeAdminPw(); }}
+                  className="w-full p-2 bg-slate-700 border border-slate-600 rounded-lg text-white text-sm outline-none focus:border-amber-500" />
+              </div>
+            ))}
+            {changePwMsg && (
+              <div className={`text-xs px-2 py-1 rounded ${changePwMsg.startsWith('ok')?'bg-emerald-900 bg-opacity-50 text-emerald-400':'bg-red-900 bg-opacity-50 text-red-400'}`}>
+                {changePwMsg.slice(changePwMsg.indexOf(':')+1)}
+              </div>
+            )}
+            <button onClick={handleChangeAdminPw}
+              className="w-full py-2.5 bg-amber-500 text-white rounded-lg font-bold text-sm hover:bg-amber-600">確認更改</button>
           </div>
         </div>
       )}
