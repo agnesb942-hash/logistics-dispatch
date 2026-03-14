@@ -306,11 +306,11 @@ export default function VehicleCostTool({ onBack, windowHeight }) {
   }, []);
   useEffect(() => { loadAll(); }, [loadAll]);
 
-  // ── Get vehicle info (Firestore override > master) ──
+  // ── Get vehicle info (master > user edit > OCR) ──
   const getVehicle = useCallback((vid) => {
     const fs = fsVehicles[vid];
     const master = VEHICLES_MASTER.find(v => v.id === vid);
-    if (fs) return { id: vid, type: fs.brandModel || master?.type || '未知', ton: fs.totalWeight ? (fs.totalWeight/1000).toFixed(1) : master?.ton || 0, old: master?.old, src: master?.src || '', fsData: fs };
+    if (fs) return { id: vid, type: master?.type || fs.vehicleType || fs.brandModel || '未知', ton: master?.ton ?? (fs.ton ?? (fs.totalWeight ? (fs.totalWeight/1000).toFixed(1) : 0)), old: fs.oldPlate || master?.old || null, src: master?.src || fs.purchaseSource || '', fsData: fs };
     return master ? { ...master, fsData: null } : { id: vid, type: '未知', ton: 0, old: null, src: '', fsData: null };
   }, [fsVehicles]);
 
@@ -385,7 +385,7 @@ export default function VehicleCostTool({ onBack, windowHeight }) {
     Object.entries(fsVehicles).forEach(([plate, data]) => {
       if (data.deleted) return;
       if (!merged.find(v => v.id === plate)) {
-        merged.push({ id: plate, type: data.brandModel || data.vehicleType || '未知', ton: data.totalWeight ? (data.totalWeight/1000) : (data.ton || 0), old: data.oldPlate || null, src: data.purchaseSource || '自購', fsData: data });
+        merged.push({ id: plate, type: data.vehicleType || data.brandModel || '未知', ton: data.ton ?? (data.totalWeight ? (data.totalWeight/1000) : 0), old: data.oldPlate || null, src: data.purchaseSource || '自購', fsData: data });
       }
     });
     // Filter out deleted vehicles
@@ -788,10 +788,8 @@ export default function VehicleCostTool({ onBack, windowHeight }) {
     if (!licenseResult || !licenseUploadVehicle) return;
     try {
       const fb = await initFirebase();
-      const col = fb.collection(fb.db, COL_VEH);
-      // Use vehicle plate as doc ID
-      const plate = licenseResult.plateNumber || licenseUploadVehicle;
-      await fb.setDoc(fb.doc(fb.db, COL_VEH, plate), { ...licenseResult, updatedAt: new Date().toISOString() });
+      // Always use user-selected vehicle as doc ID (OCR plate may differ)
+      await fb.setDoc(fb.doc(fb.db, COL_VEH, licenseUploadVehicle), { license: licenseResult, updatedAt: new Date().toISOString() }, { merge: true });
       alert('✅ 車輛資料已更新！');
       setLicenseResult(null); setLicenseUploadVehicle(null);
       loadAll();
@@ -1351,7 +1349,7 @@ export default function VehicleCostTool({ onBack, windowHeight }) {
                 <div key={i} style={{...card,display:'flex',justifyContent:'space-between',alignItems:'center',padding:isMobile?'10px 14px':'12px 16px'}}>
                   <div>
                     <div style={{fontSize:13,fontWeight:600,color:T.text}}>{v.id} <span style={{fontSize:10,color:T.textLight}}>{v.type} {v.ton}t</span></div>
-                    {fs && !fs.deleted && <div style={{fontSize:10,color:T.success}}>✅ 行照已上傳 ({fs.brandModel||''})</div>}
+                    {fs && !fs.deleted && (fs.license || fs.brandModel) && <div style={{fontSize:10,color:T.success}}>✅ 行照已上傳 ({fs.license?.brandModel || fs.brandModel || ''})</div>}
                   </div>
                   <button onClick={()=>{setLicenseUploadVehicle(v.id);licenseFileRef.current?.click();}} style={{padding:'4px 10px',border:`1px solid ${T.border}`,background:T.cardBg,color:T.text,borderRadius:6,fontSize:11,cursor:'pointer',transition:'all 0.15s'}}>📷 行照</button>
                 </div>
