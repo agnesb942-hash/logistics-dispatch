@@ -716,11 +716,15 @@ const MileageTool = ({ onBack, windowHeight }) => {
 
   // ── Get previous reading for a vehicle ──────────────────────────
   const getPrevReading = (vehiclePlate, period) => {
-    const prev = getPrevPeriod(period);
-    // 優先從 monthlyRecords 找前一期記錄
-    const rec = monthlyRecords.find(r => r.vehiclePlate === vehiclePlate && r.period === prev);
-    if (rec) return rec.odometerReading;
-    return null;
+    // 往前最多搜尋 12 期，找到最近一筆有效記錄
+    let p = period;
+    for (let i = 0; i < 12; i++) {
+      p = getPrevPeriod(p);
+      const rec = monthlyRecords.find(r => r.vehiclePlate === vehiclePlate && r.period === p);
+      if (rec) return rec.odometerReading;
+    }
+    // 找不到歷史記錄，回退到起始基準
+    return BASELINE_MILEAGE[vehiclePlate] || null;
   };
 
   // ── 即時衝突分析（月報表單）─────────────────────────────────────
@@ -888,13 +892,13 @@ const MileageTool = ({ onBack, windowHeight }) => {
   };
 
   // ── 操作記錄 helper ─────────────────────────────────────────────
-  const logAction = (category, action, detail) => {
+  const logAction = useCallback((category, action, detail, operatorOverride) => {
     const entry = {
       id: `log_${Date.now()}_${Math.random().toString(36).slice(2,6)}`,
-      category,   // monthly | adhoc | delete | approve | reject | edit
+      category,   // monthly | adhoc | delete | approve | reject | edit | login | fuel
       action,
       detail,
-      operator: currentUser?.name || '—',
+      operator: operatorOverride || currentUser?.name || '—',
       ts: new Date().toISOString(),
     };
     setAuditLog(prev => {
@@ -903,7 +907,7 @@ const MileageTool = ({ onBack, windowHeight }) => {
       saveCollection('audit_log', updated).catch(e => console.warn('[Log] save failed', e));
       return updated;
     });
-  };
+  }, [currentUser]);
 
   // ── Delete ────────────────────────────────────────
   const handleDeleteRecord = (recordId, type) => {
@@ -1282,9 +1286,8 @@ const MileageTool = ({ onBack, windowHeight }) => {
                     setCurrentUser(p);
                     setActiveSection('dashboard');
                     setLoginDept('');
-                    // 延遲一個 tick，等 currentUser state 更新後 logAction 才能正確取到 operator
-                    setTimeout(() => logAction('login', '使用者登入',
-                      `${p.name}・${(departments.find(d=>d.id===p.deptId)||{name:p.deptId}).name}・名單登入`), 0);
+                    logAction('login', '使用者登入',
+                      `${p.name}・${(departments.find(d=>d.id===p.deptId)||{name:p.deptId}).name}・名單登入`, p.name);
                   }}
                     className="py-2.5 px-2 bg-white bg-opacity-5 border border-white border-opacity-10 rounded-lg text-white text-xs font-bold hover:bg-emerald-500 hover:bg-opacity-30 hover:border-emerald-400 transition-all">
                     {p.name}
@@ -1298,8 +1301,7 @@ const MileageTool = ({ onBack, windowHeight }) => {
                     const dName = (departments.find(d=>d.id===loginDept)||{name:loginDept}).name;
                     setCurrentUser({ id: `custom_${Date.now()}`, name: nm, deptId: loginDept, status: 'active' });
                     setActiveSection('dashboard'); setLoginDept(''); setCustomName('');
-                    setTimeout(() => logAction('login', '自訂名稱登入',
-                      `${nm}・${dName}・⚠️ 非名單用戶`), 0);
+                    logAction('login', '自訂名稱登入', `${nm}・${dName}・⚠️ 非名單用戶`, nm);
                   } }}
                   placeholder="不在名單內？輸入姓名"
                   className="flex-1 p-2 bg-white bg-opacity-5 border border-white border-opacity-10 rounded-lg text-white text-xs outline-none focus:border-emerald-400 placeholder-white placeholder-opacity-20" />
@@ -1309,8 +1311,7 @@ const MileageTool = ({ onBack, windowHeight }) => {
                   const dName = (departments.find(d=>d.id===loginDept)||{name:loginDept}).name;
                   setCurrentUser({ id: `custom_${Date.now()}`, name: nm, deptId: loginDept, status: 'active' });
                   setActiveSection('dashboard'); setLoginDept(''); setCustomName('');
-                  setTimeout(() => logAction('login', '自訂名稱登入',
-                    `${nm}・${dName}・⚠️ 非名單用戶`), 0);
+                  logAction('login', '自訂名稱登入', `${nm}・${dName}・⚠️ 非名單用戶`, nm);
                 }}
                   disabled={!customName.trim()}
                   className="px-3 py-2 bg-emerald-500 bg-opacity-30 border border-emerald-400 border-opacity-30 rounded-lg text-emerald-300 text-xs font-bold hover:bg-opacity-50 disabled:opacity-30 transition-all">
@@ -1340,7 +1341,7 @@ const MileageTool = ({ onBack, windowHeight }) => {
                       setIsAdmin(true);
                       setCurrentUser({ id: 'admin', name: '管理者', deptId: 'dept_logi' });
                       setShowAdminPw(false); setAdminPwInput(''); setActiveSection('dashboard');
-                      setTimeout(() => logAction('login', '管理者登入', ''), 0);
+                      logAction('login', '管理者登入', '', '管理者');
                     } else {
                       setAdminPwError(true);
                       setTimeout(() => setAdminPwError(false), 1500);
@@ -1355,7 +1356,7 @@ const MileageTool = ({ onBack, windowHeight }) => {
                     setIsAdmin(true);
                     setCurrentUser({ id: 'admin', name: '管理者', deptId: 'dept_logi' });
                     setShowAdminPw(false); setAdminPwInput(''); setActiveSection('dashboard');
-                    setTimeout(() => logAction('login', '管理者登入', ''), 0);
+                    logAction('login', '管理者登入', '', '管理者');
                   } else {
                     setAdminPwError(true);
                     setTimeout(() => setAdminPwError(false), 1500);
@@ -2693,14 +2694,22 @@ const MileageTool = ({ onBack, windowHeight }) => {
                 fuelByPlate[r.vehiclePlate].liters += r.fuelLiters||0;
                 fuelByPlate[r.vehiclePlate].cost   += r.fuelAmount||0;
               });
-              // km/L 計算（相同車牌在期間內連續加油）
+              // km/L 計算（fill-to-fill 加滿到加滿法，與油耗儀表板一致）
               const fuelKmlMap = {};
-              Object.entries(fuelByPlate).forEach(([plate, f]) => {
-                const odoRecs = fuelInPeriod.filter(r=>r.vehiclePlate===plate&&r.odometer).sort((a,b)=>a.date.localeCompare(b.date));
-                if (odoRecs.length >= 2) {
-                  const dist = odoRecs[odoRecs.length-1].odometer - odoRecs[0].odometer;
-                  if (dist>0 && f.liters>0) fuelKmlMap[plate] = Math.round(dist/f.liters*10)/10;
+              Object.keys(fuelByPlate).forEach(plate => {
+                const recs = fuelInPeriod.filter(r=>r.vehiclePlate===plate).sort((a,b)=>a.date.localeCompare(b.date)||(a.id||'').localeCompare(b.id||''));
+                const validIdx = recs.map((r,i)=>r.odometer?i:null).filter(i=>i!==null);
+                const kmlValues = [];
+                for (let vi=1; vi<validIdx.length; vi++) {
+                  const prevI = validIdx[vi-1], currI = validIdx[vi];
+                  const dist = recs[currI].odometer - recs[prevI].odometer;
+                  const fuelSum = recs.slice(prevI+1, currI+1).reduce((s,r)=>s+(r.fuelLiters||0),0);
+                  if (dist>0 && fuelSum>0) {
+                    const kml = Math.round(dist/fuelSum*10)/10;
+                    if (kml>=2 && kml<=25) kmlValues.push(kml);
+                  }
                 }
+                if (kmlValues.length>0) fuelKmlMap[plate] = Math.round(kmlValues.reduce((s,v)=>s+v,0)/kmlValues.length*10)/10;
               });
               const totalFuelLiters = Object.values(fuelByPlate).reduce((s,f)=>s+f.liters,0);
               const totalFuelCost   = Object.values(fuelByPlate).reduce((s,f)=>s+f.cost,0);

@@ -1366,6 +1366,7 @@ const App = () => {
   // ==========================================
   // Step 1: Load Leaflet as early as possible (runs on first render, before user even enters main)
   useEffect(() => {
+    let pollId, timeoutId;
     const loadLeaflet = () => {
       if (window.L) { setLeafletReady(true); return; }
       if (!document.getElementById('leaflet-css')) {
@@ -1386,8 +1387,8 @@ const App = () => {
       if (document.getElementById('leaflet-script')) {
         // Script tag exists but onload may have already fired before we listened
         // Poll until window.L is available
-        const poll = setInterval(() => { if (window.L) { setLeafletReady(true); clearInterval(poll); } }, 100);
-        setTimeout(() => clearInterval(poll), 10000);
+        pollId = setInterval(() => { if (window.L) { setLeafletReady(true); clearInterval(pollId); } }, 100);
+        timeoutId = setTimeout(() => clearInterval(pollId), 10000);
         return;
       }
       const script = document.createElement('script');
@@ -1405,6 +1406,10 @@ const App = () => {
       document.body.appendChild(script);
     };
     loadLeaflet();
+    return () => {
+      if (pollId) clearInterval(pollId);
+      if (timeoutId) clearTimeout(timeoutId);
+    };
   }, []);
 
   // Step 2: Initialize map - triggered by leafletReady OR appMode change (entering main)

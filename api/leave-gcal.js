@@ -4,10 +4,21 @@
 //   GCAL_SERVICE_ACCOUNT → Google 服務帳號 JSON 字串（完整 JSON，需先在 GCP 建立）
 //   GCAL_CALENDAR_ID     → 目標行事曆 ID（也可從前端傳入）
 
-const { google } = require('googleapis');
+import { google } from 'googleapis';
 
-module.exports = async (req, res) => {
+export default async function handler(req, res) {
+  // CORS preflight
+  if (req.method === 'OPTIONS') {
+    res.setHeader('Access-Control-Allow-Origin', '*');
+    res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+    res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
+    return res.status(200).end();
+  }
+
   if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' });
+
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
 
   const { request, calendarId } = req.body;
   if (!request) return res.status(400).json({ error: '缺少 request 參數' });
@@ -68,4 +79,4 @@ module.exports = async (req, res) => {
     console.error('[leave-gcal] error:', err);
     return res.status(500).json({ error: err.message });
   }
-};
+}

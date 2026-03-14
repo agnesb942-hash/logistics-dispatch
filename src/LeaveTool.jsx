@@ -157,6 +157,27 @@ const TW_HOLIDAYS = {
   '2026-12-25':{ name:'行憲紀念日', type:'national' },
   // ── 補班日 2026 ──────────────────────────────────────────────────
   '2026-02-14':{ name:'補班日', type:'makeup_work' },
+  // ── 2027（預排，以行政院正式公告為準）────────────────────────────
+  '2027-01-01':{ name:'元旦', type:'national' },
+  '2027-02-05':{ name:'農曆除夕', type:'lunar_new_year' },
+  '2027-02-06':{ name:'春節初一', type:'lunar_new_year' },
+  '2027-02-07':{ name:'春節初二', type:'lunar_new_year' },
+  '2027-02-08':{ name:'春節初三', type:'lunar_new_year' },
+  '2027-02-09':{ name:'春節補假', type:'lunar_new_year' },
+  '2027-02-10':{ name:'春節補假', type:'lunar_new_year' },
+  '2027-02-28':{ name:'和平紀念日', type:'national' },
+  '2027-03-01':{ name:'和平紀念日補假', type:'national' },
+  '2027-04-04':{ name:'兒童節', type:'national' },
+  '2027-04-05':{ name:'清明節', type:'national' },
+  '2027-04-06':{ name:'兒童節補假', type:'national' },
+  '2027-04-30':{ name:'勞動節補假', type:'labor' },
+  '2027-05-01':{ name:'勞動節', type:'labor' },
+  '2027-06-09':{ name:'端午節', type:'national' },
+  '2027-09-15':{ name:'中秋節', type:'national' },
+  '2027-10-10':{ name:'國慶日', type:'national' },
+  '2027-10-11':{ name:'國慶日補假', type:'national' },
+  '2027-12-24':{ name:'行憲紀念日補假', type:'national' },
+  '2027-12-25':{ name:'行憲紀念日', type:'national' },
 };
 
 // 國定假日類型樣式
@@ -563,6 +584,11 @@ const LeaveTool = ({ onBack, windowHeight }) => {
     );
   },[leaveRequests]);
 
+  // ── Derived data：動態部門清單（從 leaveConfig 讀取，管理者可新增）──
+  const LEAVE_DEPTS = useMemo(()=>
+    (leaveConfig.depts?.length ? leaveConfig.depts : DEFAULT_LEAVE_DEPTS)
+  ,[leaveConfig.depts]);
+
   // ── Submit leave ──────────────────────────────────────────────────
   // ── handleSubmitLeave ──────────────────────────────────────────────
   // 邏輯：衝突 → conflict_pending；連休(≥3工作天) → pending；autoApprove → approved
@@ -674,7 +700,7 @@ const LeaveTool = ({ onBack, windowHeight }) => {
     setApplySubmitting(false);
   }, [currentUser, isAdmin, applyFor, applyType, applyStart, applyEnd, applyHours,
       applyUnit, applyTimeStart, applyTimeEnd, applyReason, applyProxy, applyProxySched, personnel, leaveConfig,
-      detectConflicts, calBlockedDates]);
+      detectConflicts, calBlockedDates, LEAVE_DEPTS]);
 
   // 知會彈窗確認後真正送出
   const handleConfirmSubmit = useCallback(async () => {
@@ -740,6 +766,9 @@ const LeaveTool = ({ onBack, windowHeight }) => {
   const handleDeleteLeave = useCallback(async (id) => {
     if (!window.confirm('確認刪除此假單？此操作無法復原。')) return;
     const req = leaveRequests.find(r=>r.id===id); if (!req) return;
+    // 先刪除 Firestore，成功後才更新本機狀態（避免伺服器失敗時 UI 不同步）
+    const deleted = await delReq(id);
+    if (!deleted) { alert('❌ 刪除失敗，請確認網路連線後重試'); return; }
     const now = new Date().toISOString();
     // 清理其他假單 conflictWith（避免孤立衝突記錄）
     const related = leaveRequests.filter(r=>
@@ -754,13 +783,15 @@ const LeaveTool = ({ onBack, windowHeight }) => {
       const without=prev.filter(r=>r.id!==id);
       return without.map(r=>related.find(u=>u.id===r.id)||r);
     });
-    await delReq(id);
     if (related.length>0) await batchReqs(related);
     logAction('delete','刪除假單',`${req.employeeName}・${req.leaveTypeName}・${req.startDate}～${req.endDate}`);
   },[leaveRequests, leaveConfig, delReq, batchReqs, logAction]);
 
   // 銷假（使用者自行取消已申請的假單）
   const handleCancelLeave = useCallback(async (req) => {
+    // 先刪除 Firestore，成功後才更新本機狀態
+    const deleted = await delReq(req.id);
+    if (!deleted) { alert('❌ 銷假失敗，請確認網路連線後重試'); return; }
     const now = new Date().toISOString();
     // 清理其他假單的衝突記錄
     const related = leaveRequests.filter(r=>
@@ -775,7 +806,6 @@ const LeaveTool = ({ onBack, windowHeight }) => {
       const without = prev.filter(r=>r.id!==req.id);
       return without.map(r=>related.find(u=>u.id===r.id)||r);
     });
-    await delReq(req.id);
     if (related.length>0) await batchReqs(related);
     logAction('cancel','銷假',`${req.employeeName}・${req.leaveTypeName}・${req.startDate}～${req.endDate}`);
     setCancelModal(null);
@@ -784,12 +814,6 @@ const LeaveTool = ({ onBack, windowHeight }) => {
 
 
 
-
-  // ── Derived data ──────────────────────────────────────────────────
-  // 動態部門清單（從 leaveConfig 讀取，管理者可新增）
-  const LEAVE_DEPTS = useMemo(()=>
-    (leaveConfig.depts?.length ? leaveConfig.depts : DEFAULT_LEAVE_DEPTS)
-  ,[leaveConfig.depts]);
 
   const personnelByDept = useMemo(()=>{
     const map = {};
@@ -1316,78 +1340,79 @@ const LeaveTool = ({ onBack, windowHeight }) => {
   };
 
 
+  // ── ReviewCard（從 renderReview 提取，避免每次 render 重建元件）──
+  const ReviewCard = ({r}) => {
+    const lt  = LEAVE_TYPES.find(t=>t.id===r.leaveType);
+    const dept= LEAVE_DEPTS.find(d=>d.id===r.deptId);
+    const isPending = r.status==='pending'||r.status==='conflict_pending';
+    return (
+      <div className={`rounded-2xl border-2 p-4 space-y-3 ${r.status==='conflict_pending'?'border-orange-200 bg-orange-50':r.status==='approved'?'border-emerald-100 bg-emerald-50':r.status==='rejected'?'border-red-100 bg-red-50':'border-gray-100 bg-white'}`}>
+        <div className="flex items-start justify-between">
+          <div>
+            <div className="font-bold text-gray-800 flex items-center gap-2">
+              {r.employeeName}
+              <span className="text-xs text-gray-400">{dept?.name}</span>
+            </div>
+            <div className="text-xs text-gray-500 mt-0.5">
+              <span className="font-bold" style={{color:lt?.color}}>{r.leaveTypeName}</span>
+              <span className="ml-2">{r.startDate} ～ {r.endDate}</span>
+              <span className="ml-2">
+                {r.unit==='hour'
+                  ? <>{r.timeStart&&r.timeEnd ? `${r.timeStart}–${r.timeEnd}` : ''} ({r.hours}H)</>
+                  : r.leaveType==='compensatory'
+                  ? r.hours+'H'
+                  : r.days+'天'}
+                {isAdmin && r.unit!=='hour' && r.leaveType!=='compensatory' && r.days>0 &&
+                  <span className="text-gray-400 ml-1">({r.days*WORK_HOURS_PER_DAY}H)</span>}
+              </span>
+            </div>
+            {isAdmin && r.reason && <div className="text-xs text-gray-500 mt-1">📝 事由：{r.reason}</div>}
+          </div>
+          <span className={`text-[10px] font-bold px-2 py-1 rounded-full ${STATUS_CFG[r.status]?.badge}`}>{STATUS_CFG[r.status]?.label}</span>
+        </div>
+
+        {/* 衝突資訊 */}
+        {r.status==='conflict_pending' && r.conflictWith?.length>0 && (
+          <div className="bg-orange-100 rounded-xl p-3 text-xs text-orange-700">
+            <span className="font-bold">衝突人員：</span>{r.conflictWith.join('、')}
+          </div>
+        )}
+
+        {/* 已審核資訊 */}
+        {(r.status==='approved'||r.status==='rejected') && (
+          <div className="text-xs text-gray-500">
+            審核：{r.reviewedBy} · {r.reviewedAt?.slice(0,10)}
+            {r.reviewNote && <span className="ml-2 text-gray-600">備註：{r.reviewNote}</span>}
+          </div>
+        )}
+
+        {/* 審核操作 */}
+        {isPending && (
+          <div className="space-y-2 pt-1">
+            <input value={reviewNote[r.id]||''} onChange={e=>setReviewNote(prev=>({...prev,[r.id]:e.target.value}))}
+              placeholder="審核備註（選填）"
+              className="w-full border border-gray-200 rounded-lg px-3 py-2 text-xs focus:outline-none focus:border-violet-400" />
+            <div className="flex gap-2">
+              <button onClick={()=>handleReview(r.id,'approve')} className="flex-1 py-2 bg-emerald-500 text-white rounded-xl text-xs font-bold hover:bg-emerald-600 transition-all">✅ 核准</button>
+              <button onClick={()=>handleReview(r.id,'reject')}  className="flex-1 py-2 bg-red-400 text-white rounded-xl text-xs font-bold hover:bg-red-500 transition-all">❌ 駁回</button>
+              <button onClick={()=>handleDeleteLeave(r.id)} className="px-3 py-2 bg-gray-100 text-gray-500 rounded-xl text-xs font-bold hover:bg-red-50 hover:text-red-500 transition-all">🗑️</button>
+            </div>
+          </div>
+        )}
+        {!isPending && (
+          <div className="flex gap-2 justify-end">
+            <button onClick={()=>handleDeleteLeave(r.id)} className="px-3 py-1.5 bg-gray-100 text-gray-400 rounded-lg text-xs font-bold hover:bg-red-50 hover:text-red-500 transition-all">🗑️</button>
+          </div>
+        )}
+      </div>
+    );
+  };
+
   const renderReview = () => {
     const conflictList = leaveRequests.filter(r=>r.status==='conflict_pending').sort((a,b)=>a.createdAt.localeCompare(b.createdAt));
     const pendingList  = leaveRequests.filter(r=>r.status==='pending').sort((a,b)=>a.createdAt.localeCompare(b.createdAt));
     const doneList     = leaveRequests.filter(r=>r.status==='approved'||r.status==='rejected').sort((a,b)=>b.updatedAt.localeCompare(a.updatedAt));
     const showList     = reviewTab==='conflict'?conflictList : reviewTab==='pending'?pendingList : doneList;
-
-    const ReviewCard = ({r}) => {
-      const lt  = LEAVE_TYPES.find(t=>t.id===r.leaveType);
-      const dept= LEAVE_DEPTS.find(d=>d.id===r.deptId);
-      const isPending = r.status==='pending'||r.status==='conflict_pending';
-      return (
-        <div className={`rounded-2xl border-2 p-4 space-y-3 ${r.status==='conflict_pending'?'border-orange-200 bg-orange-50':r.status==='approved'?'border-emerald-100 bg-emerald-50':r.status==='rejected'?'border-red-100 bg-red-50':'border-gray-100 bg-white'}`}>
-          <div className="flex items-start justify-between">
-            <div>
-              <div className="font-bold text-gray-800 flex items-center gap-2">
-                {r.employeeName}
-                <span className="text-xs text-gray-400">{dept?.name}</span>
-              </div>
-              <div className="text-xs text-gray-500 mt-0.5">
-                <span className="font-bold" style={{color:lt?.color}}>{r.leaveTypeName}</span>
-                <span className="ml-2">{r.startDate} ～ {r.endDate}</span>
-                <span className="ml-2">
-                  {r.unit==='hour'
-                    ? <>{r.timeStart&&r.timeEnd ? `${r.timeStart}–${r.timeEnd}` : ''} ({r.hours}H)</>
-                    : r.leaveType==='compensatory'
-                    ? r.hours+'H'
-                    : r.days+'天'}
-                  {isAdmin && r.unit!=='hour' && r.leaveType!=='compensatory' && r.days>0 &&
-                    <span className="text-gray-400 ml-1">({r.days*WORK_HOURS_PER_DAY}H)</span>}
-                </span>
-              </div>
-              {isAdmin && r.reason && <div className="text-xs text-gray-500 mt-1">📝 事由：{r.reason}</div>}
-            </div>
-            <span className={`text-[10px] font-bold px-2 py-1 rounded-full ${STATUS_CFG[r.status]?.badge}`}>{STATUS_CFG[r.status]?.label}</span>
-          </div>
-
-          {/* 衝突資訊 */}
-          {r.status==='conflict_pending' && r.conflictWith?.length>0 && (
-            <div className="bg-orange-100 rounded-xl p-3 text-xs text-orange-700">
-              <span className="font-bold">衝突人員：</span>{r.conflictWith.join('、')}
-            </div>
-          )}
-
-          {/* 已審核資訊 */}
-          {(r.status==='approved'||r.status==='rejected') && (
-            <div className="text-xs text-gray-500">
-              審核：{r.reviewedBy} · {r.reviewedAt?.slice(0,10)}
-              {r.reviewNote && <span className="ml-2 text-gray-600">備註：{r.reviewNote}</span>}
-            </div>
-          )}
-
-          {/* 審核操作 */}
-          {isPending && (
-            <div className="space-y-2 pt-1">
-              <input value={reviewNote[r.id]||''} onChange={e=>setReviewNote(prev=>({...prev,[r.id]:e.target.value}))}
-                placeholder="審核備註（選填）"
-                className="w-full border border-gray-200 rounded-lg px-3 py-2 text-xs focus:outline-none focus:border-violet-400" />
-              <div className="flex gap-2">
-                <button onClick={()=>handleReview(r.id,'approve')} className="flex-1 py-2 bg-emerald-500 text-white rounded-xl text-xs font-bold hover:bg-emerald-600 transition-all">✅ 核准</button>
-                <button onClick={()=>handleReview(r.id,'reject')}  className="flex-1 py-2 bg-red-400 text-white rounded-xl text-xs font-bold hover:bg-red-500 transition-all">❌ 駁回</button>
-                <button onClick={()=>handleDeleteLeave(r.id)} className="px-3 py-2 bg-gray-100 text-gray-500 rounded-xl text-xs font-bold hover:bg-red-50 hover:text-red-500 transition-all">🗑️</button>
-              </div>
-            </div>
-          )}
-          {!isPending && (
-            <div className="flex gap-2 justify-end">
-              <button onClick={()=>handleDeleteLeave(r.id)} className="px-3 py-1.5 bg-gray-100 text-gray-400 rounded-lg text-xs font-bold hover:bg-red-50 hover:text-red-500 transition-all">🗑️</button>
-            </div>
-          )}
-        </div>
-      );
-    };
 
     return (
       <div className="space-y-4">
