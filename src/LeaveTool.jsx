@@ -774,7 +774,7 @@ const LeaveTool = ({ onBack, windowHeight }) => {
     ).map(r=>{
       const newCW  = (r.conflictWith||[]).filter(n=>n!==req.employeeName);
       const newCID = (r.conflictIds||[]).filter(i=>i!==id);
-      const autoOk = newStatus==='rejected' && newCW.length===0 && leaveConfig.autoApprove!==false && !r.isConsecutive;
+      const autoOk = newStatus==='rejected' && newCW.length===0 && leaveConfig.autoApprove!==false && !r.isConsecutive && !r.blockedOverlap;
       return {...r, conflictWith:newCW, conflictIds:newCID, status:autoOk?'approved':r.status, updatedAt:now};
     });
 
@@ -803,7 +803,7 @@ const LeaveTool = ({ onBack, windowHeight }) => {
     ).map(r=>{
       const newCW  = (r.conflictWith||[]).filter(n=>n!==req.employeeName);
       const newCID = (r.conflictIds||[]).filter(i=>i!==id);
-      const autoOk = newCW.length===0 && r.status==='conflict_pending' && leaveConfig.autoApprove!==false && !r.isConsecutive;
+      const autoOk = newCW.length===0 && r.status==='conflict_pending' && leaveConfig.autoApprove!==false && !r.isConsecutive && !r.blockedOverlap;
       return {...r, conflictWith:newCW, conflictIds:newCID, status:autoOk?'approved':r.status, updatedAt:now};
     });
     setLeaveRequests(prev=>{
@@ -826,7 +826,7 @@ const LeaveTool = ({ onBack, windowHeight }) => {
     ).map(r=>{
       const newCW  = (r.conflictWith||[]).filter(n=>n!==req.employeeName);
       const newCID = (r.conflictIds||[]).filter(i=>i!==req.id);
-      const autoOk = newCW.length===0 && r.status==='conflict_pending' && leaveConfig.autoApprove!==false && !r.isConsecutive;
+      const autoOk = newCW.length===0 && r.status==='conflict_pending' && leaveConfig.autoApprove!==false && !r.isConsecutive && !r.blockedOverlap;
       return {...r, conflictWith:newCW, conflictIds:newCID, status:autoOk?'approved':r.status, updatedAt:now};
     });
     setLeaveRequests(prev=>{
@@ -1829,7 +1829,7 @@ const LeaveTool = ({ onBack, windowHeight }) => {
     const personStats = filteredPersonnel.map(p=>{
       const reqs = statsRequests.filter(r=>r.employeeId===p.id);
       const byType = {};
-      LEAVE_TYPES.forEach(t=>{ byType[t.id] = reqs.filter(r=>r.leaveType===t.id).reduce((s,r)=>s+(r.days||0),0); });
+      LEAVE_TYPES.forEach(t=>{ byType[t.id] = reqs.filter(r=>r.leaveType===t.id).reduce((s,r)=>s+(r.days||0)+(t.id!=='compensatory'&&!r.days&&r.hours?(r.hours/8):0),0); });
       const compHours = reqs.filter(r=>r.leaveType==='compensatory').reduce((s,r)=>s+(r.hours||0),0);
       const totalDays = Object.values(byType).reduce((s,v)=>s+v,0) + compHours / 8;
       return { ...p, byType, totalDays, compHours };
@@ -2529,7 +2529,7 @@ ${(() => {
                     updated=personnel.map(p=>p.id===settingEdit?{...p,...settingForm}:p);
                     logAction('settings','編輯人員',settingForm.name);
                   }
-                  setPersonnel(updated); savePersF(updated.find(x=>x.id===(settingEdit==='new_person'?updated[updated.length-1]?.id:settingEdit))).catch(()=>{});
+                  setPersonnel(updated); const target=updated.find(x=>x.id===(settingEdit==='new_person'?updated[updated.length-1]?.id:settingEdit)); if(target) savePersF(target).catch(()=>{});
                   setSettingEdit(null); setSettingForm({});
                 }}
                   className="flex-1 py-2.5 bg-violet-600 text-white rounded-xl text-sm font-bold hover:bg-violet-700 transition-all">儲存</button>

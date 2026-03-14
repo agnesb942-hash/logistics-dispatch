@@ -446,7 +446,7 @@ const ConflictDisplay = ({ conflictAnalysis, fmtNum }) => {
       })}
       {warnings && warnings.length > 0 && (
         <div className="text-xs text-gray-500 mt-1">
-          {warnings.map((s, i) => <div key={i}>⚠️ {s}</div>)}
+          {warnings.map((s, i) => <div key={i}>⚠️ {s.msg}</div>)}
         </div>
       )}
     </div>
@@ -889,6 +889,7 @@ const MileageTool = ({ onBack, windowHeight }) => {
       return;
     }
     const veh = vehicles.find(v => v.id === adhocVehicle);
+    if (!veh) { alert('找不到該車輛'); return; }
     // Check against last known reading for this vehicle
     const lastKnown = getLastKnownMileage(veh.plate);
     if (lastKnown != null && start < lastKnown) {
@@ -2027,7 +2028,8 @@ const MileageTool = ({ onBack, windowHeight }) => {
               : (fuelFrom && fuelTo)   ? `${fuelFrom} ～ ${fuelTo}`
               : fuelBasePeriod;
 
-            const filtered = computeKml(fuelRecords).filter(r =>
+            const allWithKml = computeKml(fuelRecords);
+            const filtered = allWithKml.filter(r =>
               (fuelActivePeriods.length === 0 || fuelActivePeriods.includes(r.period)) &&
               (fuelDashDept === 'all' || (vehicles.find(v=>v.plate===r.vehiclePlate)||{}).deptId === fuelDashDept)
             );
@@ -2067,7 +2069,7 @@ const MileageTool = ({ onBack, windowHeight }) => {
               ? fuelPeriodList.slice(0,6).reverse()   // 月模式：保持過去6個月縱覽
               : [...fuelActivePeriods].sort();          // 其他：顯示所選範圍每月
             const kmlTrend = trendPeriods.map(p => {
-              const rs = computeKml(fuelRecords.filter(r=>r.period===p)).filter(r=>r.kml!=null&&!r.isAnomaly);
+              const rs = allWithKml.filter(r=>r.period===p&&r.kml!=null&&!r.isAnomaly);
               return { p, v: rs.length?Math.round(rs.reduce((s,r)=>s+r.kml,0)/rs.length*10)/10:null };
             });
             const validT = kmlTrend.filter(d=>d.v!=null);
@@ -2505,7 +2507,7 @@ const MileageTool = ({ onBack, windowHeight }) => {
                           <tr key={l.id} className={`border-b border-gray-100 ${i % 2 === 0 ? '' : 'bg-gray-50'}`}>
                             <td className="px-4 py-2.5 font-mono text-gray-500 whitespace-nowrap">{timeStr}</td>
                             <td className="px-4 py-2.5">
-                              <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${catStyle}`}>{l.action}</span>
+                              <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${catStyle}`}>{l.category}</span>
                             </td>
                             <td className="px-4 py-2.5 text-gray-700 font-bold">{l.action}</td>
                             <td className="px-4 py-2.5 text-gray-500">{l.detail}</td>

@@ -17,12 +17,12 @@ export default async function handler(req, res) {
     return res.status(200).end();
   }
 
+  res.setHeader('Access-Control-Allow-Origin', ORIGIN);
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+
   if (req.method !== 'POST') {
     return res.status(405).json({ error: 'Method Not Allowed' });
   }
-
-  res.setHeader('Access-Control-Allow-Origin', ORIGIN);
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
 
   const { prompt } = req.body || {};
   if (!prompt || typeof prompt !== 'string' || prompt.trim().length === 0) {

@@ -463,7 +463,7 @@ const App = () => {
   // 區域選擇 & 分頁
   const [activeRegion, setActiveRegion] = useState('tainan');
   const [activeTab, setActiveTab] = useState('settings');
-  const [deliveryPoints, setDeliveryPoints] = useState(TAINAN_DEFAULT);
+  const [deliveryPoints, setDeliveryPoints] = useState(REGION_MAP.tainan);
 
   // 動態全區點位（指送查詢 + 行政區界共用，從 Firestore 載入）
   const [allPoints, setAllPoints] = useState(DEFAULT_ALL_POINTS);
@@ -573,10 +573,12 @@ const App = () => {
   const adminLayerRef = useRef(null);
   const adminLabelsRef = useRef([]);
   const adminGeoJsonCache = useRef(null); // 快取已載入的 GeoJSON
+  const resizeObserverRef = useRef(null);
   const lookupLayersRef = useRef([]); // 指送查詢地圖圖層
 
   // 控制是否允許自動縮放視角的參考指標 (解耦視角與運算)
   const shouldFitBoundsRef = useRef(true);
+  const switchRegionRef = useRef('tainan');
 
   // 動態取得視窗高度（修正 iframe 環境中 100vh 失效問題）
   useEffect(() => {
@@ -629,6 +631,7 @@ const App = () => {
 
   // 切換區域
   const switchRegion = async (regionKey) => {
+    switchRegionRef.current = regionKey;
     setActiveRegion(regionKey);
     setManualOverrides({});
     setSelectedPointForEdit(null);
@@ -645,6 +648,7 @@ const App = () => {
       // 背景再刷新一次確保最新
       setPointsLoading(true);
       loadAllFirestorePoints().then(data => {
+        if (switchRegionRef.current !== 'all') return; // 使用者已切換，忽略過時結果
         if (data && data.length > 0) {
           setAllPoints(data);
           skipNextSave.current = true;
@@ -665,6 +669,7 @@ const App = () => {
     // 非同步從 Firestore 取得最新版本
     setPointsLoading(true);
     const firestoreData = await loadFirestorePoints(regionKey);
+    if (switchRegionRef.current !== regionKey) return; // 使用者已切換，忽略過時結果
     if (firestoreData) {
       skipNextSave.current = true;
       setDeliveryPoints(firestoreData.map((d, i) => ({ ...d, id: d.id ?? i, cluster: -1 })));
@@ -1434,8 +1439,9 @@ const App = () => {
         mapInstanceRef.current = map;
         setMapInitialized(true);
         setTimeout(() => { try { map.invalidateSize(); } catch(e){} }, 150);
-        const resizeObserver = new ResizeObserver(() => { try { map.invalidateSize(); } catch(e){} });
-        resizeObserver.observe(mapContainerRef.current);
+        if (resizeObserverRef.current) resizeObserverRef.current.disconnect();
+        resizeObserverRef.current = new ResizeObserver(() => { try { map.invalidateSize(); } catch(e){} });
+        resizeObserverRef.current.observe(mapContainerRef.current);
       } catch(e) {
         // Init failed - retry
         mapInstanceRef.current = null;
@@ -1443,6 +1449,7 @@ const App = () => {
       }
     };
     tryInit();
+    return () => { if (resizeObserverRef.current) { resizeObserverRef.current.disconnect(); resizeObserverRef.current = null; } };
   }, [leafletReady, appMode]);
 
   // Update Markers AND Polygons based on Final Data

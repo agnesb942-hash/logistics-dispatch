@@ -16,12 +16,12 @@ export default async function handler(req, res) {
     return res.status(204).end();
   }
 
+  res.setHeader('Access-Control-Allow-Origin', ORIGIN);
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+
   if (req.method !== 'POST') {
     return res.status(405).json({ error: 'Method Not Allowed' });
   }
-
-  res.setHeader('Access-Control-Allow-Origin', ORIGIN);
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
 
   const { type, address, origins, destinations, departure_time } = req.body || {};
 

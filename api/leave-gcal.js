@@ -17,12 +17,12 @@ export default async function handler(req, res) {
     return res.status(200).end();
   }
 
-  if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' });
-
   res.setHeader('Access-Control-Allow-Origin', ORIGIN);
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
 
-  const { request, calendarId } = req.body;
+  if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' });
+
+  const { request, calendarId } = req.body || {};
   if (!request) return res.status(400).json({ error: '缺少 request 參數' });
 
   const saJson = process.env.GCAL_SERVICE_ACCOUNT;
@@ -52,9 +52,10 @@ export default async function handler(req, res) {
       ? `\n⚠️ 衝突提醒：${request.conflictWith.join('、')} 同日排休`
       : '';
 
+    const daysLabel = request.days > 0 ? request.days + '天' : (request.hours ? request.hours + '小時' : '—');
     const event = {
       summary: `${emoji} ${request.employeeName}・${request.leaveTypeName}`,
-      description: `部門：${request.deptName}\n假別：${request.leaveTypeName}\n天數：${request.days > 0 ? request.days + '天' : request.hours + '小時'}\n事由：${request.reason || '—'}${conflictNote}\n申請時間：${new Date(request.createdAt).toLocaleString('zh-TW')}`,
+      description: `部門：${request.deptName}\n假別：${request.leaveTypeName}\n天數：${daysLabel}\n事由：${request.reason || '—'}${conflictNote}\n申請時間：${new Date(request.createdAt).toLocaleString('zh-TW')}`,
       start: {
         date: request.startDate,
         timeZone: 'Asia/Taipei',
@@ -62,9 +63,9 @@ export default async function handler(req, res) {
       end: {
         // Google Calendar end date is exclusive, add 1 day
         date: (() => {
-          const d = new Date(request.endDate + 'T00:00:00');
-          d.setDate(d.getDate() + 1);
-          return d.toISOString().slice(0, 10);
+          const [y, m, d] = request.endDate.split('-').map(Number);
+          const next = new Date(y, m - 1, d + 1);
+          return `${next.getFullYear()}-${String(next.getMonth()+1).padStart(2,'0')}-${String(next.getDate()).padStart(2,'0')}`;
         })(),
         timeZone: 'Asia/Taipei',
       },

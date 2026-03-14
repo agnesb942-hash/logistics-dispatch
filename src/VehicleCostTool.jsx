@@ -295,7 +295,7 @@ export default function VehicleCostTool({ onBack, windowHeight }) {
       try {
         const vCol = fb.collection(fb.db, COL_VEH);
         const vSnap = await fb.getDocs(vCol);
-        const vMap = {}; vSnap.forEach(doc => { const d = doc.data(); if (d.plateNumber) vMap[d.plateNumber] = d; });
+        const vMap = {}; vSnap.forEach(doc => { vMap[doc.id] = doc.data(); });
         setFsVehicles(vMap);
       } catch (e) { console.warn('[VehicleCost] 車輛覆寫資料載入失敗:', e.message); }
     } catch (e) {
@@ -716,13 +716,14 @@ export default function VehicleCostTool({ onBack, windowHeight }) {
   // ── Send Chat (Unified Flow) ──
   const sendChat = async (overrideText) => {
     const text = (overrideText || chatInput).trim(); if (!text) return;
+    const history = buildConversationHistory(); // 在 addMsg 前擷取，避免 stale state
     setChatInput(''); addMsg('user', text); setChatLoading(true);
 
     try {
       const data = await callGemini('chat', {
         prompt: text,
         fleetContext: buildFleetContext(),
-        conversationHistory: buildConversationHistory()
+        conversationHistory: history
       });
       addMsg('ai', (data.result || '抱歉，暫時無法回覆。').replace(/\n/g, '<br/>'));
     } catch (err) { addMsg('ai', `❌ 處理失敗：${err.message}`); }
@@ -1178,7 +1179,7 @@ export default function VehicleCostTool({ onBack, windowHeight }) {
                           const tax=calcTax(manualVendor,(item.qty||1)*(+item.unitPrice||0));
                           await fb.addDoc(col,{date:manualDate,vehicleId:manualVehicle,vendor:manualVendor,catCode:item.catCode,majorCat:cat?.majorName||'C 故障維修',subCat:cat?.sub||'其他維修',desc:item.desc||(cat?.sub||''),qty:item.qty||1,unitPrice:+item.unitPrice,amountExTax:tax.exTax,taxAmount:tax.tax,amountIncTax:tax.incTax,mileage:+manualMileage||0,invoiceNo:'',source:'手動',createdAt:new Date().toISOString()});
                         }
-                        setManualSuccess(true);setManualVehicle('');setManualVendor('');setManualMileage('');loadAll();
+                        setManualSuccess(true);setManualVehicle('');setManualVendor('');setManualDate('');setManualMileage('');loadAll();
                       }catch(err){alert('入帳失敗：'+err.message);}
                       setManualSubmitting(false);
                     }} style={{...btnPrimary,flex:1,opacity:manualSubmitting?0.6:1}}>{manualSubmitting?'入帳中...':'✅ 確認入帳'}</button>
