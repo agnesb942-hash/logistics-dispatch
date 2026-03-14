@@ -364,7 +364,10 @@ const App = () => {
     try {
       const { db, doc, setDoc } = fb;
       await setDoc(doc(db, 'config', 'settings'), { dispatchPw: pw }, { merge: true });
-    } catch(e) { console.warn('[Firebase] 密碼儲存失敗：', e); }
+    } catch(e) {
+      console.warn('[Firebase] 密碼儲存失敗：', e);
+      alert('⚠️ 密碼已在本機更新，但雲端同步失敗。其他裝置可能仍使用舊密碼。');
+    }
   };
 
   // Firebase 設定（提前宣告，供持久化函式使用）

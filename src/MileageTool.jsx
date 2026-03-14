@@ -653,6 +653,16 @@ const MileageTool = ({ onBack, windowHeight }) => {
     return null;
   };
 
+  // ── 載入 DOMPurify（XSS 防護）──
+  useEffect(() => {
+    if (!window.DOMPurify && !document.getElementById('dompurify-script')) {
+      const s = document.createElement('script');
+      s.id = 'dompurify-script';
+      s.src = 'https://cdnjs.cloudflare.com/ajax/libs/dompurify/3.2.4/purify.min.js';
+      document.head.appendChild(s);
+    }
+  }, []);
+
   // ── Initial Load ────────────────────────────────────────────────
   useEffect(() => {
     const load = async () => {
@@ -3036,7 +3046,7 @@ ${fuelSummary}
                 // 離屏容器：visibility:hidden 保持版面計算正確，但不顯示在畫面上
                 const wrap = document.createElement('div');
                 wrap.style.cssText = `position:absolute;left:-9999px;top:0;width:${W+60}px;background:#fff;z-index:-9999;`;
-                wrap.innerHTML = reportHTML;
+                wrap.innerHTML = window.DOMPurify ? window.DOMPurify.sanitize(reportHTML, { USE_PROFILES: { html: true }, ADD_ATTR: ['style'] }) : reportHTML;
                 document.body.appendChild(wrap);
 
                 const root = wrap.querySelector('#pdf-root');

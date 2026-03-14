@@ -184,6 +184,13 @@ export default function VehicleCostTool({ onBack, windowHeight }) {
   useEffect(() => {
     const h = () => setIsMobile(window.innerWidth < 768);
     window.addEventListener('resize', h);
+    // 載入 DOMPurify（XSS 防護）
+    if (!window.DOMPurify && !document.getElementById('dompurify-script')) {
+      const s = document.createElement('script');
+      s.id = 'dompurify-script';
+      s.src = 'https://cdnjs.cloudflare.com/ajax/libs/dompurify/3.2.4/purify.min.js';
+      document.head.appendChild(s);
+    }
     return () => window.removeEventListener('resize', h);
   }, []);
 
@@ -648,12 +655,15 @@ export default function VehicleCostTool({ onBack, windowHeight }) {
 
   // ═══ CHAT + OCR ═══
   const sanitizeHtml = (html) => {
+    // 優先使用 DOMPurify（業界標準 XSS 防護）
+    if (window.DOMPurify) return window.DOMPurify.sanitize(html, { USE_PROFILES: { html: true } });
+    // Fallback：手動過濾（DOMPurify 載入前的備援）
     const div = document.createElement('div');
     div.innerHTML = html;
     div.querySelectorAll('script,iframe,object,embed,form,link,meta').forEach(el=>el.remove());
     div.querySelectorAll('*').forEach(el=>{
       for (const attr of [...el.attributes]) {
-        if (attr.name.startsWith('on')) el.removeAttribute(attr.name);
+        if (attr.name.startsWith('on') || (attr.name === 'href' && attr.value.trim().toLowerCase().startsWith('javascript:'))) el.removeAttribute(attr.name);
       }
     });
     return div.innerHTML;
@@ -671,7 +681,8 @@ export default function VehicleCostTool({ onBack, windowHeight }) {
   // ── Gemini API call ──
   const callGemini = async (mode, body) => {
     const res = await fetch('/api/gemini-ocr', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({mode,...body}) });
-    if (!res.ok) throw new Error(`API 異常（HTTP ${res.status}）`);
+    // 422 = JSON 解析失敗但有原始文字可用，不視為硬錯誤
+    if (!res.ok && res.status !== 422) throw new Error(`API 異常（HTTP ${res.status}）`);
     return await res.json();
   };
 

@@ -241,9 +241,10 @@ export default async function handler(req, res) {
         if (jsonMatch) jsonStr = jsonMatch[0];
         const parsed = JSON.parse(jsonStr);
         return res.status(200).json({ result: parsed, raw: text });
-      } catch {
-        // Return raw text if JSON parsing fails
-        return res.status(200).json({ result: null, raw: text, parseError: true });
+      } catch (parseErr) {
+        // JSON 解析失敗：回傳原始文字供前端顯示，HTTP 422 表示格式不符預期
+        console.warn('[gemini-ocr] JSON parse failed for mode:', mode, parseErr.message);
+        return res.status(422).json({ result: null, raw: text, parseError: true, error: 'AI 回傳格式非預期 JSON，已附上原始文字' });
       }
     }
 
