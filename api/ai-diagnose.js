@@ -4,11 +4,14 @@
 //
 // 環境變數設定（Vercel Dashboard → Settings → Environment Variables）：
 //   ANTHROPIC_API_KEY = sk-ant-xxxxxxxxxxxxxxxxxx
+//   ALLOWED_ORIGIN    = https://your-domain.vercel.app（選填，預設 '*'）
+
+const ORIGIN = process.env.ALLOWED_ORIGIN || '*';
 
 export default async function handler(req, res) {
   // CORS preflight
   if (req.method === 'OPTIONS') {
-    res.setHeader('Access-Control-Allow-Origin', '*');
+    res.setHeader('Access-Control-Allow-Origin', ORIGIN);
     res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
     res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
     return res.status(200).end();
@@ -18,7 +21,7 @@ export default async function handler(req, res) {
     return res.status(405).json({ error: 'Method Not Allowed' });
   }
 
-  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.setHeader('Access-Control-Allow-Origin', ORIGIN);
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
 
   const { prompt } = req.body || {};

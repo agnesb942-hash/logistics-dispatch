@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react'
 import MileageTool from './MileageTool';
 import LeaveTool from './LeaveTool';
 import VehicleCostTool from './VehicleCostTool';
+import { initFirebase } from './firebase';
 
 // ----------------------------------------------------------------------
 // 0. ICONS (Inline SVGs)
@@ -370,32 +371,7 @@ const App = () => {
     }
   };
 
-  // Firebase 設定（提前宣告，供持久化函式使用）
-  const FIREBASE_CONFIG = {
-    apiKey: "AIzaSyAe5gxLBHN9CQ6zVhKF6zQGbvgMXCbqoF4",
-    authDomain: "jc-logi-map.firebaseapp.com",
-    projectId: "jc-logi-map",
-    storageBucket: "jc-logi-map.firebasestorage.app",
-    messagingSenderId: "98258062805",
-    appId: "1:98258062805:web:d004b291c639e126e7c15c"
-  };
-  const firebaseRef = useRef(null);
-  const initFirebase = async () => {
-    if (firebaseRef.current) return firebaseRef.current;
-    try {
-      const fbApp = await import('https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js');
-      const { getFirestore, doc, getDoc, setDoc, addDoc, collection, increment, updateDoc } =
-        await import('https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js');
-      const existingApps = fbApp.getApps();
-      const app = existingApps.length > 0 ? existingApps[0] : fbApp.initializeApp(FIREBASE_CONFIG);
-      const db = getFirestore(app);
-      firebaseRef.current = { db, doc, getDoc, setDoc, addDoc, collection, increment, updateDoc };
-      return firebaseRef.current;
-    } catch (e) {
-      console.warn('[Firebase] 初始化失敗：', e);
-      return null;
-    }
-  };
+  // Firebase（使用共用模組 src/firebase.js）
 
   // ── 點位資料持久化（Firestore 雲端同步）──────────────────────────────
   const saveDebounceRef = useRef(null);

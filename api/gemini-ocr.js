@@ -5,6 +5,7 @@
 // 環境變數（Vercel Dashboard → Settings → Environment Variables）：
 //   GEMINI_API_KEY = 從 Google AI Studio 取得
 
+const ORIGIN = process.env.ALLOWED_ORIGIN || '*';
 const GEMINI_MODEL = 'gemini-2.5-flash';
 const GEMINI_URL = `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent`;
 
@@ -96,7 +97,7 @@ const FLEET_ANALYST_PROMPT = `你是展儀物流（高雄）的車隊成本分�
 export default async function handler(req, res) {
   // CORS preflight
   if (req.method === 'OPTIONS') {
-    res.setHeader('Access-Control-Allow-Origin', '*');
+    res.setHeader('Access-Control-Allow-Origin', ORIGIN);
     res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
     res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
     return res.status(200).end();
@@ -106,7 +107,7 @@ export default async function handler(req, res) {
     return res.status(405).json({ error: 'Method Not Allowed' });
   }
 
-  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.setHeader('Access-Control-Allow-Origin', ORIGIN);
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
 
   const apiKey = process.env.GEMINI_API_KEY;

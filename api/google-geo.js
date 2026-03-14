@@ -4,10 +4,13 @@
 //
 // 環境變數設定（Vercel Dashboard → Settings → Environment Variables）：
 //   GOOGLE_MAPS_API_KEY = AIzaSy...
+//   ALLOWED_ORIGIN     = https://your-domain.vercel.app（選填，預設 '*'）
+
+const ORIGIN = process.env.ALLOWED_ORIGIN || '*';
 
 export default async function handler(req, res) {
   if (req.method === 'OPTIONS') {
-    res.setHeader('Access-Control-Allow-Origin', '*');
+    res.setHeader('Access-Control-Allow-Origin', ORIGIN);
     res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
     res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
     return res.status(204).end();
@@ -17,7 +20,7 @@ export default async function handler(req, res) {
     return res.status(405).json({ error: 'Method Not Allowed' });
   }
 
-  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.setHeader('Access-Control-Allow-Origin', ORIGIN);
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
 
   const { type, address, origins, destinations, departure_time } = req.body || {};

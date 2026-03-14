@@ -1,32 +1,11 @@
 import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
+import { initFirebase } from './firebase';
 
 // ════════════════════════════════════════════════════════════════════════
 // 休假管理系統 — Leave Management Tool
 // ════════════════════════════════════════════════════════════════════════
 
-// ── Firebase Config ──────────────────────────────────────────────────
-const FIREBASE_CONFIG = {
-  apiKey: "AIzaSyAe5gxLBHN9CQ6zVhKF6zQGbvgMXCbqoF4",
-  authDomain: "jc-logi-map.firebaseapp.com",
-  projectId: "jc-logi-map",
-  storageBucket: "jc-logi-map.firebasestorage.app",
-  messagingSenderId: "98258062805",
-  appId: "1:98258062805:web:d004b291c639e126e7c15c"
-};
-
-let _fbLeave = null;
-const initLeaveFirebase = async () => {
-  if (_fbLeave) return _fbLeave;
-  try {
-    const fbApp  = await import('https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js');
-    const fstore = await import('https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js');
-    const existing = fbApp.getApps();
-    const app = existing.length > 0 ? existing[0] : fbApp.initializeApp(FIREBASE_CONFIG);
-    const db  = fstore.getFirestore(app);
-    _fbLeave = { db, ...fstore };
-    return _fbLeave;
-  } catch (e) { console.warn('[LeaveTool][Firebase]', e); return null; }
-};
+const initLeaveFirebase = initFirebase;
 
 // ════════════════════════════════════════════════════════════════════════
 // Firestore DB helpers（每筆獨立 document，無 1MB 上限問題）

@@ -176,31 +176,7 @@ const DEFAULT_PERSONNEL = [
 ];
 
 // ── Firebase 共用 ─────────────────────────────────────────────────────
-const FIREBASE_CONFIG = {
-  apiKey: "AIzaSyAe5gxLBHN9CQ6zVhKF6zQGbvgMXCbqoF4",
-  authDomain: "jc-logi-map.firebaseapp.com",
-  projectId: "jc-logi-map",
-  storageBucket: "jc-logi-map.firebasestorage.app",
-  messagingSenderId: "98258062805",
-  appId: "1:98258062805:web:d004b291c639e126e7c15c"
-};
-
-let _fbInstance = null;
-const initFirebase = async () => {
-  if (_fbInstance) return _fbInstance;
-  try {
-    const fbApp = await import('https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js');
-    const fstore = await import('https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js');
-    const existingApps = fbApp.getApps();
-    const app = existingApps.length > 0 ? existingApps[0] : fbApp.initializeApp(FIREBASE_CONFIG);
-    const db = fstore.getFirestore(app);
-    _fbInstance = { db, ...fstore };
-    return _fbInstance;
-  } catch (e) {
-    console.warn('[MileageTool][Firebase] init failed:', e);
-    return null;
-  }
-};
+import { initFirebase } from './firebase';
 
 // ── 工具函式 ──────────────────────────────────────────────────────────
 const getTaiwanPeriod = () => {
